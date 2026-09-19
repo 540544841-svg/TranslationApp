@@ -39,6 +39,10 @@ powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/�
 
 ## 界面设计
 
+> **v3.0 重设计进行中**：全新 Win11 Fluent 风格的浏览器交互预览稿见 [`design-preview/index.html`](design-preview/index.html)
+> （双击即可打开；设计文档 `docs/superpowers/specs/2026-09-19-ui-redesign-fluent-preview-design.md`，WPF 尚未按 v3.0 落地）。
+> 以下为当前 WPF 已实现的 v2.0 规范。
+
 界面按 `docs/UI设计规范-v2.0.md` 落地（Apple HIG + Material 3 + 品牌资产系统）：
 
 - **品牌资产系统 v2.0「琥珀流光」**（`docs/brand-asset-sheet.html`，已确认）：翻译品类被蓝色垄断，

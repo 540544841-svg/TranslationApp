@@ -8,22 +8,151 @@
 <link rel="stylesheet" href="assets/base.css">
 <link rel="stylesheet" href="assets/pages.css">
 </head>
-<body class="mica" style="min-height:100vh">
+<body class="mica">
   <button class="js-theme-toggle" aria-label="切换主题"></button>
-  <main style="max-width:760px;margin:0 auto;padding:64px 24px">
-    <div style="display:flex;align-items:center;gap:12px">
-      <span class="brand-mark">译</span>
+  <main class="idx-wrap">
+
+    <div class="idx-head">
+      <span class="brand-mark" style="width:40px;height:40px;font-size:20px;border-radius:10px">译</span>
       <div>
-        <div class="t-title">速译</div>
-        <div class="t-caption">v3.0 · Fluent 澈光 — 浏览器预览稿</div>
+        <div class="t-title">速译 v3.0 · Fluent 澈光</div>
+        <div class="t-caption">Windows 11 原生观感全面重设计 — 浏览器交互预览稿（WPF 尚未落地）</div>
       </div>
     </div>
-    <p class="t-body" style="margin-top:24px;color:var(--text-secondary)">
-      共享层已就绪：右上角按钮切换浅/深主题；本页总览与设计系统展示将随后续任务填充。
-    </p>
+
+    <div class="sec-label">页面入口</div>
+    <div class="entries">
+      <a class="card entry" href="quick.html">
+        <div class="thumb thumb-quick"><iframe src="quick.html" tabindex="-1"></iframe></div>
+        <div class="e-body"><div class="e-name">翻译小窗</div><div class="e-desc">七态演示 · 模拟翻译 · 对比模式</div></div>
+      </a>
+      <a class="card entry" href="settings.html">
+        <div class="thumb"><iframe src="settings.html" tabindex="-1"></iframe></div>
+        <div class="e-body"><div class="e-name">设置主窗口</div><div class="e-desc">NavigationView · 7 分区 · 热键录制</div></div>
+      </a>
+      <a class="card entry" href="pin.html">
+        <div class="thumb"><iframe src="pin.html" tabindex="-1"></iframe></div>
+        <div class="e-body"><div class="e-name">钉图窗</div><div class="e-desc">悬浮工具条 · 原/译切换</div></div>
+      </a>
+      <a class="card entry" href="capture.html">
+        <div class="thumb"><iframe src="capture.html" tabindex="-1"></iframe></div>
+        <div class="e-body"><div class="e-name">截图翻译 · 托盘</div><div class="e-desc">拖拽框选 → 识别 → 落窗联动</div></div>
+      </a>
+    </div>
+
+    <div class="sec-label">色板（随主题实时变化）</div>
+    <div class="swatches" id="swatches"></div>
+
+    <div class="sec-label">字阶与字体</div>
+    <div class="card type-scale" style="padding:8px 16px">
+      <div class="t-title">Title 28 / 速译，快到无感</div>
+      <div class="t-subtitle">Subtitle 20 / 冻结鼠标所在屏幕</div>
+      <div class="t-body-strong">BodyStrong 14 / 已复制译文</div>
+      <div class="t-body">Body 14 / Google 连不上，已用 Bing 重试</div>
+      <div class="t-caption">Caption 12 / 翻译过的内容会自动收进这里（保留最近 5000 条）</div>
+    </div>
+
+    <div class="sec-label">组件状态矩阵（悬停 / 按下 / 聚焦可实时体验）</div>
+    <div class="card" id="compDemo">
+      <div class="demo-row"><span class="dr-label">按钮 · 五型</span>
+        <button class="btn btn-accent">主要</button>
+        <button class="btn">次要</button>
+        <button class="btn btn-tonal">色调</button>
+        <button class="btn btn-ghost">文本</button>
+        <button class="btn btn-icon" title="图标按钮"><span data-icon="copy"></span></button>
+        <button class="btn" disabled>禁用</button>
+      </div>
+      <div class="demo-row"><span class="dr-label">开关 / 复选 / 分段</span>
+        <label class="switch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label>
+        <label class="switch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label>
+        <label class="checkbox"><input type="checkbox" checked><span class="box js-box"></span>带标签选项</label>
+        <span class="segmented" role="radiogroup">
+          <button class="seg-item" aria-checked="true">跟随系统</button>
+          <button class="seg-item" aria-checked="false">浅色</button>
+          <button class="seg-item" aria-checked="false">深色</button>
+        </span>
+      </div>
+      <div class="demo-row"><span class="dr-label">输入 / 下拉 / 滑杆</span>
+        <input class="input" style="width:170px" placeholder="输入文字，按 Enter 翻译">
+        <span class="select"><button class="select-btn"><span class="select-label">Bing</span><span data-icon="chevron"></span></button>
+          <div class="menu acrylic"><div class="menu-item" aria-selected="true">Bing<span class="mi-check js-check"></span></div><div class="menu-item">Google<span class="mi-check"></span></div><div class="menu-item">DeepL<span class="mi-check"></span></div></div></span>
+        <input type="range" class="slider" min="0" max="100" value="60"><span class="t-caption js-slider-out">60%</span>
+      </div>
+      <div class="demo-row"><span class="dr-label">键帽 / 徽标</span>
+        <span style="display:inline-flex;gap:2px;align-items:center"><span class="kbd">Alt</span><span class="t-caption">+</span><span class="kbd">S</span></span>
+        <span class="hotkey-frame recording"><span class="kbd">请按键…</span></span>
+        <span class="hotkey-frame conflict"><span class="kbd">Alt</span><span class="t-caption">+</span><span class="kbd">D</span></span>
+        <span class="chip chip-accent">Bing</span>
+        <span class="chip chip-success">已配置</span>
+        <span class="chip chip-warning">需代理</span>
+        <span class="chip chip-danger">冲突</span>
+      </div>
+      <div class="demo-row"><span class="dr-label">加载 / 提示条</span>
+        <span class="progress-ring"></span>
+        <span class="progress-bar" style="width:180px"></span>
+        <span class="banner banner-warning" style="padding:4px 8px"><span data-icon="warning"></span>当前网络可能连不上 Google</span>
+      </div>
+      <div class="demo-row"><span class="dr-label">Toast</span>
+        <button class="btn btn-sm" id="toastDemo">弹出「已复制译文」</button>
+      </div>
+    </div>
+
+    <div class="sec-label">v2.0「琥珀流光」→ v3.0「Fluent 澈光」</div>
+    <table class="diff card" style="padding:0">
+      <tr><th>资产</th><th>v2.0（弃用）</th><th>v3.0</th></tr>
+      <tr><td>强调色</td><td>琥珀三色（Primary / PrimaryText / OnPrimary）</td><td>青瓷蓝绿 Celadon Teal（同三角色规则）</td></tr>
+      <tr><td>图形符号</td><td>琥珀闪电</td><td>「译」字标占位（验收后重绘正式图标）</td></tr>
+      <tr><td>形状语言</td><td>14° 斜切光带</td><td>纯 Fluent 圆角体系（4/8/12）</td></tr>
+      <tr><td>动效签名</td><td>译光闪落（420ms 光痕）</td><td>取消；译文 fade-up 160ms 入场</td></tr>
+      <tr><td>材质</td><td>实色令牌底</td><td>仿 Mica 窗口 / Acrylic 浮层</td></tr>
+      <tr><td>警告色</td><td>橙红（与琥珀拉开色相）</td><td>系统级黄褐（纯语义，非品牌）</td></tr>
+    </table>
+    <p class="t-caption" style="margin-top:10px">保留的品牌纪律：功能不变（热键/多引擎/截图 OCR）、微文案三铁律（动词开头说结果 / 永远给出路 / 不卖萌不甩错误码）、空状态三处齐备、颜色全走语义令牌。</p>
+
   </main>
   <script src="assets/icons.js"></script>
   <script src="assets/preview.js"></script>
-  <script>Preview.initTheme();</script>
+  <script>
+  Preview.initTheme();
+  document.querySelectorAll('[data-icon]').forEach(function (el) {
+    el.appendChild(icon(el.getAttribute('data-icon')));
+  });
+  document.querySelector('.js-box').appendChild(icon('check'));
+  document.querySelector('.js-check').appendChild(icon('check'));
+  initSelects(); initSliders();
+  document.getElementById('toastDemo').addEventListener('click', function () { Preview.toast('已复制译文'); });
+  document.querySelectorAll('.segmented').forEach(function (sg) {
+    sg.addEventListener('click', function (e) {
+      var b = e.target.closest('.seg-item'); if (!b) return;
+      sg.querySelectorAll('.seg-item').forEach(function (x) { x.setAttribute('aria-checked', 'false'); });
+      b.setAttribute('aria-checked', 'true');
+    });
+  });
+
+  var TOKENS = [
+    ['--accent', 'Accent 交互填充'], ['--accent-text', 'AccentText 文字级'],
+    ['--accent-container', '容器底'], ['--on-accent', '填充上文字'],
+    ['--text-primary', '正文'], ['--text-secondary', '次要文字'],
+    ['--card', '卡片'], ['--card-stroke', '发丝描边'],
+    ['--danger', '错误'], ['--warning', '警告'], ['--success', '成功'],
+    ['--capture-scrim', '截图遮罩(同值)'], ['--capture-selection', '选区框(同值)']
+  ];
+  function renderSwatches() {
+    var probe = document.documentElement;
+    var cs = getComputedStyle(probe);
+    var wrap = document.getElementById('swatches');
+    wrap.innerHTML = '';
+    TOKENS.forEach(function (pair) {
+      var box = document.createElement('div'); box.className = 'swatch-box';
+      var sw = document.createElement('div'); sw.className = 'swatch';
+      sw.style.background = 'var(' + pair[0] + ')';
+      var meta = document.createElement('div'); meta.className = 'swatch-meta';
+      meta.textContent = pair[1] + '  ' + pair[0].replace('--', '');
+      box.appendChild(sw); box.appendChild(meta); wrap.appendChild(box);
+    });
+  }
+  renderSwatches();
+  document.addEventListener('sv:theme', renderSwatches);
+  </script>
 </body>
 </html>

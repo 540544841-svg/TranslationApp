@@ -1,6 +1,31 @@
 /* 页面级布局样式（随各页实现追加） */
 
 /* ---------- index ---------- */
+.idx-wrap { max-width: 1080px; margin: 0 auto; padding: 40px 28px 96px; }
+.idx-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.idx-sub { color: var(--text-secondary); margin: 4px 0 28px; }
+.sec-label { font-size: 15px; font-weight: 600; margin: 36px 0 12px; }
+.entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 14px; }
+.entry { display: block; color: inherit; overflow: hidden; transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.entry:hover { transform: translateY(-2px); box-shadow: var(--shadow-l8); }
+.entry .thumb { height: 118px; overflow: hidden; position: relative; background: var(--control-bg); border-bottom: 1px solid var(--card-stroke); }
+.entry .thumb iframe { width: 1280px; height: 800px; transform: scale(0.147); transform-origin: 0 0; border: 0; pointer-events: none; position: absolute; top: 0; left: 0; }
+.entry .thumb.thumb-quick iframe { width: 900px; height: 640px; transform: scale(0.2); }
+.entry .e-body { padding: 10px 12px; }
+.entry .e-name { font-weight: 600; font-size: 13px; }
+.entry .e-desc { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.swatch-box { border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--card-stroke); background: var(--card); }
+.swatch { height: 46px; }
+.swatch-meta { padding: 6px 8px; font-size: 11px; color: var(--text-secondary); }
+.demo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; }
+.demo-row + .demo-row { border-top: 1px solid var(--divider); }
+.demo-row .dr-label { width: 120px; flex: none; font-size: 12px; color: var(--text-secondary); }
+.type-scale > div { padding: 6px 0; }
+table.diff { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.diff th, table.diff td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+table.diff th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+.forced-pressed { transform: scale(0.98); }
 
 /* ---------- quick ---------- */
 .quick-win {
