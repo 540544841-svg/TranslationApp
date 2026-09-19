@@ -1,0 +1,133 @@
+/* 速译 v3.0 「Fluent 澈光」设计令牌 —— 唯一允许出现色字面量的文件 */
+
+:root {
+  /* 动效基元 */
+  --dur: 160ms;
+  --dur-fast: 100ms;
+  --dur-slow: 200ms;
+  --ease: cubic-bezier(0.1, 0.9, 0.2, 1);
+
+  /* 尺寸 */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px;
+  --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --radius-ctrl: 4px; --radius-card: 8px; --radius-float: 8px; --radius-pill: 999px;
+  --shadow-l2: 0 1px 4px rgba(0,0,0,0.08);
+  --shadow-l8: 0 8px 24px rgba(0,0,0,0.24);
+  --font-app: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+
+  /* 双主题同值：截图遮罩与选区（深色场景/入口触点，不跟主题） */
+  --capture-scrim: rgba(15, 18, 16, 0.55);
+  --capture-selection: #5CE0C7;
+
+  /* 演示桌面场景色（仅预览稿布景用，非产品令牌） */
+  --wall-1: #1F3B54; --wall-2: #2E5B6B; --wall-3: #173F3A; --wall-4: #0E1B24;
+  --taskbar: rgba(24, 26, 28, 0.72);
+}
+
+:root, [data-theme="light"] {
+  color-scheme: light;
+
+  --accent: #0F6E5D;
+  --accent-hover: #0C5D4F;
+  --accent-pressed: #0A5145;
+  --accent-text: #0B5A4C;
+  --on-accent: #FFFFFF;
+  --accent-container: #DFF2ED;
+  --accent-container-hover: #CDEAE2;
+
+  --window-grad-1: #F4F5F3;
+  --window-grad-2: #E9EDEB;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #FFFFFF;
+  --card-stroke: #E1E4E2;
+  --divider: #E7E9E7;
+
+  --text-primary: #1B1C1E;
+  --text-secondary: #5C6066;
+  --text-disabled: #A0A4A9;
+
+  --control-bg: #FDFDFD;
+  --control-bg-hover: #F4F5F4;
+  --control-bg-pressed: #EBECEB;
+  --control-border: #DEDEDD;
+  --control-border-strong: #C9CBC9;
+  --reveal: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.5));
+  --scrim: rgba(0, 0, 0, 0.32);
+  --acrylic: rgba(248, 249, 248, 0.82);
+
+  --danger: #C42B1C;
+  --danger-bg: #FDF3F2;
+  --danger-stroke: #F0CEC9;
+  --warning: #8A5A00;
+  --warning-bg: #FFF8E7;
+  --warning-stroke: #EBD9AE;
+  --success: #217A45;
+  --success-bg: #E9F6EE;
+  --success-stroke: #C6E8D3;
+
+  --ring: #0F6E5D;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --accent: #5CE0C7;
+  --accent-hover: #6FE6D0;
+  --accent-pressed: #46C9B0;
+  --accent-text: #7DEBD6;
+  --on-accent: #0A2E27;
+  --accent-container: #17403A;
+  --accent-container-hover: #1E524A;
+
+  --window-grad-1: #202124;
+  --window-grad-2: #1A1B1E;
+  --card: rgba(43, 44, 47, 0.72);
+  --card-solid: #2B2C2F;
+  --card-stroke: #393A3D;
+  --divider: #35363A;
+
+  --text-primary: #F4F5F6;
+  --text-secondary: #A5A9AE;
+  --text-disabled: #6B6F75;
+
+  --control-bg: #303134;
+  --control-bg-hover: #37383C;
+  --control-bg-pressed: #2A2B2E;
+  --control-border: #3D3E42;
+  --control-border-strong: #4A4B50;
+  --reveal: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.06));
+  --scrim: rgba(0, 0, 0, 0.5);
+  --acrylic: rgba(38, 39, 42, 0.86);
+
+  --danger: #FF99A4;
+  --danger-bg: #3D1817;
+  --danger-stroke: #5E2A27;
+  --warning: #FCDCB5;
+  --warning-bg: #3B2E14;
+  --warning-stroke: #5E4A21;
+  --success: #6CD691;
+  --success-bg: #173322;
+  --success-stroke: #26503A;
+
+  --ring: #5CE0C7;
+}
+
+/* Mica 仿材质：低饱和渐变 + 2% 噪点 */
+.mica {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.02 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E"),
+    linear-gradient(150deg, var(--window-grad-1), var(--window-grad-2));
+}
+
+.acrylic {
+  background: var(--acrylic);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

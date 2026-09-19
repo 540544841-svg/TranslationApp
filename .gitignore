@@ -17,3 +17,6 @@ artifacts/
 
 # 运行时数据
 *.log
+
+# 设计预览稿验收截图
+design-preview/screenshots/
