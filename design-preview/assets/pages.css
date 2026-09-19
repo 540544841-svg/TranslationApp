@@ -3,6 +3,60 @@
 /* ---------- index ---------- */
 
 /* ---------- quick ---------- */
+.quick-win {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -58%);
+  width: 420px;
+  display: flex; flex-direction: column;
+}
+.quick-win .lang-pill {
+  margin: 0 auto;
+  display: flex; align-items: center; gap: 2px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  padding: 1px;
+}
+.quick-win .lang-pill .select-btn {
+  min-width: 0; width: auto; height: 24px; padding: 0 8px;
+  border: none; background: transparent;
+  font-size: 12px; border-radius: var(--radius-pill);
+}
+.quick-win .lang-pill .select-btn:hover { background: var(--control-bg-hover); }
+.quick-win .lang-pill .swap-btn { width: 24px; height: 24px; }
+.quick-win .lang-pill .swap-btn svg { width: 13px; height: 13px; }
+.quick-win .lang-pill .swap-btn.spin svg { animation: swap-spin 240ms var(--ease); }
+@keyframes swap-spin { from { transform: rotate(0); } to { transform: rotate(180deg); } }
+.quick-input { border: none; background: transparent; padding: 10px 14px; min-height: 64px; font-size: 14px; }
+.quick-input:hover { background: transparent; }
+.quick-input:focus { outline: none; border: none; }
+.quick-hairline { height: 1px; background: var(--divider); }
+.quick-result { min-height: 96px; padding: 10px 14px; position: relative; }
+.quick-result .result-text { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.engine-row {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.engine-row .spacer { flex: 1; }
+.engine-row .btn-ghost { height: 24px; padding: 0 6px; font-size: 12px; }
+.quick-status {
+  height: 28px; flex: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 14px;
+  border-top: 1px solid var(--divider);
+  font-size: 12px; color: var(--text-secondary);
+}
+.quick-status .err { color: var(--danger); }
+.compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+.compare-cols .cc-card { padding: var(--space-2) var(--space-3); }
+.compare-cols .cc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.star-btn.lit svg { color: var(--accent-text); }
+.demo-console {
+  position: fixed; right: 16px; bottom: 16px; z-index: 250;
+  width: 250px; padding: 10px 12px;
+}
+.demo-console .dc-title { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.demo-console .dc-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- settings ---------- */
 
