@@ -150,6 +150,25 @@ public sealed class AppSettings
 
     // ==================== FR-020 引擎结果对比 ====================
 
+    /// <summary>
+    /// 术语表（P0 批 1 / spec §1.1）：<c>List&lt;GlossaryItem&gt;</c> 的 JSON 序列化结果，默认空表。
+    /// 存 JSON 字符串而非对象数组：沿用本类扁平字段风格，JsonSettingsStore 零改动。
+    /// 读写解析统一走 <see cref="Translation.GlossaryReplacer.Parse"/> / <c>Serialize</c>。
+    /// </summary>
+    public string GlossaryJson { get; set; } = "[]";
+
+    /// <summary>
+    /// 隐私模式（P0 批 1 / spec §2）：开启后不写翻译历史、暂停剪贴板监听、引擎统计不记录、
+    /// --verbose 日志不落盘；翻译请求本身仍会发送（否则无法翻译）。生词本收藏为用户主动动作，不受影响。
+    /// </summary>
+    public bool PrivacyMode { get; set; }
+
+    /// <summary>
+    /// 阅读清洗（P0 批 1 / spec §3）：划词 / 剪贴板取到的多行文本合并 PDF 硬换行后再翻译，
+    /// 默认开启；手动输入小窗的文本不清洗。
+    /// </summary>
+    public bool CleanClipboardText { get; set; } = true;
+
     /// <summary>对比引擎 Id 列表（逗号分隔，最多 3 个）；空 = 自动（当前引擎 + 首个其它已配置引擎）。</summary>
     public string CompareEngineIds { get; set; } = "";
 
