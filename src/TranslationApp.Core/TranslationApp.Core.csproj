@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows 专属：使用注册表、Win32 P/Invoke、DPAPI；仍然无 UI 依赖、可单测 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>TranslationApp.Core</RootNamespace>
+    <!-- PDB 内嵌，publish 产物保持单 EXE -->
+    <DebugType>embedded</DebugType>
+    <Description>速译核心逻辑层：无 UI 依赖，可单元测试。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 引擎解析/切块等内部实现需单元测试覆盖 -->
+    <InternalsVisibleTo Include="TranslationApp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.86" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+    <PackageReference Include="System.Speech" Version="10.0.12" />
+  </ItemGroup>
+
+</Project>

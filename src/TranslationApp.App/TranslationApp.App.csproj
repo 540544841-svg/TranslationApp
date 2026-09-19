@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 阶段 4（13.2.2）：改用带 Windows SDK 版本号的 TFM，以取得 WinRT 投影（Windows.Media.Ocr）。
+         该投影随 .NET SDK 提供，不引入 NuGet 包；代价是单文件体积增加，故必须实测体积。 -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- 保持 Windows 10 1809+ 的最低支持声明不变 -->
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>TranslationApp</RootNamespace>
+    <AssemblyName>TranslationApp</AssemblyName>
+    <Version>0.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- PDB 内嵌，保证 publish 产物只有单 EXE -->
+    <DebugType>embedded</DebugType>
+    <!-- 减少无关语言附属目录 -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <!-- 原生库打进单文件包（为后续 SQLite e_sqlite3 预留，见需求文档 7.9） -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- 压缩单文件包：自包含 WPF 约 126MB → <90MB（硬约束），冷启动解压开销可接受 -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <!-- FR-030（14.9.1）：本项目首个获准新增的 NuGet（200MB 体积预算决策，14.3.12.7）。
+         RapidOcrNet 自带 DB det 后处理 + 方向分类 + CRNN 识别 + 字典；依赖 SkiaSharp 与
+         Microsoft.ML.OnnxRuntime（C0 实测增量：未压缩 +51.4MB，单文件压缩后 +32.05MB）。 -->
+    <PackageReference Include="RapidOcrNet" Version="4.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TranslationApp.Core\TranslationApp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FR-030（14.9.1 模型分发）：PP-OCRv5 mobile 三件套 + 字典（合计 22,543,402 字节，C0 实测）作为
+         嵌入资源打进 EXE——保持「单文件、零外置、无下载」承诺；PaddleOcrEngine 首次使用时
+         资源 byte[] → %TEMP% 落盘（保留复用）→ InitModels（C0 实测全流程 174 ms）。
+         LogicalName 前缀必须与 PaddleOcrEngine.ResourcePrefix 一致。 -->
+    <EmbeddedResource Include="OcrModels\*" LogicalName="TranslationApp.App.OcrModels.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 托盘/EXE 图标，供 pack URI 读取 -->
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+</Project>

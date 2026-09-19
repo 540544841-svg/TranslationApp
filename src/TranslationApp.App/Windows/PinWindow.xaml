@@ -1,0 +1,175 @@
+<Window x:Class="TranslationApp.Windows.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:TranslationApp.Core.Capture;assembly=TranslationApp.Core"
+        Title="钉图" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" ShowActivated="False"
+        WindowStartupLocation="Manual" SnapsToDevicePixels="True"
+        FontFamily="{StaticResource Font.App}" TextOptions.TextFormattingMode="Ideal"
+        PreviewKeyDown="OnPreviewKeyDown" MouseWheel="OnMouseWheel">
+    <!--
+      FR-027 钉图窗口（v1.2 修复批 ④ / ②）：根部改为**阴影外框卡片**——
+      Border(Margin=PinShadowMarginDip=16, 由代码赋值) + Brush.Window 底 + Radius.Card 圆角 + Shadow.Window 扩散阴影，
+      内部三行：图片区（图 + 覆盖层 + 激活框 + 缩放提示）| 工具条带（常驻，不浮在图片上）| 译文面板（模式 C）。
+      不变式改写为「窗口物理尺寸 = 图像像素 × zoom + 2×frame + chrome（条带 + 面板）」，几何全在 Core 的 PinLayout.*WithChrome。
+      两类颜色严格分开（14.3.9）：工具条/提示属于界面 → 走跟主题的 Brush.* 令牌；
+      覆盖底色/替换文字/激活描边属于**图片内容** → 走固定色令牌（Brush.Overlay.* / Brush.Capture.Selection）。
+    -->
+    <Window.Resources>
+        <!-- 切换按钮：IconButton 基样式 + 「激活态」（显示译文时点亮为主色容器底 + 主色图标，即 14.3.6 的状态指示）。
+             图标颜色跟随按钮 Foreground，故激活态只需切换 Foreground，不必在模板里找具名子元素。 -->
+        <Style x:Key="IconButton.PinToggle" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}"/>
+                </Trigger>
+                <Trigger Property="Tag" Value="on">
+                    <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 工具条图标：复用 Text.Icon 的字族/字号，颜色跟随所属按钮 -->
+        <Style x:Key="IconButton.PinGlyph" TargetType="TextBlock" BasedOn="{StaticResource Text.Icon}">
+            <Setter Property="Foreground"
+                    Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+        </Style>
+    </Window.Resources>
+
+    <!--
+      右键菜单（14.3.6）：属**应用界面**，颜色/字体全部由 Controls.xaml 的全局隐式
+      ContextMenu/MenuItem 样式接管。每项把动作放进 Tag，启用/禁用与原因由 PinToolbarRules 统一判定（见 OnMenuOpened）。
+      「重试翻译」「翻译」（强制翻译）仅按需出现。
+    -->
+    <Window.ContextMenu>
+        <ContextMenu Opened="OnMenuOpened">
+            <MenuItem Header="放大" Tag="{x:Static c:PinToolbarAction.ZoomIn}" Click="OnMenuActionClick"/>
+            <MenuItem Header="缩小" Tag="{x:Static c:PinToolbarAction.ZoomOut}" Click="OnMenuActionClick"/>
+            <MenuItem Header="原始大小" Tag="{x:Static c:PinToolbarAction.ResetZoom}" Click="OnMenuActionClick"/>
+            <Separator/>
+            <MenuItem Header="切换原文译文" Tag="{x:Static c:PinToolbarAction.ToggleTextLayer}" Click="OnMenuActionClick"/>
+            <MenuItem Header="复制译文" Tag="{x:Static c:PinToolbarAction.CopyTranslation}" Click="OnMenuActionClick"/>
+            <MenuItem Header="在小窗中打开" Tag="{x:Static c:PinToolbarAction.OpenInQuickWindow}" Click="OnMenuActionClick"/>
+            <MenuItem Header="重试翻译" Visibility="Collapsed" Tag="{x:Static c:PinToolbarAction.RetryTranslation}" Click="OnMenuActionClick"/>
+            <MenuItem Header="翻译" Visibility="Collapsed" Tag="{x:Static c:PinToolbarAction.ForceTranslate}" Click="OnMenuActionClick"/>
+            <Separator/>
+            <MenuItem Header="恢复不透明" Tag="{x:Static c:PinToolbarAction.ResetOpacity}" Click="OnMenuActionClick"/>
+            <Separator/>
+            <MenuItem Header="关闭" Tag="{x:Static c:PinToolbarAction.Close}" Click="OnMenuActionClick"/>
+        </ContextMenu>
+    </Window.ContextMenu>
+
+    <!-- 阴影外框：四周 16 DIP 阴影边距（Margin 由代码按 PinShadowMarginDip 赋值，与几何计算同源） -->
+    <Border x:Name="ChromeBorder" Background="{DynamicResource Brush.Window}"
+            CornerRadius="{StaticResource Radius.Card}" Effect="{StaticResource Shadow.Window}">
+        <Grid x:Name="RootGrid">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 第 0 行：图片区（覆盖层坐标相对本区左上角，OverlayElement / RebuildOverlay 映射零改动） -->
+            <Grid x:Name="ContentArea" Grid.Row="0">
+                <Image x:Name="ContentImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       MouseLeftButtonDown="OnImageMouseLeftButtonDown"/>
+
+                <!-- 原位替换覆盖层：整体 Opacity 在 0↔1 之间交叉淡入即完成原文/译文切换（14.3.6，不准备两张图）；
+                     块与字号一律由单一系数 k = 图片区 DIP 宽 / 图像像素宽 驱动，缩放时与图片永不错位。 -->
+                <Canvas x:Name="OverlayLayer" IsHitTestVisible="False" ClipToBounds="True" Opacity="0"/>
+
+                <!-- 激活指示：1 DIP 描边（非激活时无描边）；不参与命中测试、不占布局 -->
+                <Rectangle x:Name="ActiveFrame" StrokeThickness="1" Visibility="Collapsed"
+                           Stroke="{DynamicResource Brush.Capture.Selection}" IsHitTestVisible="False"/>
+
+                <!-- 缩放反馈条（滚轮/快捷键/重置共用）：图片区顶部居中 -->
+                <Border x:Name="ZoomChip" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top"
+                        Margin="0,8,0,0" Padding="8,3" CornerRadius="{StaticResource Radius.Chip}"
+                        Background="{DynamicResource Brush.Window}" BorderThickness="1"
+                        BorderBrush="{DynamicResource Brush.Border}" Effect="{StaticResource Shadow.Popup}"
+                        IsHitTestVisible="False">
+                    <TextBlock x:Name="ZoomText" FontSize="{StaticResource FontSize.Caption}"
+                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                </Border>
+            </Grid>
+
+            <!-- 第 1 行：工具条带（14.3.6 / 14.3.9 / v1.2 ④）——**常驻**在图片下方（条带在图片外、永不遮挡文字，
+                 故不再自动淡出；PinToolbarAutoFade 设置项已停用），高度是界面常量、不随缩放变化，
+                 StatusChip 出现时自适应增高；窄窗口按比例缩小，缩到下限以下整体隐藏（快捷键仍可用）。 -->
+            <Grid x:Name="ToolbarHost" Grid.Row="1" MinHeight="44">
+                <StackPanel x:Name="ToolbarStrip" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,4">
+                    <!-- 一句话说明（降级原因 / 引擎错误 / 语言相同）：仅在非空时出现，避免静默降级 -->
+                    <Border x:Name="StatusChip" Visibility="Collapsed" Margin="0,0,0,4" Padding="8,3"
+                            HorizontalAlignment="Center" CornerRadius="{StaticResource Radius.Chip}"
+                            Background="{DynamicResource Brush.Window}" BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Border}" Effect="{StaticResource Shadow.Popup}">
+                        <TextBlock x:Name="StatusText" FontSize="{StaticResource FontSize.Caption}"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="NoWrap"/>
+                    </Border>
+
+                    <!-- 缩放由代码设置 LayoutTransform（窄窗口里按比例缩小，见 UpdateToolbarPlacement） -->
+                    <Border x:Name="ToolbarBody" HorizontalAlignment="Center" Padding="4,3"
+                            Background="{DynamicResource Brush.Window}" BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Border}" CornerRadius="{StaticResource Radius.Control}"
+                            Effect="{StaticResource Shadow.Popup}">
+                        <StackPanel x:Name="ToolbarPanel" Orientation="Horizontal">
+                            <Button x:Name="ToggleLayerButton" Style="{StaticResource IconButton.PinToggle}"
+                                    Click="OnToggleLayerClick" ToolTipService.ShowOnDisabled="True">
+                                <TextBlock Style="{StaticResource IconButton.PinGlyph}" Text="{StaticResource Icon.Swap}"/>
+                            </Button>
+
+                            <Button x:Name="CopyButton" Style="{StaticResource IconButton}"
+                                    Click="OnCopyClick" ToolTipService.ShowOnDisabled="True">
+                                <TextBlock Style="{StaticResource IconButton.PinGlyph}" Text="{StaticResource Icon.Copy}"/>
+                            </Button>
+
+                            <!-- 在小窗中打开（14.3.8）：把识别文本带回主流程可继续编辑/翻译/入库 -->
+                            <Button x:Name="OpenQuickButton" Style="{StaticResource IconButton}"
+                                    Click="OnOpenQuickClick" ToolTipService.ShowOnDisabled="True">
+                                <TextBlock Style="{StaticResource IconButton.PinGlyph}" Text="{StaticResource Icon.Translate}"/>
+                            </Button>
+
+                            <!-- 重试（14.3.2 / AC 12）：翻译失败后补齐译文，只在失败时可见可用；
+                                 用带文字的按钮而不是图标——失败时用户需要一眼看到「可以重试」 -->
+                            <Button x:Name="RetryButton" Style="{StaticResource Button.Tonal}" MinWidth="42"
+                                    Content="重试" FontSize="{StaticResource FontSize.Caption}"
+                                    Click="OnRetryClick" ToolTipService.ShowOnDisabled="True"/>
+
+                            <!-- 强制翻译（v1.2 ③-C）：「识别语言与目标语言相同」被跳过时出现，
+                                 点击把源语言置回自动检测重新翻译并原位显示 -->
+                            <Button x:Name="ForceTranslateButton" Style="{StaticResource Button.Tonal}" MinWidth="42"
+                                    Content="翻译" FontSize="{StaticResource FontSize.Caption}"
+                                    Click="OnForceTranslateClick" ToolTipService.ShowOnDisabled="True"/>
+
+                            <Border Style="{StaticResource Hairline}" Width="1" Height="18" Margin="4,0"/>
+
+                            <!-- 缩放倍数显示 + 一键回 100%（已是 100% 时禁用并说明原因） -->
+                            <Button x:Name="ZoomResetButton" Style="{StaticResource Button.Tonal}" MinWidth="46"
+                                    Click="OnZoomResetClick" ToolTipService.ShowOnDisabled="True">
+                                <TextBlock x:Name="ZoomResetText" FontSize="{StaticResource FontSize.Caption}"/>
+                            </Button>
+
+                            <Border Style="{StaticResource Hairline}" Width="1" Height="18" Margin="4,0"/>
+
+                            <Button x:Name="CloseButton" Style="{StaticResource IconButton.Close}"
+                                    Click="OnCloseClick" ToolTipService.ShowOnDisabled="True"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- 第 2 行：模式 C 的下方译文面板：属于**应用界面**（不是图片内容），因此一律走跟主题的 Brush.* 令牌 -->
+            <Border x:Name="PanelHost" Grid.Row="2" Visibility="Collapsed"
+                    Background="{DynamicResource Brush.Window}" BorderThickness="0,1,0,0"
+                    BorderBrush="{DynamicResource Brush.Border}">
+                <ScrollViewer x:Name="PanelScroll" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Padding="12">
+                    <TextBlock x:Name="PanelTextBlock" FontSize="{StaticResource FontSize.Content}"
+                               Foreground="{DynamicResource Brush.TextPrimary}" TextWrapping="Wrap"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

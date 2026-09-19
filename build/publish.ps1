@@ -1,0 +1,55 @@
+﻿#requires -Version 5.1
+<#
+.SYNOPSIS
+    速译一键发布：产出自包含单文件 EXE（需求文档 FR-013 / 阶段 0 发布链路）。
+
+.DESCRIPTION
+    执行 dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true，
+    产出 publish\TranslationApp.exe，并校验体积是否满足 < 200MB 硬约束。
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File build\publish.ps1
+#>
+[CmdletBinding()]
+param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
+
+    [string]$Runtime = "win-x64",
+
+    [string]$OutputDir = ""
+)
+
+$ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $OutputDir) { $OutputDir = Join-Path $repoRoot "publish" }
+$project = Join-Path $repoRoot "src\TranslationApp.App\TranslationApp.App.csproj"
+$exe = Join-Path $OutputDir "TranslationApp.exe"
+
+Write-Host "== 速译发布：Configuration=$Configuration Runtime=$Runtime ==" -ForegroundColor Cyan
+Write-Host "项目：$project"
+
+dotnet publish $project -c $Configuration -r $Runtime --self-contained `
+    -p:PublishSingleFile=true `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -o $OutputDir
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish 失败（退出码 $LASTEXITCODE）"
+}
+
+if (-not (Test-Path $exe)) {
+    throw "发布产物未找到：$exe"
+}
+
+$sizeMB = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+Write-Host ""
+Write-Host ("发布成功：{0}（{1} MB）" -f $exe, $sizeMB) -ForegroundColor Green
+
+# 体积门禁：2026-09-14 用户决策由 90MB 放宽至 200MB（需求文档 14.3.12.7 / FR-030，第 6 章），
+# 为 PaddleOCR 本地高精度 OCR 留预算（RapidOcrNet + ONNX Runtime + SkiaSharp + 嵌入模型 22.5MB）。
+# 双口径：默认路径（windows 引擎，不加载 paddle 运行时）实测 ≈ 70.5MB（70,516,894 字节）；
+# 启用 paddle 后预计 ≈ 102.6MB（C0 探针实测增量 +32.05MB，单文件压缩率 ≈ 65%）。
+if ($sizeMB -gt 200) {
+    Write-Warning ("单 EXE 体积 {0} MB 超过 200MB 硬约束，请检查压缩/裁剪选项。" -f $sizeMB)
+    exit 2
+}

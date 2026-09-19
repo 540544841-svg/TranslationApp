@@ -1,0 +1,15 @@
+# 构建产物
+bin/
+obj/
+publish/
+
+# 界面验收截图（由 build/verify-ui.ps1 生成）
+artifacts/
+
+# IDE / 用户配置
+*.user
+.vs/
+.idea/
+
+# 运行时数据
+*.log

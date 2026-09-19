@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速译 · 品牌资产清单 v2.0</title>
+<!-- 品牌资产清单（ui-design skill 骨架组装）。工作流步骤 2 交付物，步骤 3 确认关口用。 -->
+<style>
+@property --beam { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+:root {
+  --bg: #0D0F13; --surface: #161A21; --border: rgba(255,255,255,.08);
+  --text-1: #F2F3F5; --text-2: #A0A5AE;
+  --amber: #FFB03A; --amber-deep: #F08C00; --amber-dark: #2B1A00;
+  --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 48px 24px 80px; background: var(--bg); color: var(--text-1); font-family: var(--font); display: flex; flex-direction: column; align-items: center; }
+.wrap { width: 100%; max-width: 1000px; }
+h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+h1 em { font-style: normal; color: var(--amber); }
+.sub { color: var(--text-2); font-size: 14px; margin: 0 0 36px; }
+h2 { font-size: 17px; margin: 48px 0 14px; }
+h2 .n { color: var(--amber); margin-right: 8px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 20px; }
+.kv { font-size: 14px; line-height: 1.9; }
+.kv .k { color: var(--amber); font-weight: 600; margin-right: 6px; }
+.kv b { color: var(--text-1); }
+.memo { margin-top: 14px; padding: 14px 16px; border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 10px 10px 0; font-size: 15px; line-height: 1.7; }
+.asset { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+.asset h3 { margin: 0 0 4px; font-size: 15px; }
+.asset .must { display: inline-block; font-size: 11px; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
+.asset .opt { background: rgba(255,255,255,.08); color: var(--text-2); }
+.asset p { font-size: 13px; color: var(--text-2); line-height: 1.7; margin: 8px 0 0; }
+.stage { min-height: 150px; border-radius: 14px; background: #0B0D11; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 12px; flex-wrap: wrap; }
+.stage.light { background: #F5F6F8; }
+.test { margin-top: 12px; font-size: 12px; color: var(--text-2); border-top: 1px dashed var(--border); padding-top: 10px; }
+.test b { color: var(--text-1); }
+.cols3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.touch { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; }
+.touch h3 { margin: 0 0 8px; font-size: 14px; color: var(--amber); }
+.touch ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--text-2); line-height: 1.9; }
+.confirm { margin-top: 44px; text-align: center; font-size: 14px; color: var(--text-2); line-height: 1.9; }
+.confirm b { color: var(--text-1); }
+.pick { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 14px; }
+.tag { display:inline-block; font-size:11px; color: var(--amber); border:1px solid color-mix(in srgb, var(--amber) 40%, transparent); border-radius:999px; padding:1px 8px; margin-bottom:8px; }
+
+/* —— 品类色卡 —— */
+.strip { display: flex; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.strip > div { flex: 1; height: 74px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; font-size: 11px; color: rgba(255,255,255,.92); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.strip > div span { opacity: .85; font-size: 10px; }
+.slot { position: relative; box-shadow: inset 0 0 0 3px var(--amber); }
+.slot::after { content: '空档 · 速译落位'; position: absolute; top: 6px; left: 8px; font-size: 10px; color: #1a1104; font-weight: 700; text-shadow: none; }
+/* —— 图标候选 —— */
+.ico { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ico small { color: var(--text-2); font-size: 11px; }
+.ico .sizes { display: flex; align-items: flex-end; gap: 10px; }
+/* —— 动效签名演示 —— */
+.qw { width: 300px; border-radius: 14px; background: #fff; color: #1C1F23; padding: 12px 14px; box-shadow: 0 12px 32px rgba(0,0,0,.5); position: relative; overflow: hidden; font-size: 12px; }
+.qw .langs { display: flex; gap: 6px; align-items: center; color: #5B626B; margin-bottom: 8px; font-size: 11px; }
+.qw .langs i { border: 1px solid #E4E7EB; border-radius: 6px; padding: 1px 8px; font-style: normal; }
+.qw .input { background: #F5F6F8; border-radius: 8px; padding: 7px 9px; color: #6F7780; margin-bottom: 9px; }
+.qw .result { font-size: 13px; font-weight: 600; position: relative; padding: 2px 0; }
+.qw .streak { position: absolute; top: -3px; bottom: -3px; width: 34%; border-radius: 6px; left: -40%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--amber) 55%, transparent), transparent);
+  transform: skewX(-14deg); pointer-events: none; }
+.qw.go .streak { animation: sweep .42s cubic-bezier(.2,0,0,1) forwards; }
+@keyframes sweep { to { left: 108%; } }
+.qw .meta { margin-top: 8px; color: #8B939C; font-size: 10px; display: flex; justify-content: space-between; }
+.qw .meta .ok { color: #A05E03; font-weight: 700; }
+.replay { margin-top: 10px; background: var(--amber); color: var(--amber-dark); border: 0; border-radius: 8px; padding: 7px 16px; font-weight: 700; cursor: pointer; font-size: 12px; }
+.replay:hover { filter: brightness(1.06); }
+/* —— 启动仪式（边框流光）演示 —— */
+.beambox { width: 220px; border-radius: 14px; padding: 2px; position: relative; }
+.beambox::before { content: ''; position: absolute; inset: 0; border-radius: 14px; padding: 2px;
+  background: conic-gradient(from var(--beam), transparent 0 78%, var(--amber) 90%, #fff 96%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.beambox.go::before { animation: beam 0.9s cubic-bezier(.2,0,0,1) forwards; }
+@keyframes beam { to { --beam: 360deg; } }
+.beam-inner { border-radius: 12px; background: #fff; color: #1C1F23; padding: 14px 16px; font-size: 12px; }
+.beam-inner .t { font-weight: 700; margin-bottom: 4px; }
+.beam-inner .d { color: #6F7780; font-size: 11px; line-height: 1.6; }
+/* —— 形状语言 —— */
+.streakline { height: 3px; border-radius: 99px; background: linear-gradient(90deg, transparent, var(--amber), transparent); transform: skewX(-20deg); }
+.prog { position: relative; height: 3px; border-radius: 99px; background: #2A2E34; overflow: hidden; margin: 10px 0; }
+.prog i { position: absolute; top: 0; bottom: 0; width: 56px; border-radius: 99px; left: -60px;
+  background: linear-gradient(90deg, transparent, var(--amber), transparent); transform: skewX(-20deg); animation: prog 1.4s cubic-bezier(.45,0,.55,1) infinite; }
+@keyframes prog { to { left: 110%; } }
+/* —— 语言人格 —— */
+.say { font-size: 13px; line-height: 2.0; }
+.say b { color: var(--text-1); background: color-mix(in srgb, var(--amber) 12%, transparent); border-radius: 4px; padding: 1px 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>速译 <em>SuYi</em> · 品牌资产清单 v2.0</h1>
+  <p class="sub">Windows 桌面划词 / 截图翻译工具 · 品牌核心 → 品类色卡 → 七类资产（含独占性测试）→ 触点分布 → 确认</p>
+
+  <h2><span class="n">①</span>品牌核心</h2>
+  <div class="card kv">
+    <div><span class="k">人群</span>25–40 岁效率型 Windows 用户：开发者、涉外职场人、学生、重度外文阅读者</div>
+    <div><span class="k">习惯</span>高频 · 极短会话——每天几十次呼出，每次几秒即走；工具即用即走，无留存钩子，<b>唯一体验承诺是「快到无感」</b></div>
+    <div><span class="k">场景</span>① 看文档遇生词，划词即译 ② 输入框里写外语 ③ 截图识别图片文字（教程/漫画/PPT）④ 多引擎对比译文 ⑤ 生词本积累</div>
+    <div><span class="k">人格</span><b>快</b>（闪电般的即时）· <b>准</b>（可靠的专业）· <b>轻</b>（无打扰的克制）</div>
+    <div><span class="k">平台</span>Windows 10/11 桌面（WPF），托盘常驻 + 鼠标处小窗；视觉锚点全部在「小窗」这 420px 里</div>
+    <div class="memo"><b>唯一记忆点：</b>按一下热键，译文像一道琥珀光，落到鼠标旁边。<br>——「一道流光划过 = 译达」将在图标（闪电）、进度条（流光带）、翻译完成（光痕扫过）三处同构出现。</div>
+  </div>
+
+  <h2><span class="n">②</span>品类色卡普查 → 独占色落位</h2>
+  <div class="card">
+    <div class="strip">
+      <div style="background:#4285F4">Google 翻译<span>#4285F4</span></div>
+      <div style="background:#0078D4">Microsoft<span>#0078D4</span></div>
+      <div style="background:#2932E1">百度翻译<span>#2932E1</span></div>
+      <div style="background:#0052D9">腾讯翻译<span>#0052D9</span></div>
+      <div style="background:#0C8BFC">有道<span>#0C8BFC</span></div>
+      <div style="background:#0F2B46">DeepL<span>#0F2B46</span></div>
+      <div style="background:#15C39A">Grammarly<span>#15C39A</span></div>
+      <div class="slot" style="background:linear-gradient(135deg,#FFC24D,#F07E00)">速译<span style="color:#5c3a00;text-shadow:none;font-weight:700">#F08C00 琥珀</span></div>
+    </div>
+    <p style="font-size:13px;color:var(--text-2);line-height:1.8;margin:12px 0 0">
+      翻译品类被<b style="color:var(--text-1)">蓝色绝对垄断</b>（7/8 竞品），绿系仅 Grammarly 一家。<b style="color:var(--amber)">暖色——琥珀/荧光笔橙——完全空档</b>，
+      且琥珀有双重品类语义：<b style="color:var(--text-1)">荧光笔划重点</b>（= 划词翻译）+ <b style="color:var(--text-1)">闪电/美团黄式的「快」</b>（中文消费者语境里黄色即速度）。
+      现用 #2C6BED 放进上面那排蓝里毫无违和——独占性测试不合格，故换。</p>
+  </div>
+
+  <h2><span class="n">③</span>七类资产</h2>
+  <div class="grid">
+    <div class="asset">
+      <h3>1 · 图形符号<span class="must">必做</span></h3>
+      <div class="stage">
+        <div class="ico">
+          <div class="pick" style="border-radius:16px">
+            <svg width="72" height="72" viewBox="0 0 48 48"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC24D"/><stop offset="1" stop-color="#F07E00"/></linearGradient></defs><rect x="1" y="1" width="46" height="46" rx="11" fill="url(#g1)"/><path d="M28.5 5.5 L12 28.5 H21.5 L19.5 42.5 L37 19.5 H25.5 L28.5 5.5 Z" fill="#fff"/></svg>
+          </div>
+          <div class="sizes"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#g1)"/><path d="M28.5 5.5 L12 28.5 H21.5 L19.5 42.5 L37 19.5 H25.5 L28.5 5.5 Z" fill="#fff"/></svg><svg width="29" height="29" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="url(#g1)"/><path d="M28.5 5.5 L12 28.5 H21.5 L19.5 42.5 L37 19.5 H25.5 L28.5 5.5 Z" fill="#fff"/></svg><small>A 推荐</small></div>
+        </div>
+        <div class="ico"><svg width="72" height="72" viewBox="0 0 48 48"><rect x="1" y="1" width="46" height="46" rx="11" fill="#1E232B"/><rect x="10" y="15" width="24" height="4.5" rx="2.25" fill="#F2F3F5" opacity=".9"/><rect x="10" y="24" width="16" height="4.5" rx="2.25" fill="#FFB03A"/><path d="M34 22 L28 33 H33 L31 41 L40 29 H34.5 L34 22 Z" fill="#FFB03A" opacity=".95"/></svg>
+          <div class="sizes"><small style="width:72px;text-align:center">B 斜光文字线</small></div></div>
+        <div class="ico"><svg width="72" height="72" viewBox="0 0 48 48"><rect x="1" y="1" width="46" height="46" rx="11" fill="url(#g1)"/><text x="24" y="34" text-anchor="middle" font-size="27" font-weight="700" fill="#fff" font-family="Microsoft YaHei">译</text></svg>
+          <div class="sizes"><small style="width:72px;text-align:center">C 译字升级</small></div></div>
+      </div>
+      <p><b>A「琥珀闪电」</b>：一道闪电 = 速度承诺 + 荧光笔笔触。推导链：品类普查（全是「A/文」双字符与气泡）→ 空档（速度母题无人用）→ 人格（快）→ 参数：笔画占比 ≈ 20%（效率工具 12–16% 上沿，「快」需要力量感）、右倾 8°（能量）、单母题（2 秒徒手可画、剪影可认）。</p>
+      <div class="test"><b>独占性测试：</b>放到 DeepL / Google 翻译旁边——蓝底文字符号 vs 琥珀闪电，一眼可分 ✓。16px 托盘尺寸仍可读（见上方尺寸条）。</div>
+    </div>
+
+    <div class="asset">
+      <h3>2 · 独占色<span class="must">必做</span></h3>
+      <div class="stage light" style="flex-direction:column;gap:8px">
+        <div style="display:flex;gap:8px;width:100%">
+          <div style="flex:1;border-radius:10px;padding:8px;background:#F08C00;color:#231303;font-size:11px;font-weight:700">Primary 填充<br>#F08C00</div>
+          <div style="flex:1;border-radius:10px;padding:8px;background:#FFF2DF;color:#7A4A00;border:1px solid #FFE3B8;font-size:11px">容器底<br>#FFF2DF</div>
+          <div style="flex:1;border-radius:10px;padding:8px;background:#fff;color:#A05E03;border:1px solid #E4E7EB;font-size:11px;font-weight:700">文字/链接<br>#A05E03</div>
+        </div>
+        <div style="display:flex;gap:8px;width:100%">
+          <div style="flex:1;border-radius:10px;padding:8px;background:#1B1D21;color:#FFB944;border:1px solid #33383F;font-size:11px;font-weight:700">深色 Primary<br>#FFB944</div>
+          <div style="flex:1;border-radius:10px;padding:8px;background:#3D2B0E;color:#FFC46B;border:1px solid #55401A;font-size:11px">深色容器<br>#3D2B0E</div>
+          <div style="flex:1;border-radius:10px;padding:8px;background:#FFB03A;color:#2B1A00;font-size:11px;font-weight:700">辉光/签名<br>#FFB03A</div>
+        </div>
+      </div>
+      <p>浅色主题按钮/开关用<b>深琥珀填充 + 深字</b>（白字对比不足 3:1，禁用）；文字级琥珀 #A05E03 ≈ 4.8:1 过 AA。中性灰阶沿用现有冷灰不改动，让琥珀只出现在 10% 强调位。警告色改为橙红系以区别于品牌琥珀。</p>
+      <div class="test"><b>全触点锁死：</b>托盘图标、选中态、开关、焦点环、收藏星、截图选区框、进度光带、错误条文案重音——全部同一族色值。</div>
+    </div>
+
+    <div class="asset">
+      <h3>3 · 形状语言<span class="must">推荐</span></h3>
+      <div class="stage" style="flex-direction:column;gap:14px;padding:24px">
+        <div style="width:100%"><small style="color:var(--text-2)">不确定进度条 = 一道斜切流光（替换胶囊往复）</small><div class="prog"><i></i></div></div>
+        <div style="width:100%"><small style="color:var(--text-2)">强调分隔 / 选中态下划</small><div class="streakline"></div></div>
+      </div>
+      <p>母题：<b>「一道斜切的光」</b>（14° 斜切渐隐光带）。只在强调处出现：进度条、翻译完成光痕、空状态装饰。卡片/按钮的连续圆角体系（6/8/10/12/14）保持不变——形状签名不稀释克制。</p>
+      <div class="test"><b>独占性测试：</b>竞品进度条全是横向胶囊，斜切流光是品类内未见的手势。</div>
+    </div>
+
+    <div class="asset">
+      <h3>4 · 动效签名「译光闪落」<span class="must">必做</span></h3>
+      <div class="stage">
+        <div class="qw" id="sig">
+          <div class="langs"><i>自动检测</i>⇄<i>中文（简体）</i><span style="margin-left:auto">📌 ✕</span></div>
+          <div class="input">予人玫瑰，手有余香。</div>
+          <div class="result" id="sigText"></div>
+          <div class="meta"><span id="sigMeta"></span><span class="ok">Bing · 142ms</span></div>
+          <div class="streak" id="sigStreak"></div>
+        </div>
+        <button class="replay" onclick="replaySig()">▶ 重放签名动效</button>
+      </div>
+      <p><b>触发时机 = 本品唯一的情绪峰值：译文落定。</b>一道琥珀光痕沿译文区划过（420ms，cubic-bezier(0.2,0,0,1) 减速收尾），随后译文以 160ms 淡入。每次成功翻译都出现——重复建立条件反射；失败/降级不播（错误时刻不给奖赏）。</p>
+      <div class="test"><b>独占性测试：</b>品类常规是「转圈等待」；「结果落定 + 光痕」是把等待焦虑翻转为收获瞬间。reduced-motion 降级为直接显示译文。</div>
+    </div>
+
+    <div class="asset">
+      <h3>5 · 启动仪式「首呼点亮」<span class="must">必做</span></h3>
+      <div class="stage">
+        <div class="beambox" id="beam"><div class="beam-inner"><div class="t">速译已就位</div><div class="d">Alt+D 呼出小窗<br>Alt+S 划词 · Alt+O 截图</div></div></div>
+        <button class="replay" onclick="replayBeam()">▶ 重放</button>
+      </div>
+      <p>托盘应用没有启动屏——仪式落在<b>托盘气泡</b>：启动完成后气泡浮现「速译已就位」，同时气泡内小窗缩略图标闪过一道琥珀流光（≤900ms，可忽略可跳过）。寓意：<b>译路已点亮，随呼随到</b>。首次呼出小窗时边框同款流光扫一圈（复用签名光，仅首次，不重复打扰）。</p>
+      <div class="test"><b>仪式三查：</b>只复用琥珀光痕资产 ✓；一句寓意 ✓；≤3s、点任意处即消失 ✓；reduced-motion 直接显示静态气泡。</div>
+    </div>
+
+    <div class="asset">
+      <h3>6 · 语言人格「干脆的动词句」<span class="must">必做</span></h3>
+      <div class="card kv say" style="background:#0B0D11">
+        <div>完成：<b>「已复制译文」「已加入生词本」</b></div>
+        <div>降级：<b>「Google 连不上，已用 Bing 重试」</b></div>
+        <div>出错：<b>「Key 无效——到「引擎」页检查后重试」</b></div>
+        <div>空状态：<b>「输入文字，按 Enter 翻译」</b></div>
+        <div>加载：<b>「翻译中…」</b></div>
+      </div>
+      <p>三条铁律：动词开头说结果，不说过程；永远给出路，不甩错误码；不卖萌不道歉刷屏。句式统一「已 / 在 + 动词 + 宾语」。</p>
+      <div class="test"><b>闭眼测试：</b>满屏「已…」句式 + 数字耗时（142ms），是速译说的话，不是通用系统腔。</div>
+    </div>
+
+    <div class="asset">
+      <h3>7 · 声音与触感<span class="must opt">可选 · 本轮不做</span></h3>
+      <div class="stage"><p style="color:var(--text-2);font-size:13px">托盘工具静音是礼貌——<br>不加提示音，光痕即签名。</p></div>
+      <p>评估：提示音在高频呼出场景是打扰（一天几十次），收益为负。留空位：若未来做「翻译完成」可选音，复用「一滴」轻声，默认关闭。</p>
+    </div>
+  </div>
+
+  <h2><span class="n">④</span>触点分布</h2>
+  <div class="cols3">
+    <div class="touch"><h3>情绪峰值（签名动效驻场）</h3><ul><li>译文落定 → 「译光闪落」光痕</li><li>引擎自动降级成功 → 状态行文案 + 微光</li><li>截图识别完成 → 钉图浮现 + 光痕</li></ul></div>
+    <div class="touch"><h3>高频时刻</h3><ul><li>加载 → 斜切流光进度带</li><li>选中/开关/焦点 → 琥珀独占色</li><li>收藏星 → 琥珀实心</li><li>微文案 → 动词句人格</li></ul></div>
+    <div class="touch"><h3>入口时刻</h3><ul><li>托盘图标 → 琥珀闪电</li><li>启动气泡 → 「速译已就位」仪式</li><li>截图选区框 → 琥珀描边</li></ul></div>
+  </div>
+
+  <p class="confirm">请确认：<b>图形方向</b>、<b>独占色（琥珀）</b>、<b>动效签名「译光闪落」</b>、<b>语言人格</b>、<b>启动仪式</b>。<br>确认后进入整体 UI 创作；品牌资产一经确认，改版不动资产。</p>
+</div>
+<script>
+function replaySig(){
+  const w = document.getElementById('sig');
+  w.classList.remove('go'); void w.offsetWidth;
+  document.getElementById('sigText').textContent = '';
+  document.getElementById('sigMeta').textContent = '翻译中…';
+  setTimeout(()=>{
+    document.getElementById('sigText').textContent = 'The rose in her hand, the fragrance in your hand.';
+    document.getElementById('sigMeta').textContent = '自动检测 → 中文 · 引擎 Bing';
+    w.classList.add('go');
+  }, 500);
+}
+function replayBeam(){
+  const b = document.getElementById('beam');
+  b.classList.remove('go'); void b.offsetWidth; b.classList.add('go');
+}
+replaySig(); replayBeam();
+</script>
+</body>
+</html>

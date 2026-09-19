@@ -1,0 +1,369 @@
+<Window x:Class="TranslationApp.Windows.QuickWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:TranslationApp.ViewModels"
+        Title="速译" MinWidth="320" MinHeight="240"
+        Width="420" Height="320"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" ShowActivated="True" ResizeMode="CanResize"
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
+    <!--
+      FR-002/003：无边框 + 圆角 + 置顶（EXSTYLE 在 SourceInitialized 追加 TOPMOST）；
+      失焦隐藏由 WinEvent 前台监听实现；窗口可激活以便直接输入，隐藏时由代码把焦点还原给原应用。
+      布局层次（自上而下）：语言栏 → 输入区 → 译文区（占据剩余空间）→ 进度/错误/状态。
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome GlassFrameThickness="0" CaptionHeight="0" ResizeBorderThickness="6" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <!--
+      FR-026：「设为默认尺寸」入口（14.2.2）。拖拽只影响本次窗口，想把尺寸固化下来就用这里——
+      写入设置里的默认宽高，下次呼出以该尺寸为基准；设置「通用 → 小窗尺寸」卡片里同步说明了本入口。
+      样式沿用 WPF 系统菜单配色（不写死颜色，深浅主题下均可读）；输入框/译文区有各自的文本菜单，不与之冲突。
+    -->
+    <Window.ContextMenu>
+        <ContextMenu>
+            <MenuItem Header="设为默认尺寸" Click="OnSetDefaultSizeClick"
+                      ToolTip="把当前小窗宽高写入设置默认值，下次呼出使用该尺寸"/>
+        </ContextMenu>
+    </Window.ContextMenu>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!--
+          FR-020（13.4.4）：横排与纵排两个 ItemsControl 共用这一个模板，
+          靠外层 Visibility 切换布局，避免运行时替换 ItemsPanel 踩模板缓存的坑。
+        -->
+        <DataTemplate x:Key="EngineResultTemplate">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 栏头：引擎名 + 复制 / 朗读 -->
+                <Grid Grid.Row="0" Margin="0,0,0,2">
+                    <TextBlock Text="{Binding EngineName}" Style="{StaticResource Text.Caption}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,56,0"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource IconButton}" Width="24" Height="24"
+                                ToolTip="复制该引擎译文" Command="{Binding CopyCommand}">
+                            <TextBlock Text="{StaticResource Icon.Copy}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="24" Height="24" Margin="2,0,0,0"
+                                ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                                Command="{Binding SpeakTextCommand}">
+                            <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 译文：沿用「输出区无框」的既有层次表达 -->
+                <Grid Grid.Row="1">
+                    <TextBox Style="{StaticResource Field.ReadOnlyResult}"
+                             Text="{Binding Text, Mode=OneWay}"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             FontSize="{StaticResource FontSize.Content}"
+                             Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}"/>
+
+                    <ProgressBar Height="2" VerticalAlignment="Top" Margin="0,4,0,0"
+                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- 部分失败（13.4.3）：该栏显示紧凑错误行 + 仅重试该栏 -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="2,2,0,0"
+                                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{StaticResource Icon.Error}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="11" Foreground="{DynamicResource Brush.Error}"
+                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" MaxWidth="220"
+                                   FontSize="{StaticResource FontSize.Small}"
+                                   Foreground="{DynamicResource Brush.Error}"/>
+                        <Button Style="{StaticResource IconButton}" Width="20" Height="20" Margin="4,0,0,0"
+                                ToolTip="仅重试该引擎" Command="{Binding RetryCommand}">
+                            <TextBlock Text="{StaticResource Icon.Refresh}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="11" Foreground="{DynamicResource Brush.Error}"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 纵排时的栏间分隔线（横排改用间距，13.4.4） -->
+                <Border Grid.Row="2" Style="{StaticResource Hairline}" Margin="0,10,0,0"
+                        Visibility="{Binding IsVerticalLayout, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
+    <!-- 外层留白 12px 供阴影绘制，内层为真正的窗体表面 -->
+    <Border x:Name="SurfaceBorder" Margin="12" Padding="{StaticResource Padding.Window}"
+            Background="{DynamicResource Brush.Window}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+            CornerRadius="{StaticResource Radius.Window}"
+            Effect="{StaticResource Shadow.Window}"
+            MouseLeftButtonDown="OnSurfaceMouseDown">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>   <!-- 语言栏 -->
+                <RowDefinition Height="Auto"/>   <!-- 输入区 -->
+                <RowDefinition Height="Auto"/>   <!-- 译文标题行 -->
+                <RowDefinition Height="*"/>      <!-- 译文内容 -->
+                <RowDefinition Height="Auto"/>   <!-- 进度 / 错误 / 状态 -->
+            </Grid.RowDefinitions>
+
+            <!-- ============ 语言栏 ============ -->
+            <Grid x:Name="LanguageRow" Grid.Row="0" Margin="0,0,0,10">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <ComboBox x:Name="SourceLanguageBox" Width="112"
+                              ItemsSource="{Binding SourceOptions}"
+                              SelectedValue="{Binding SourceLanguage}"
+                              SelectedValuePath="Code" DisplayMemberPath="Display"
+                              ToolTip="源语言（自动检测由翻译引擎识别）"/>
+                    <Button Style="{StaticResource IconButton}" Margin="2,0" ToolTip="交换语言 (Ctrl+Enter)"
+                            Command="{Binding SwapCommand}">
+                        <TextBlock Text="{StaticResource Icon.Swap}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="13" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                    </Button>
+                    <ComboBox x:Name="TargetLanguageBox" Width="112"
+                              ItemsSource="{Binding TargetOptions}"
+                              SelectedValue="{Binding TargetLanguage}"
+                              SelectedValuePath="Code" DisplayMemberPath="Display"
+                              ToolTip="目标语言"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- FR-021 截图翻译：放在图钉左侧，与呼出截图流程语义相邻（13.5.2） -->
+                    <Button Style="{StaticResource IconButton}" Margin="0,0,2,0"
+                            ToolTip="{Binding CaptureToolTip}"
+                            Click="OnCaptureClick">
+                        <TextBlock Text="{StaticResource Icon.Capture}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="13" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                    </Button>
+                    <Button x:Name="PinButton" Style="{StaticResource IconButton}"
+                            Click="OnPinClick">
+                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="13">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="{StaticResource Icon.Pin}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
+                                    <Setter Property="ToolTip" Value="固定窗口（不自动隐藏）"/>
+                                    <Style.Triggers>
+                                        <!-- 已固定：图标切换为「取消固定」并用文字级琥珀强调（AA 对比），状态一眼可见 -->
+                                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                            <Setter Property="Text" Value="{StaticResource Icon.Unpin}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                            <Setter Property="ToolTip" Value="取消固定（恢复失焦自动隐藏）"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                    <Button Style="{StaticResource IconButton.Close}" Margin="2,0,0,0" ToolTip="关闭 (Esc)"
+                            Click="OnCloseClick"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ============ 输入区（右上角内嵌朗读原文按钮）============ -->
+            <Grid Grid.Row="1">
+                <TextBox x:Name="InputBox" MinHeight="76" MaxHeight="140"
+                         Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         MaxLength="{x:Static vm:QuickTranslateViewModel.MaxInputLength}"
+                         VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
+                         Padding="10,8,36,8"
+                         KeyDown="OnInputKeyDown"/>
+                <!-- 空状态占位（语言人格：「输入文字，按 Enter 翻译」，动词句说清下一步） -->
+                <TextBlock Text="输入文字，按 Enter 翻译" IsHitTestVisible="False"
+                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                           Margin="12,9,36,0" FontSize="{StaticResource FontSize.Content}"
+                           Foreground="{DynamicResource Brush.TextDisabled}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Button Style="{StaticResource IconButton}" Width="24" Height="24"
+                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                        ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                        Command="{Binding SpeakSourceCommand}">
+                    <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
+                               FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
+                </Button>
+            </Grid>
+
+            <!-- ============ 译文标题行 ============ -->
+            <Grid x:Name="TitleRow" Grid.Row="2" Margin="2,12,0,4">
+                <TextBlock Text="译文" Style="{StaticResource Text.Caption}"
+                           VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- FR-020 结果对比：默认无底透明，激活态 PrimaryContainer 底 + Primary 图标（13.5.2） -->
+                    <Button Width="24" Height="24" Margin="0,0,2,0"
+                            ToolTip="{Binding CompareToolTip}"
+                            Command="{Binding ToggleCompareCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsComparing}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="12">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="{StaticResource Icon.Compare}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsComparing}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                    <!-- 收藏到生词本（FR-015）：已收藏时变主色实心 -->
+                    <Button Style="{StaticResource IconButton}" Width="24" Height="24"
+                            ToolTip="加入生词本（再次点击移除）"
+                            Command="{Binding ToggleFavoriteCommand}"
+                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
+                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="12">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="{StaticResource Icon.Favorite}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsFavoriteActive}" Value="True">
+                                            <Setter Property="Text" Value="{StaticResource Icon.FavoriteFilled}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Button>
+                    <!-- 朗读译文（FR-016） -->
+                    <Button Style="{StaticResource IconButton}" Width="24" Height="24" Margin="2,0"
+                            ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                            Command="{Binding SpeakResultCommand}"
+                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
+                    </Button>
+                    <Button Content="复制译文" Style="{StaticResource Button.Tonal}"
+                            Padding="8,0" Height="24"
+                            Command="{Binding CopyResultCommand}"
+                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ============ 译文内容 / 对比分栏 ============ -->
+            <Grid x:Name="ResultArea" Grid.Row="3">
+                <!--
+                  FR-026 测量影子（14.2.1 第 1 点）：不可见、不参与命中，只用来 Measure 出「译文所需高度」。
+                  刻意**不测真实的只读 TextBox**（Field.ReadOnlyResult）：它的 MaxHeight / 内边距 /
+                  滚动条预留宽度都会干扰测量，且测量过程中改它的文本会污染真实 UI（闪烁、选中态丢失）。
+                  放在 ** 高度的译文行内，因此它的 DesiredSize 不会撑高窗口；可用宽度与内边距
+                  由代码在测量前对齐真实结果区（见 QuickWindow.xaml.cs 的 MeasureContentHeightDip）。
+                -->
+                <TextBlock x:Name="MeasureShadow" Opacity="0" IsHitTestVisible="False" Panel.ZIndex="-1"
+                           VerticalAlignment="Top" TextWrapping="Wrap" Text=""
+                           FontFamily="{StaticResource Font.App}"
+                           FontSize="{StaticResource FontSize.Content}"/>
+
+                <!-- 空状态提示（无译文且不在翻译中时显示） -->
+                <TextBlock Text="翻译结果将显示在这里" Style="{StaticResource Text.Hint}"
+                           Foreground="{DynamicResource Brush.TextDisabled}"
+                           VerticalAlignment="Top" Margin="2,2,0,0"
+                           Visibility="{Binding IsResultPlaceholderVisible, Converter={StaticResource BoolToVis}}"/>
+                <TextBox x:Name="ResultBox" Style="{StaticResource Field.ReadOnlyResult}"
+                         Text="{Binding ResultText, Mode=OneWay}"
+                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         FontSize="{StaticResource FontSize.Content}"
+                         Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- 对比结果被语言/引擎集合变更清空后的提示（13.4.1） -->
+                <TextBlock Text="请重新点击「对比」以获取结果" Style="{StaticResource Text.Hint}"
+                           Foreground="{DynamicResource Brush.TextDisabled}"
+                           VerticalAlignment="Top" Margin="2,2,0,0"
+                           Visibility="{Binding IsCompareHintVisible, Converter={StaticResource BoolToVis}}"/>
+
+                <!--
+                  动效签名「译光闪落」（品牌资产，docs/brand-asset-sheet.html）：
+                  译文落定瞬间一道琥珀光痕沿译文区扫过（420ms 减速收尾），
+                  由 QuickWindow.xaml.cs 在 ResultText 到达且无错误时触发；
+                  系统关闭窗口动画时跳过（reduced-motion 降级）。不参与命中测试与布局。
+                -->
+                <Border x:Name="SignatureStreak" Width="64" IsHitTestVisible="False" Opacity="0"
+                        HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                        Background="{DynamicResource Brush.Signature.Streak}" CornerRadius="4"
+                        RenderTransformOrigin="0.5,0.5" Panel.ZIndex="1">
+                    <Border.RenderTransform>
+                        <TransformGroup>
+                            <SkewTransform AngleX="-14" AngleY="0"/>
+                            <TranslateTransform x:Name="SignatureStreakShift" X="-80"/>
+                        </TransformGroup>
+                    </Border.RenderTransform>
+                </Border>
+
+                <!-- 2 栏：横排（等宽分栏） -->
+                <ItemsControl ItemsSource="{Binding CompareItems}"
+                              ItemTemplate="{StaticResource EngineResultTemplate}"
+                              Visibility="{Binding IsComparisonHorizontal, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="Margin" Value="0,0,12,0"/>
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                </ItemsControl>
+
+                <!-- 3 栏及以上：纵向堆叠 + 结果区滚动 -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Visibility="{Binding IsComparisonVertical, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding CompareItems}"
+                                  ItemTemplate="{StaticResource EngineResultTemplate}"/>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- ============ 进度 / 错误 / 状态 ============ -->
+            <StackPanel x:Name="StatusPanel" Grid.Row="4" Margin="0,10,0,0">
+                <ProgressBar Height="3" Margin="0,0,0,8" IsIndeterminate="True"
+                             Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- 错误：填充色条 + 图标，与普通提示区分 -->
+                <Border Style="{StaticResource Banner.Error}" Margin="0,0,0,6"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{StaticResource Icon.Error}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="12" Foreground="{DynamicResource Brush.Error}"
+                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
+                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
+                                   FontSize="{StaticResource FontSize.Small}"
+                                   Foreground="{DynamicResource Brush.Error}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 普通提示 / 状态 -->
+                <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Hint}"
+                           Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,109 @@
+<!--
+  与主题无关的基础令牌：字体阶梯、间距、圆角、控件高度、图标字形、动效时长、阴影。
+  设计来源：Apple HIG（清晰/克制/层次）+ Material 3（形状尺度/状态层/语义色）。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- ================= 字体 =================
+         Latin 用 Segoe UI、中文回退 Microsoft YaHei UI，均为系统自带，不要求安装字体 -->
+    <FontFamily x:Key="Font.App">Segoe UI, Microsoft YaHei UI</FontFamily>
+    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+    <!-- 图标字体：Windows 11 优先 Segoe Fluent Icons，Windows 10 回退 Segoe MDL2 Assets -->
+    <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <!-- ================= 字阶 ================= -->
+    <sys:Double x:Key="FontSize.Caption">11</sys:Double>   <!-- 辅助说明、字数提示 -->
+    <sys:Double x:Key="FontSize.Small">12</sys:Double>     <!-- 语言栏、按钮、次要文字 -->
+    <sys:Double x:Key="FontSize.Body">13</sys:Double>      <!-- 设置项标题 -->
+    <sys:Double x:Key="FontSize.Content">14</sys:Double>   <!-- 输入文本、译文（正文） -->
+    <sys:Double x:Key="FontSize.Title">15</sys:Double>     <!-- 分区标题、窗口主标题 -->
+    <sys:Double x:Key="FontSize.Headline">19</sys:Double>  <!-- 页面大标题 -->
+
+    <FontWeight x:Key="Weight.Regular">Normal</FontWeight>
+    <FontWeight x:Key="Weight.Medium">Medium</FontWeight>
+    <FontWeight x:Key="Weight.Semibold">SemiBold</FontWeight>
+
+    <sys:Double x:Key="LineHeight.Content">22</sys:Double>
+    <sys:Double x:Key="LineHeight.Body">20</sys:Double>
+
+    <!-- ================= 圆角（Material 形状尺度：6/10/12/14 + 全圆）================= -->
+    <CornerRadius x:Key="Radius.Chip">6</CornerRadius>
+    <CornerRadius x:Key="Radius.Control">8</CornerRadius>
+    <CornerRadius x:Key="Radius.Field">10</CornerRadius>
+    <CornerRadius x:Key="Radius.Card">12</CornerRadius>
+    <CornerRadius x:Key="Radius.Window">14</CornerRadius>
+
+    <!-- ================= 控件高度 ================= -->
+    <sys:Double x:Key="Height.Small">26</sys:Double>
+    <sys:Double x:Key="Height.Control">30</sys:Double>
+    <sys:Double x:Key="Height.Large">34</sys:Double>
+
+    <!-- ================= 间距（4pt 体系）================= -->
+    <Thickness x:Key="Padding.Window">14</Thickness>
+    <Thickness x:Key="Padding.Field">10,8</Thickness>
+    <Thickness x:Key="Padding.Control">10,0</Thickness>
+    <Thickness x:Key="Thickness.Hairline">1</Thickness>
+
+    <sys:Double x:Key="Space.XS">4</sys:Double>
+    <sys:Double x:Key="Space.S">8</sys:Double>
+    <sys:Double x:Key="Space.M">12</sys:Double>
+    <sys:Double x:Key="Space.L">16</sys:Double>
+    <sys:Double x:Key="Space.XL">24</sys:Double>
+
+    <!-- ================= 图标字形 ================= -->
+    <sys:String x:Key="Icon.Pin">&#xE718;</sys:String>
+    <sys:String x:Key="Icon.Unpin">&#xE77A;</sys:String>
+    <sys:String x:Key="Icon.Close">&#xE8BB;</sys:String>
+    <sys:String x:Key="Icon.Swap">&#xE8AB;</sys:String>
+    <sys:String x:Key="Icon.Copy">&#xE8C8;</sys:String>
+    <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
+    <sys:String x:Key="Icon.Check">&#xE73E;</sys:String>
+    <sys:String x:Key="Icon.Globe">&#xE774;</sys:String>
+    <sys:String x:Key="Icon.Settings">&#xE713;</sys:String>
+    <sys:String x:Key="Icon.Info">&#xE946;</sys:String>
+    <sys:String x:Key="Icon.Error">&#xEA39;</sys:String>
+    <sys:String x:Key="Icon.Keyboard">&#xE765;</sys:String>
+    <sys:String x:Key="Icon.Translate">&#xE775;</sys:String>
+    <sys:String x:Key="Icon.Theme">&#xE790;</sys:String>
+    <sys:String x:Key="Icon.Power">&#xE7E8;</sys:String>
+    <sys:String x:Key="Icon.Speak">&#xE767;</sys:String>
+    <sys:String x:Key="Icon.Favorite">&#xE734;</sys:String>
+    <sys:String x:Key="Icon.FavoriteFilled">&#xE735;</sys:String>
+    <sys:String x:Key="Icon.History">&#xE81C;</sys:String>
+    <sys:String x:Key="Icon.Book">&#xE8F1;</sys:String>
+    <sys:String x:Key="Icon.Advanced">&#xE713;</sys:String>
+    <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.Search">&#xE721;</sys:String>
+    <sys:String x:Key="Icon.Export">&#xEDE1;</sys:String>
+    <sys:String x:Key="Icon.Clipboard">&#xE77F;</sys:String>
+    <!-- 引擎页：密钥显示/隐藏切换 -->
+    <sys:String x:Key="Icon.Reveal">&#xE7B3;</sys:String>
+    <sys:String x:Key="Icon.Conceal">&#xED1A;</sys:String>
+    <!-- 结果对比（FR-020）：分栏视图 / 单栏重试 / 高级选项 -->
+    <sys:String x:Key="Icon.Compare">&#xE90C;</sys:String>
+    <sys:String x:Key="Icon.Refresh">&#xE72C;</sys:String>
+    <sys:String x:Key="Icon.Tune">&#xE9E9;</sys:String>
+    <!-- 截图翻译（FR-021）：小窗语言栏的相机按钮 -->
+    <sys:String x:Key="Icon.Capture">&#xE722;</sys:String>
+    <!-- 警告三角（非致命提示条用，与错误 ⊗ 区分） -->
+    <sys:String x:Key="Icon.Warning">&#xE7BA;</sys:String>
+
+    <!-- ================= 动效（Apple 风格的克制时长）================= -->
+    <Duration x:Key="Duration.Instant">0:0:0.08</Duration>
+    <Duration x:Key="Duration.Fast">0:0:0.12</Duration>
+    <Duration x:Key="Duration.Normal">0:0:0.18</Duration>
+    <Duration x:Key="Duration.WindowShow">0:0:0.16</Duration>
+    <Duration x:Key="Duration.WindowHide">0:0:0.10</Duration>
+    <!-- 动效签名「译光闪落」：光痕扫过译文区（docs/brand-asset-sheet.html，420ms 减速收尾） -->
+    <Duration x:Key="Duration.Signature">0:0:0.42</Duration>
+
+    <!-- ================= 阴影（层级）================= -->
+    <!-- 小窗：悬浮于桌面之上，需清晰但不脏 -->
+    <DropShadowEffect x:Key="Shadow.Window" BlurRadius="28" ShadowDepth="6" Direction="270"
+                      Opacity="0.16" Color="{DynamicResource Color.Shadow}" RenderingBias="Quality"/>
+    <!-- 弹出层（下拉菜单）：更收敛 -->
+    <DropShadowEffect x:Key="Shadow.Popup" BlurRadius="18" ShadowDepth="4" Direction="270"
+                      Opacity="0.14" Color="{DynamicResource Color.Shadow}" RenderingBias="Quality"/>
+</ResourceDictionary>
