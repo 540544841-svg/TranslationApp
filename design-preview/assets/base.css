@@ -113,6 +113,7 @@ a { color: var(--accent-text); text-decoration: none; }
 }
 .btn-icon:hover { background: var(--control-bg-hover); }
 .btn-icon:active { background: var(--control-bg-pressed); }
+.btn svg { width: 15px; height: 15px; flex: none; }
 .btn-icon svg { width: 16px; height: 16px; }
 
 .btn-sm { height: 26px; padding: 0 var(--space-3); font-size: 12px; }
@@ -138,6 +139,7 @@ a { color: var(--accent-text); text-decoration: none; }
 .textarea { resize: none; line-height: 1.5; }
 .input::placeholder, .textarea::placeholder { color: var(--text-disabled); }
 .input-wrap { position: relative; display: flex; align-items: center; }
+.input-wrap > span[data-icon] svg { width: 15px; height: 15px; }
 .input-wrap .suffix-btn {
   position: absolute; right: 2px;
   width: 28px; height: 28px;
@@ -220,6 +222,7 @@ a { color: var(--accent-text); text-decoration: none; }
 }
 .menu-item:hover { background: var(--control-bg-hover); }
 .menu-item .mi-check { margin-left: auto; color: var(--accent-text); width: 14px; height: 14px; visibility: hidden; }
+.menu-item .mi-check svg { width: 14px; height: 14px; }
 .menu-item[aria-selected="true"] .mi-check { visibility: visible; }
 .menu-sep { height: 1px; background: var(--divider); margin: var(--space-1) 0; }
 
@@ -235,8 +238,8 @@ a { color: var(--accent-text); text-decoration: none; }
   border-radius: var(--radius-card);
 }
 .card + .card { margin-top: var(--space-2); }
-/* 网格布局（对比栏、入口卡）用 gap 控制间距，取消相邻外边距，保证同行卡片等高 */
-.compare-cols > .card, .entries > .card { margin-top: 0; }
+/* 网格 / 弹性容器用 gap 控制间距，取消相邻外边距，保证同行等高、分组节奏 4px */
+.compare-cols > .card, .entries > .card, .card-group > .card + .card { margin-top: 0; }
 .scard {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -251,6 +254,7 @@ a { color: var(--accent-text); text-decoration: none; }
 
 .expander-head { cursor: pointer; }
 .expander-head .chev { transition: transform var(--dur) var(--ease); width: 14px; height: 14px; color: var(--text-secondary); }
+.expander-head .chev svg { width: 14px; height: 14px; }
 .expander.open .expander-head .chev { transform: rotate(180deg); }
 .expander-body { display: none; border-top: 1px solid var(--divider); padding: var(--space-3) var(--space-4); }
 .expander.open .expander-body { display: block; }
@@ -375,6 +379,7 @@ input[type="range"].slider:active::-webkit-slider-thumb { transform: scale(0.9);
   text-align: center;
 }
 .empty .empty-icon { width: 40px; height: 40px; color: var(--text-disabled); }
+.empty .empty-icon svg { width: 40px; height: 40px; }
 .empty .empty-title { color: var(--text-primary); font-weight: 600; }
 
 /* ---------- 提示条 ---------- */

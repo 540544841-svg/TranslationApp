@@ -265,6 +265,7 @@ table.diff th { color: var(--text-secondary); font-weight: 600; font-size: 12px;
   transition: background var(--dur-fast) var(--ease);
 }
 .taskbar .tb-app:hover { background: var(--scene-glass); }
+.taskbar .tb-app svg { width: 20px; height: 20px; }
 .taskbar .tb-clock { margin-left: auto; padding-right: 14px; color: var(--scene-ink); font-size: 12px; text-align: right; line-height: 1.35; }
 .tray-menu {
   position: fixed; right: 12px; bottom: 56px; z-index: 110;
@@ -285,7 +286,7 @@ table.diff th { color: var(--text-secondary); font-weight: 600; font-size: 12px;
 .tray-bubble {
   position: fixed; right: 16px; bottom: 62px; z-index: 120;
   width: 240px; padding: 12px;
-  display: none; gap: 10px;
+  display: none; align-items: center; gap: 10px;
   border: 1px solid var(--card-stroke); border-radius: var(--radius-card);
   box-shadow: var(--shadow-l8);
 }
