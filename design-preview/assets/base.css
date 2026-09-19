@@ -235,6 +235,8 @@ a { color: var(--accent-text); text-decoration: none; }
   border-radius: var(--radius-card);
 }
 .card + .card { margin-top: var(--space-2); }
+/* 网格布局（对比栏、入口卡）用 gap 控制间距，取消相邻外边距，保证同行卡片等高 */
+.compare-cols > .card, .entries > .card { margin-top: 0; }
 .scard {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
