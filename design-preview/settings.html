@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速译 v3.0 · 设置</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/pages.css">
+</head>
+<body class="mica settings-page">
+  <button class="js-theme-toggle" aria-label="切换主题"></button>
+
+  <div class="win settings-win">
+    <aside class="nav mica">
+      <div class="nav-brand">
+        <span class="brand-mark">译</span>
+        <div>
+          <div class="nb-name">速译</div>
+          <div class="nb-sub">划词 · 截图 · 即译</div>
+        </div>
+      </div>
+      <label class="input-wrap" style="margin:0 8px 12px">
+        <input class="input" placeholder="搜索设置" style="padding-left:32px">
+        <span data-icon="search" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-secondary);display:inline-flex"></span>
+      </label>
+      <nav class="nav-list" id="navList">
+        <a class="nav-item js-nav-item" href="#general"   data-sec="general"   data-title="通用"><span data-icon="cog"></span>通用</a>
+        <a class="nav-item js-nav-item" href="#hotkey"    data-sec="hotkey"    data-title="热键"><span data-icon="keyboard"></span>热键</a>
+        <a class="nav-item js-nav-item" href="#translate" data-sec="translate" data-title="翻译"><span data-icon="globe"></span>翻译</a>
+        <a class="nav-item js-nav-item" href="#engine"    data-sec="engine"    data-title="引擎"><span data-icon="cloud"></span>引擎</a>
+        <a class="nav-item js-nav-item" href="#history"   data-sec="history"   data-title="历史"><span data-icon="history"></span>历史</a>
+        <a class="nav-item js-nav-item" href="#vocab"     data-sec="vocab"     data-title="生词本"><span data-icon="book"></span>生词本</a>
+        <a class="nav-item js-nav-item" href="#advanced"  data-sec="advanced"  data-title="高级"><span data-icon="tune"></span>高级</a>
+      </nav>
+      <div class="nav-foot">v3.0 Fluent 预览稿 · <a href="index.html">返回总览</a></div>
+    </aside>
+
+    <main class="content">
+      <div class="content-head">
+        <h1 class="t-subtitle js-sec-title">通用</h1>
+        <span class="t-caption">改动即时生效，无需重启</span>
+      </div>
+
+      <!-- ============ 通用 ============ -->
+      <section class="js-section" data-sec="general">
+        <div class="group-label">外观</div>
+        <div class="card-group">
+          <div class="card scard">
+            <span class="sc-icon" data-icon="monitor"></span>
+            <div class="sc-body">
+              <div class="sc-title">主题</div>
+              <div class="sc-desc">浅色 / 深色 / 跟随系统，切换即时生效</div>
+            </div>
+            <div class="sc-aside">
+              <div class="segmented" id="themeSeg" role="radiogroup">
+                <button class="seg-item" role="radio" data-theme-value="system">跟随系统</button>
+                <button class="seg-item" role="radio" data-theme-value="light">浅色</button>
+                <button class="seg-item" role="radio" data-theme-value="dark">深色</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group-label">启动与常驻</div>
+        <div class="card-group">
+          <div class="card scard">
+            <span class="sc-icon" data-icon="play"></span>
+            <div class="sc-body">
+              <div class="sc-title">开机自动启动</div>
+              <div class="sc-desc">登录后常驻托盘，随时热键呼出</div>
+            </div>
+            <div class="sc-aside"><label class="switch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="info"></span>
+            <div class="sc-body">
+              <div class="sc-title">启动时显示气泡提示</div>
+              <div class="sc-desc">启动完成后在托盘弹出一次「速译已就位」</div>
+            </div>
+            <div class="sc-aside"><label class="switch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+          </div>
+        </div>
+
+        <div class="group-label">翻译小窗</div>
+        <div class="card-group">
+          <div class="card scard">
+            <span class="sc-icon" data-icon="crop"></span>
+            <div class="sc-body">
+              <div class="sc-title">默认尺寸</div>
+              <div class="sc-desc">宽 × 高（像素），下次呼出生效</div>
+            </div>
+            <div class="sc-aside num-pair">
+              <input class="input" type="number" value="420"><span class="t-caption">×</span><input class="input" type="number" value="360">
+            </div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="pin"></span>
+            <div class="sc-body">
+              <div class="sc-title">记住小窗位置</div>
+              <div class="sc-desc">关闭时记住了上次拖动到的位置</div>
+            </div>
+            <div class="sc-aside"><label class="switch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 热键 ============ -->
+      <section class="js-section" data-sec="hotkey" hidden>
+        <div class="card-group">
+          <div class="card scard">
+            <span class="sc-icon" data-icon="text"></span>
+            <div class="sc-body">
+              <div class="sc-title">划词翻译</div>
+              <div class="sc-desc">先在任意应用中选中文字，再按热键自动取词并翻译</div>
+            </div>
+            <div class="sc-aside"><span class="hotkey-frame js-hotkey" data-hotkey="select" data-keys="Alt+S" tabindex="0"></span></div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="keyboard"></span>
+            <div class="sc-body">
+              <div class="sc-title">输入翻译（呼出小窗）</div>
+              <div class="sc-desc">在光标附近弹出小窗，输入即译</div>
+            </div>
+            <div class="sc-aside"><span class="hotkey-frame js-hotkey" data-hotkey="quick" data-keys="Alt+D" tabindex="0"></span></div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="image"></span>
+            <div class="sc-body">
+              <div class="sc-title">截图翻译</div>
+              <div class="sc-desc">冻结鼠标所在屏幕，拖拽框选区域后自动识别文字并翻译</div>
+            </div>
+            <div class="sc-aside"><span class="hotkey-frame js-hotkey" data-hotkey="capture" data-keys="Alt+A" tabindex="0"></span></div>
+          </div>
+        </div>
+        <div class="banner banner-info" style="margin-top:16px">
+          <span data-icon="info"></span>
+          <span>点击键帽开始录制，按下新组合键即回填；与其他热键冲突时会红框提示。此行为与真实软件一致。</span>
+        </div>
+      </section>
+
+      <!-- ============ 翻译 ============ -->
+      <section class="js-section" data-sec="translate" hidden>
+        <div class="banner banner-info" style="margin-bottom:16px">
+          <span data-icon="info"></span>
+          <span>Bing 与 Google 为非官方接口，无需配置即可使用；Bing 在国内网络可直连，推荐默认使用。官方引擎与 AI 翻译需在「引擎」页填入 API Key。</span>
+        </div>
+        <div class="card-group">
+          <div class="card scard">
+            <span class="sc-icon" data-icon="globe"></span>
+            <div class="sc-body">
+              <div class="sc-title">当前引擎</div>
+              <div class="sc-desc">失败时自动按「备用引擎」顺序降级</div>
+            </div>
+            <div class="sc-aside">
+              <div class="select">
+                <button class="select-btn"><span class="select-label">Bing</span><span data-icon="chevron"></span></button>
+                <div class="menu acrylic">
+                  <div class="menu-item" aria-selected="true">Bing<span class="mi-check"></span></div>
+                  <div class="menu-item">Google<span class="mi-check"></span></div>
+                  <div class="menu-item">DeepL<span class="mi-check"></span></div>
+                  <div class="menu-item">腾讯<span class="mi-check"></span></div>
+                  <div class="menu-item">百度<span class="mi-check"></span></div>
+                  <div class="menu-item">Azure<span class="mi-check"></span></div>
+                  <div class="menu-item">AI 翻译<span class="mi-check"></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card expander open">
+            <div class="scard expander-head" data-exp>
+              <span class="sc-icon" data-icon="compare"></span>
+              <div class="sc-body"><div class="sc-title">备用引擎顺序</div><div class="sc-desc">点 ↑ 上移；当前引擎连不上时按此顺序重试</div></div>
+              <div class="sc-aside"><span class="chev" data-icon="chevron"></span></div>
+            </div>
+            <div class="expander-body engine-order" id="fallbackList"></div>
+          </div>
+          <div class="card expander">
+            <div class="scard expander-head" data-exp>
+              <span class="sc-icon" data-icon="compare"></span>
+              <div class="sc-body"><div class="sc-title">对比引擎</div><div class="sc-desc">小窗点「对比」时并发请求的引擎（未配置的不可勾选）</div></div>
+              <div class="sc-aside"><span class="chev" data-icon="chevron"></span></div>
+            </div>
+            <div class="expander-body check-row">
+              <label class="checkbox"><input type="checkbox" checked><span class="box" data-icon="check"></span>Bing</label>
+              <label class="checkbox"><input type="checkbox" checked><span class="box" data-icon="check"></span>Google</label>
+              <label class="checkbox"><input type="checkbox"><span class="box" data-icon="check"></span>DeepL</label>
+              <label class="checkbox"><input type="checkbox"><span class="box" data-icon="check"></span>AI 翻译</label>
+            </div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="swap"></span>
+            <div class="sc-body">
+              <div class="sc-title">语言对</div>
+              <div class="sc-desc">「自动」跟随系统语言偏好；显式指定时作为源语言</div>
+            </div>
+            <div class="sc-aside" style="gap:8px">
+              <div class="select"><button class="select-btn"><span class="select-label">自动</span><span data-icon="chevron"></span></button>
+                <div class="menu acrylic" data-built="src"></div></div>
+              <span class="t-caption">→</span>
+              <div class="select"><button class="select-btn"><span class="select-label">中文</span><span data-icon="chevron"></span></button>
+                <div class="menu acrylic" data-built="dst"></div></div>
+            </div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="sound"></span>
+            <div class="sc-body">
+              <div class="sc-title">朗读译文（TTS）</div>
+              <div class="sc-desc">小窗结果区出现「朗读」按钮</div>
+            </div>
+            <div class="sc-aside"><label class="switch"><input type="checkbox" checked><span class="track"></span><span class="knob"></span></label></div>
+          </div>
+          <div class="card scard">
+            <span class="sc-icon" data-icon="sound"></span>
+            <div class="sc-body">
+              <div class="sc-title">划词后自动朗读原文</div>
+            </div>
+            <div class="sc-aside"><label class="switch"><input type="checkbox"><span class="track"></span><span class="knob"></span></label></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 引擎 / 历史 / 生词本 / 高级（T4 填充） ============ -->
+      <section class="js-section" data-sec="engine" hidden><div class="empty"><div class="empty-title">引擎</div><div class="t-caption">T4 实现</div></div></section>
+      <section class="js-section" data-sec="history" hidden><div class="empty"><div class="empty-title">历史</div><div class="t-caption">T4 实现</div></div></section>
+      <section class="js-section" data-sec="vocab" hidden><div class="empty"><div class="empty-title">生词本</div><div class="t-caption">T4 实现</div></div></section>
+      <section class="js-section" data-sec="advanced" hidden><div class="empty"><div class="empty-title">高级</div><div class="t-caption">T4 实现</div></div></section>
+    </main>
+  </div>
+
+  <script src="assets/icons.js"></script>
+  <script src="assets/preview.js"></script>
+  <script>
+  Preview.initTheme();
+  document.querySelectorAll('[data-icon]').forEach(function (el) {
+    el.appendChild(icon(el.getAttribute('data-icon')));
+  });
+  document.querySelectorAll('.mi-check').forEach(function (c) { c.appendChild(icon('check')); });
+
+  /* 主题 segmented：跟随系统/浅色/深色 与全站主题联动 */
+  var seg = document.getElementById('themeSeg');
+  function segSelect(v) {
+    seg.querySelectorAll('.seg-item').forEach(function (b) {
+      b.setAttribute('aria-checked', String(b.getAttribute('data-theme-value') === v));
+    });
+  }
+  seg.addEventListener('click', function (e) {
+    var b = e.target.closest('.seg-item'); if (!b) return;
+    var v = b.getAttribute('data-theme-value');
+    segSelect(v);
+    try { if (v === 'system') localStorage.removeItem('sv-theme'); else localStorage.setItem('sv-theme', v); } catch (err) {}
+    document.documentElement.setAttribute('data-theme',
+      v === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : v);
+  });
+  (function syncSegFromState() {
+    var stored = null; try { stored = localStorage.getItem('sv-theme'); } catch (e) {}
+    segSelect(stored || 'system');
+  })();
+
+  /* 备用引擎顺序 */
+  var fallbacks = ['Bing', 'Google', 'DeepL'];
+  var fbList = document.getElementById('fallbackList');
+  function renderFallbacks() {
+    fbList.innerHTML = '';
+    fallbacks.forEach(function (name, i) {
+      var row = document.createElement('div'); row.className = 'list-row';
+      var body = document.createElement('div'); body.className = 'lr-body';
+      var t = document.createElement('div'); t.textContent = (i + 1) + '. ' + name; body.appendChild(t);
+      row.appendChild(body);
+      var up = document.createElement('button');
+      up.className = 'btn btn-icon'; up.style.transform = 'rotate(180deg)';
+      up.appendChild(icon('chevron'));
+      up.title = '上移';
+      up.addEventListener('click', function () {
+        if (i === 0) return;
+        var tmp = fallbacks[i - 1]; fallbacks[i - 1] = name; fallbacks[i] = tmp;
+        renderFallbacks();
+      });
+      row.appendChild(up);
+      fbList.appendChild(row);
+    });
+  }
+  renderFallbacks();
+
+  /* 语言下拉复用 quick 页的构建方式 */
+  var LANGS = ['自动', '中文', '英语', '日语', '韩语', '法语', '德语', '俄语'];
+  ['src', 'dst'].forEach(function (kind) {
+    var menu = document.querySelector('[data-built=' + kind + ']');
+    (kind === 'dst' ? LANGS.filter(function (l) { return l !== '自动'; }) : LANGS).forEach(function (L) {
+      var d = document.createElement('div');
+      d.className = 'menu-item';
+      d.innerHTML = '<span>' + L + '</span><span class="mi-check"></span>';
+      d.querySelector('.mi-check').appendChild(icon('check'));
+      menu.appendChild(d);
+    });
+  });
+
+  initSelects();
+  initRecorders();
+  document.querySelectorAll('[data-exp]').forEach(function (h) {
+    h.addEventListener('click', function () { h.closest('.expander').classList.toggle('open'); });
+  });
+  Preview.route(['general', 'hotkey', 'translate', 'engine', 'history', 'vocab', 'advanced'], 'general');
+  </script>
+</body>
+</html>

@@ -59,6 +59,59 @@
 .demo-console .dc-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- settings ---------- */
+.settings-page {
+  min-height: 100vh;
+  display: grid; place-items: center;
+  padding: 24px;
+}
+.settings-win {
+  width: min(960px, 96vw);
+  height: min(640px, 92vh);
+  display: flex;
+  background: var(--card-solid);
+}
+.settings-win .nav {
+  width: 260px; flex: none;
+  border-right: 1px solid var(--divider);
+  display: flex; flex-direction: column;
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  background: transparent;
+}
+.nav-brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 14px; }
+.nav-brand .nb-name { font-weight: 600; }
+.nav-brand .nb-sub { font-size: 11px; color: var(--text-secondary); }
+.nav-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  position: relative;
+  height: 34px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-ctrl);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.nav-item svg { width: 16px; height: 16px; }
+.nav-item:hover { background: var(--control-bg-hover); }
+.nav-item[aria-selected="true"] { background: var(--accent-container); color: var(--accent-text); }
+.nav-item[aria-selected="true"]::before {
+  content: ""; position: absolute; left: 0; top: 9px;
+  width: 3px; height: 16px; border-radius: 2px;
+  background: var(--accent);
+}
+.nav-foot { padding: 10px; font-size: 11px; color: var(--text-disabled); }
+.settings-win .content {
+  flex: 1; min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-8);
+}
+.content-head { margin-bottom: var(--space-4); display: flex; align-items: baseline; justify-content: space-between; }
+.group-label { font-size: 13px; font-weight: 600; margin: var(--space-6) 0 var(--space-2); }
+.group-label:first-of-type { margin-top: 0; }
+.num-pair { display: flex; align-items: center; gap: 6px; }
+.num-pair .input { width: 72px; text-align: center; }
+.engine-order { display: flex; flex-direction: column; gap: 2px; }
+.check-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); padding: var(--space-2) 0; }
 
 /* ---------- pin ---------- */
 
