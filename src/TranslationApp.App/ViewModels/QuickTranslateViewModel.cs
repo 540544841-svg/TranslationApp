@@ -98,7 +98,11 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>术语表命中徽标文案（P0 批 1）：空 = 本次译文无术语替换。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasGlossaryNote))]
     private string _glossaryNote = "";
+
+    /// <summary>是否显示「术语 ×N」徽标。</summary>
+    public bool HasGlossaryNote => GlossaryNote.Length > 0;
 
     /// <summary>命中明细（「源 → 目标 ×次数」逐行），供徽标 tooltip。</summary>
     [ObservableProperty]

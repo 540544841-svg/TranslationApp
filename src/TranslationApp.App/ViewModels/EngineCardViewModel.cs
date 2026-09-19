@@ -95,6 +95,7 @@ public sealed partial class EngineCardViewModel : ObservableObject
     private readonly Action _onChanged;
     private readonly Action<AppSettings> _save;
     private readonly AppSettings _settings;
+    private readonly TranslationApp.Core.History.EngineStatsRepository? _stats;
     private bool _suppressEndpointWrite;
 
     /// <summary>初始化高级选项时不回写设置（与端点开关同理）。</summary>
@@ -108,12 +109,14 @@ public sealed partial class EngineCardViewModel : ObservableObject
         string description,
         AppSettings settings,
         Action<AppSettings> save,
-        Action onChanged)
+        Action onChanged,
+        TranslationApp.Core.History.EngineStatsRepository? stats = null)
     {
         _translator = translator;
         _settings = settings;
         _save = save;
         _onChanged = onChanged;
+        _stats = stats;
 
         Id = translator.Id;
         Name = translator.Name;
@@ -154,6 +157,40 @@ public sealed partial class EngineCardViewModel : ObservableObject
     /// <summary>可达性提示（仅在不可达时给出，可达时不打扰用户）。</summary>
     [ObservableProperty]
     private string _reachabilityWarning = "";
+
+    /// <summary>P0 批 1 / spec §4.3：近 7 天成败看板文本（无数据为空并隐藏整行）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStats))]
+    private string _statsText = "";
+
+    /// <summary>是否显示看板行。</summary>
+    public bool HasStats => StatsText.Length > 0;
+
+    /// <summary>切到「引擎」页时刷新看板（统计由翻译链路的装饰器写入）。</summary>
+    internal void RefreshStats()
+    {
+        var s = _stats?.GetSummary(Id) ?? new TranslationApp.Core.History.EngineStatsSummary(0, 0, 0, 0, 0, 0, "");
+        if (s.IsEmpty)
+        {
+            StatsText = "";
+            return;
+        }
+
+        var parts = new List<string> { $"近 7 天：成功 {s.Success}" };
+        if (s.FailTotal > 0)
+        {
+            var detail = new List<string>();
+            if (s.FailNetwork > 0) detail.Add($"网络 {s.FailNetwork}");
+            if (s.FailQuota > 0) detail.Add($"配额 {s.FailQuota}");
+            if (s.FailKey > 0) detail.Add($"密钥 {s.FailKey}");
+            if (s.FailEngine > 0) detail.Add($"接口 {s.FailEngine}");
+            parts.Add($"失败 {s.FailTotal}（{string.Join(" / ", detail)}）");
+        }
+        if (s.FallbackUsed > 0) parts.Add($"已自动降级 {s.FallbackUsed}");
+        if (s.LastError.Length > 0 && s.FailTotal > 0) parts.Add($"最近失败：{s.LastError}");
+
+        StatsText = string.Join(" · ", parts);
+    }
 
     /// <summary>是否显示端点不可达提示条。</summary>
     public bool HasReachabilityWarning => ReachabilityWarning.Length > 0;

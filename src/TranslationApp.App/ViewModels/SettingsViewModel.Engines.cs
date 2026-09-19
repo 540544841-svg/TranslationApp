@@ -399,7 +399,7 @@ public partial class SettingsViewModel
 
     /// <summary>新建卡片并接好「变更即刷新」的回调。</summary>
     private EngineCardViewModel NewCard(ITranslator translator, string description) =>
-        new(translator, description, _settings, _store.Save, OnEngineCardChanged);
+        new(translator, description, _settings, _store.Save, OnEngineCardChanged, _engineStats);
 
     private static void AddField(EngineCardViewModel card, EngineFieldViewModel field) =>
         card.Fields.Add(field);

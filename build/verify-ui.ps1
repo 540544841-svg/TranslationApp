@@ -229,8 +229,8 @@ function Stop-App {
 
 # Sidebar nav geometry (shared by the capture helpers).
 # Order per 13.5: general -> hotkeys -> translate -> engine -> history -> vocabulary -> advanced.
-$navClickY = @(134, 172, 210, 248, 286, 324, 362)
-$navNames = @('general', 'hotkeys', 'translate', 'engine', 'history', 'vocabulary', 'advanced')
+$navClickY = @(134, 172, 210, 248, 286, 324, 362, 400)
+$navNames = @('general', 'hotkeys', 'translate', 'engine', 'history', 'vocabulary', 'glossary', 'advanced')
 $engineNavIndex = 3
 
 function Capture-Settings([string]$suffix) {
@@ -261,7 +261,7 @@ function Capture-Settings([string]$suffix) {
         $size = [UiShot]::CaptureWindow($hw, $file, 14)
         Write-Output ("settings-$($i+1)-$($navNames[$i])$suffix.png: " + $size)
 
-        # Translate page: open the engine dropdown to show the "（未配置�? suffix on engines without a key.
+        # Translate page: open the engine dropdown to show the "（未配置�? suffix on engines without a key.
         # Coordinates measured from the capture: the engine ComboBox sits at image (~485..690, ~108..138).
         # No BringToFront here: raising the main window would cover its own popup.
         if ($navNames[$i] -eq 'translate') {

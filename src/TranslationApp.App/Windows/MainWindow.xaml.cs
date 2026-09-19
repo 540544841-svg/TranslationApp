@@ -42,4 +42,14 @@ public partial class MainWindow : Window
             _viewModel.ProxyPassword = box.Password;
         }
     }
+
+    /// <summary>切到「引擎」页时刷新近 7 天成败看板（P0 批 1 / spec §4.3）。</summary>
+    private void OnNavSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, NavTabs)) return;
+        if ((NavTabs.SelectedItem as TabItem)?.Header as string == "引擎")
+        {
+            _viewModel.RefreshEngineStats();
+        }
+    }
 }

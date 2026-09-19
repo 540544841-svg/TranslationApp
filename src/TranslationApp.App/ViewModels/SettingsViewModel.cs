@@ -43,6 +43,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly TranslatorCatalog _catalog;
     private readonly HttpClientProvider _httpProvider;
     private readonly OcrService _ocr;
+    private readonly TranslationApp.Core.History.EngineStatsRepository _engineStats;
     private bool _suppressAutoStartCallback;
     private bool _suppressPasswordCallback;
 
@@ -57,7 +58,8 @@ public partial class SettingsViewModel : ObservableObject
         IVocabularyRepository vocabulary,
         ClipboardMonitor clipboardMonitor,
         ITtsService tts,
-        OcrService ocr)
+        OcrService ocr,
+        TranslationApp.Core.History.EngineStatsRepository engineStats)
     {
         _settings = settings;
         _store = store;
@@ -70,6 +72,7 @@ public partial class SettingsViewModel : ObservableObject
         _clipboardMonitor = clipboardMonitor;
         _tts = tts;
         _ocr = ocr;
+        _engineStats = engineStats;
 
         _showStartBalloon = settings.ShowStartBalloon;
         _autoStartEnabled = autoStart.IsEnabled;
@@ -85,6 +88,10 @@ public partial class SettingsViewModel : ObservableObject
 
         _clipboardMonitorEnabled = settings.ClipboardMonitorEnabled;
         _autoSpeakAfterSelect = settings.AutoSpeakAfterSelect;
+        // P0 批 1：隐私模式 / 阅读清洗 / 术语表
+        _privacyMode = settings.PrivacyMode;
+        _cleanClipboardText = settings.CleanClipboardText;
+        InitializeGlossaryPage();
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
@@ -664,6 +671,41 @@ public partial class SettingsViewModel : ObservableObject
         else
         {
             _clipboardMonitor.Stop();
+        }
+    }
+
+    // ==================== P0 批 1：隐私模式 / 阅读清洗 / 引擎看板 ====================
+
+    /// <summary>隐私模式（spec §2）：本地留痕全关；翻译请求本身仍会发送。</summary>
+    [ObservableProperty]
+    private bool _privacyMode;
+
+    /// <summary>阅读清洗（spec §3）：划词/剪贴板文本合并硬换行，默认开。</summary>
+    [ObservableProperty]
+    private bool _cleanClipboardText;
+
+    partial void OnPrivacyModeChanged(bool value)
+    {
+        Save(s => s.PrivacyMode = value);
+        // 与 App 托盘菜单同一套副作用：开启即停剪贴板监听，关闭且用户开了监听再启动
+        if (value)
+        {
+            _clipboardMonitor.Stop();
+        }
+        else if (_settings.ClipboardMonitorEnabled)
+        {
+            _clipboardMonitor.Start();
+        }
+    }
+
+    partial void OnCleanClipboardTextChanged(bool value) => Save(s => s.CleanClipboardText = value);
+
+    /// <summary>切到「引擎」页时刷新各卡近 7 天看板。</summary>
+    public void RefreshEngineStats()
+    {
+        foreach (var card in EngineCards)
+        {
+            card.RefreshStats();
         }
     }
 

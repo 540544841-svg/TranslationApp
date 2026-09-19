@@ -360,9 +360,16 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 普通提示 / 状态 -->
-                <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Hint}"
-                           Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+                <!-- 普通提示 / 状态 + 术语命中徽标（P0 批 1） -->
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Hint}"
+                               Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="{Binding GlossaryNote}" Margin="8,0,0,0"
+                               FontSize="{StaticResource FontSize.Caption}"
+                               Foreground="{DynamicResource Brush.TextTertiary}"
+                               ToolTip="{Binding GlossaryTooltip}"
+                               Visibility="{Binding HasGlossaryNote, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
             </StackPanel>
         </Grid>
     </Border>
