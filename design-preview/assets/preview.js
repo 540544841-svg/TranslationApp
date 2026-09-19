@@ -141,6 +141,8 @@
   /* 通用下拉：.select > .select-btn + .menu（menu 内含 .menu-item[data-value]） */
   window.initSelects = function () {
     document.querySelectorAll('.select').forEach(function (sel) {
+      if (sel._inited) return;
+      sel._inited = true;
       var btn = sel.querySelector('.select-btn');
       var menu = sel.querySelector('.menu');
       if (!btn || !menu) return;
@@ -171,11 +173,13 @@
 
   window.initSliders = function () {
     document.querySelectorAll('input[type="range"].slider').forEach(function (r) {
+      if (r._inited) return;
+      r._inited = true;
       function fill() {
         var p = (r.value - r.min) / (r.max - r.min) * 100;
         r.style.setProperty('--fill', p + '%');
         var out = r.parentNode.querySelector('.js-slider-out');
-        if (out) out.textContent = Math.round(p) + '%';
+        if (out) out.textContent = r.max <= 1 ? Math.round(p * 100) + '%' : r.value + '%';
       }
       r.addEventListener('input', fill);
       fill();
