@@ -77,6 +77,19 @@ public sealed class HistoryDatabase
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_Vocabulary_Unique
                     ON Vocabulary(SourceText, TargetLanguage);
+
+                CREATE TABLE IF NOT EXISTS EngineStats (
+                    EngineId      TEXT    NOT NULL,
+                    Day           TEXT    NOT NULL,  -- yyyy-MM-dd 本地日期
+                    Success       INTEGER NOT NULL DEFAULT 0,
+                    FailNetwork   INTEGER NOT NULL DEFAULT 0,
+                    FailEngine    INTEGER NOT NULL DEFAULT 0,
+                    FailKey       INTEGER NOT NULL DEFAULT 0,
+                    FailQuota     INTEGER NOT NULL DEFAULT 0,
+                    FallbackUsed  INTEGER NOT NULL DEFAULT 0,
+                    LastError     TEXT    NOT NULL DEFAULT '',
+                    PRIMARY KEY (EngineId, Day)
+                );
                 """;
             command.ExecuteNonQuery();
 
