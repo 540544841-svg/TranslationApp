@@ -31,12 +31,14 @@ public partial class App : Application
     private ServiceProvider? _services;
     private TaskbarIcon? _trayIcon;
     private HotkeyManager? _hotkeyManager;
+    private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
         InitLogging(e.Args.Contains("--verbose"));
+        _verboseStartup = e.Args.Contains("--verbose");
         RegisterGlobalExceptionHandlers();
 
         // 单实例：重复启动时不弹对话框（会残留进程并挡住前台），改为请已有实例显形后本实例立即退出
@@ -62,6 +64,11 @@ public partial class App : Application
         {
             InitTray();
             ShowStartBalloonIfEnabled();
+            if (_verboseStartup && settings.PrivacyMode)
+            {
+                // spec §2.2：用户明确要了 --verbose 但隐私模式压住了日志，必须说明而不是静默失效
+                _trayIcon!.ShowNotification("速译", "隐私模式开启中，--verbose 日志不落盘", NotificationIcon.Info);
+            }
             RegisterHotkeysFromSettings();
             InitClipboardMonitor(settings);
             InitScreenCapture();
@@ -99,9 +106,15 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>初始化滚动文件日志；--verbose 时输出 Debug 级（排障用）。</summary>
+    /// <summary>初始化滚动文件日志；--verbose 时输出 Debug 级（排障用）。隐私模式下完全不落盘（P0 批 1 / spec §2.2）。</summary>
     private static void InitLogging(bool verbose)
     {
+        if (PrivacyPeek())
+        {
+            Log.Logger = new LoggerConfiguration().CreateLogger(); // 无 sink：启动即不写任何日志文件
+            return;
+        }
+
         var logDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "TranslationApp", "logs");
@@ -118,6 +131,19 @@ public partial class App : Application
             .CreateLogger();
 
         Log.Information("=== 速译启动（PID {Pid}）===", Environment.ProcessId);
+    }
+
+    /// <summary>日志初始化早于 DI，隐私模式只能先直读配置文件探一次（读失败按关闭处理）。</summary>
+    private static bool PrivacyPeek()
+    {
+        try
+        {
+            return new JsonSettingsStore().Load().PrivacyMode;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -172,20 +198,43 @@ public partial class App : Application
             ProxyResolver = ResolveProxy,
         };
         services.AddSingleton(httpProvider);
-        services.AddSingleton<ITranslator, BingTranslator>();
+        // P0 批 1 / spec §1.3：引擎先注册为具体类型，再由 TranslatorCatalog 工厂统一包 GlossaryTranslator
+        // （术语替换 + 成败统计），小窗/钉图/对比/测试连接等全部调用点零改动生效。
+        services.AddSingleton<BingTranslator>();
         // FR-028：显式传入设置，让 Google 在开启自动降级时把网络重试降为 0
         // （最坏等待从 2×8s 收到 8s，8s 内即轮到 Bing）——写成工厂，不依赖容器挑构造函数
-        services.AddSingleton<ITranslator>(sp => new GoogleTranslator(
+        services.AddSingleton(sp => new GoogleTranslator(
             sp.GetRequiredService<HttpClientProvider>(), sp.GetRequiredService<AppSettings>()));
         // 官方引擎（FR-024）：未配置 Key 时 IsConfigured 为 false，设置页显示「未配置」且不可选
-        services.AddSingleton<ITranslator, TencentTranslator>();
-        services.AddSingleton<ITranslator, BaiduTranslator>();
+        services.AddSingleton<TencentTranslator>();
+        services.AddSingleton<BaiduTranslator>();
         // 国外引擎：代理归属为「仅国外引擎」作用域（13.1.1）
-        services.AddSingleton<ITranslator, AzureTranslator>();
-        services.AddSingleton<ITranslator, DeepLTranslator>();
+        services.AddSingleton<AzureTranslator>();
+        services.AddSingleton<DeepLTranslator>();
         // AI 通道（FR-022）：OpenAI 兼容，需 BaseURL + Key + 模型名齐备才算已配置，默认不可选
-        services.AddSingleton<ITranslator, LlmTranslator>();
-        services.AddSingleton<TranslatorCatalog>();
+        services.AddSingleton<LlmTranslator>();
+        services.AddSingleton(sp => new EngineStatsRepository(database));
+        services.AddSingleton(sp =>
+        {
+            var appSettings = sp.GetRequiredService<AppSettings>();
+            var stats = sp.GetRequiredService<EngineStatsRepository>();
+            var glossary = new GlossaryCache(() => appSettings.GlossaryJson);
+            ITranslator Wrap(ITranslator inner) => new GlossaryTranslator(
+                inner, glossary.Items,
+                (id, outcome, err) => stats.Record(id, outcome, err),
+                () => appSettings.PrivacyMode);
+            // 顺序即设置页下拉顺序，且 Catalog 回落引擎 = 首个（Bing），与装饰前一致
+            return new TranslatorCatalog(new ITranslator[]
+            {
+                Wrap(sp.GetRequiredService<BingTranslator>()),
+                Wrap(sp.GetRequiredService<GoogleTranslator>()),
+                Wrap(sp.GetRequiredService<TencentTranslator>()),
+                Wrap(sp.GetRequiredService<BaiduTranslator>()),
+                Wrap(sp.GetRequiredService<AzureTranslator>()),
+                Wrap(sp.GetRequiredService<DeepLTranslator>()),
+                Wrap(sp.GetRequiredService<LlmTranslator>()),
+            });
+        });
 
         // 划词取词器：取词期间需抑制剪贴板监听，否则本程序还原剪贴板会再次触发翻译（FR-017）
         services.AddSingleton<ClipboardMonitor>();
@@ -333,6 +382,26 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// P0 批 1 / spec §3.2：划词与剪贴板自动翻译的文本先过阅读清洗（开关 CleanClipboardText，默认开）；
+    /// 手动输入路径不经过这里。cleaned 回传「确实改动了文本」用于状态行提示。
+    /// </summary>
+    private string PrepareCapturedText(string text, out bool cleaned)
+    {
+        cleaned = false;
+        try
+        {
+            if (!_services!.GetRequiredService<AppSettings>().CleanClipboardText) return text;
+            var result = TextCleaner.CleanForReading(text);
+            cleaned = result != text;
+            return result;
+        }
+        catch
+        {
+            return text; // 清洗异常绝不影响取词链路
+        }
+    }
+
+    /// <summary>
     /// FR-005 划词翻译：先取词（模拟 Ctrl+C，必须在小窗获得焦点之前完成，否则选区会丢失），
     /// 再显示小窗并自动翻译；取词失败优雅降级为手动输入模式。
     /// </summary>
@@ -350,7 +419,7 @@ public partial class App : Application
                 return;
             }
 
-            quickWindow.ShowForSelection(text);
+            quickWindow.ShowForSelection(PrepareCapturedText(text, out var cleaned), cleaned: cleaned);
         }
         catch (Exception ex)
         {
@@ -386,6 +455,25 @@ public partial class App : Application
         var settingsItem = new MenuItem { Header = "设置" };
         settingsItem.Click += (_, _) => ShowSettings();
 
+        // P0 批 1 / spec §2.1：隐私模式快捷开关（勾选态跟随设置，切换即时生效并落盘）
+        var appSettings = _services!.GetRequiredService<AppSettings>();
+        var privacyItem = new MenuItem
+        {
+            Header = "隐私模式",
+            IsCheckable = true,
+            IsChecked = appSettings.PrivacyMode,
+        };
+        privacyItem.Click += (_, _) =>
+        {
+            var on = privacyItem.IsChecked;
+            appSettings.PrivacyMode = on;
+            _services!.GetRequiredService<ISettingsStore>().Save(appSettings);
+            ApplyPrivacySideEffects(_services!, on);
+            _trayIcon!.ShowNotification("速译",
+                on ? "隐私模式已开启：不再写入历史与日志" : "隐私模式已关闭",
+                NotificationIcon.Info);
+        };
+
         var exitItem = new MenuItem { Header = "退出" };
         exitItem.Click += (_, _) => Shutdown();
 
@@ -395,9 +483,14 @@ public partial class App : Application
         menu.Items.Add(captureItem);
         menu.Items.Add(closePinsItem);
         menu.Items.Add(settingsItem);
+        menu.Items.Add(privacyItem);
         menu.Items.Add(new Separator());
         menu.Items.Add(exitItem);
-        menu.Opened += (_, _) => closePinsItem.IsEnabled = _services?.GetService<PinWindowManager>()?.HasPins == true;
+        menu.Opened += (_, _) =>
+        {
+            closePinsItem.IsEnabled = _services?.GetService<PinWindowManager>()?.HasPins == true;
+            privacyItem.IsChecked = appSettings.PrivacyMode; // 设置页可能改过，展开时同步
+        };
         _trayIcon.ContextMenu = menu;
 
         // 左键双击托盘图标打开设置主窗口（FR-008）
@@ -440,11 +533,27 @@ public partial class App : Application
         var monitor = _services!.GetRequiredService<ClipboardMonitor>();
         monitor.TextCopied += OnClipboardTextCopied;
 
-        if (settings.ClipboardMonitorEnabled)
+        if (settings.ClipboardMonitorEnabled && !settings.PrivacyMode)
         {
             monitor.Start();
             Log.Information("剪贴板监听已启用");
         }
+        else if (settings.ClipboardMonitorEnabled)
+        {
+            Log.Information("隐私模式开启，剪贴板监听未启动");
+        }
+    }
+
+    /// <summary>
+    /// P0 批 1 / spec §2：隐私模式开关变更后同步副作用（剪贴板监听启停）。
+    /// 托盘菜单与设置页共用；历史/统计/日志的门控在各自路径内读取最新值，无需回调。
+    /// </summary>
+    internal static void ApplyPrivacySideEffects(IServiceProvider services, bool on)
+    {
+        var monitor = services.GetService<ClipboardMonitor>();
+        var settings = services.GetRequiredService<AppSettings>();
+        if (on) monitor?.Stop();
+        else if (settings.ClipboardMonitorEnabled) monitor?.Start();
     }
 
     private void OnClipboardTextCopied(object? sender, string text)
@@ -459,8 +568,14 @@ public partial class App : Application
                     return;
                 }
 
+                if (_services!.GetRequiredService<AppSettings>().PrivacyMode)
+                {
+                    return; // 隐私模式：监听本就未启动，双保险（运行中开启隐私时立即生效）
+                }
+
                 Log.Debug("剪贴板监听触发翻译：{Length} 字符", text.Length);
-                _services!.GetRequiredService<QuickWindow>().ShowForSelection(text);
+                var quickWindow = _services!.GetRequiredService<QuickWindow>();
+                quickWindow.ShowForSelection(PrepareCapturedText(text, out var cleaned), cleaned: cleaned);
             }
             catch (Exception ex)
             {
@@ -476,7 +591,9 @@ public partial class App : Application
     private void WarmUpEngine()
     {
         var settings = _services!.GetRequiredService<AppSettings>();
-        var engine = _services!.GetRequiredService<TranslatorCatalog>().Resolve(settings.Engine);
+        // P0 批 1：Resolve 返回的是 GlossaryTranslator 包装件，预热要剥壳拿真实 Bing 实例
+        var engine = GlossaryTranslator.Unwrap(
+            _services!.GetRequiredService<TranslatorCatalog>().Resolve(settings.Engine));
         if (engine is not BingTranslator bing)
         {
             return;

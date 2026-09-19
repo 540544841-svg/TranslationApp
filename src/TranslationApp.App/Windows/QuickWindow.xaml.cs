@@ -206,9 +206,15 @@ public partial class QuickWindow : Window
     public void ShowForInput(string? notice = null) =>
         ShowInternal(inputText: "", notice: notice, autoTranslate: false);
 
-    /// <summary>呼出小窗（划词翻译模式，FR-005）：带入取到的文本并立即翻译。</summary>
-    public void ShowForSelection(string capturedText, string? notice = null) =>
+    /// <summary>呼出小窗（划词翻译模式，FR-005）：带入取到的文本并立即翻译；cleaned 标记本次文本经过阅读清洗。</summary>
+    public void ShowForSelection(string capturedText, string? notice = null, bool cleaned = false)
+    {
         ShowInternal(inputText: capturedText, notice: notice, autoTranslate: true, selectionSource: true);
+        if (cleaned)
+        {
+            _vm.MarkCleaned();
+        }
+    }
 
     /// <summary>
     /// FR-021 截图翻译交付（13.2.3 步骤 8）：识别文本进入可编辑输入框（光标置末尾），

@@ -314,6 +314,8 @@ public sealed partial class EngineCardViewModel : ObservableObject
         TestMessage = "";
         var stopwatch = Stopwatch.StartNew();
 
+        // P0 批 1 / spec §4.2：「测试连接」不是真实翻译，整段抑制引擎看板计数（术语替换不受影响）
+        using (GlossaryTranslator.SuppressStats())
         try
         {
             var result = await _translator.TranslateAsync(TestText, TestSource, TestTarget);

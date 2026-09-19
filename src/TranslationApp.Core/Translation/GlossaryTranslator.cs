@@ -50,6 +50,13 @@ public sealed class GlossaryTranslator : ITranslator
     public string Name => _inner.Name;
     public bool IsConfigured => _inner.IsConfigured;
 
+    /// <summary>被包装的真实引擎（预热等需要访问引擎特有成员的路径用，如 BingTranslator.WarmUpAsync）。</summary>
+    public ITranslator Inner => _inner;
+
+    /// <summary>剥掉装饰层取回真实引擎；未包装时原样返回。</summary>
+    public static ITranslator Unwrap(ITranslator translator) =>
+        translator is GlossaryTranslator g ? Unwrap(g.Inner) : translator;
+
     public async Task<TranslationResult> TranslateAsync(
         string text,
         string sourceLanguage,

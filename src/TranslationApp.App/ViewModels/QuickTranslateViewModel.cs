@@ -26,7 +26,11 @@ public partial class QuickTranslateViewModel : ObservableObject
     private readonly IVocabularyRepository _vocabulary;
     private readonly ITtsService _tts;
     private readonly ClipboardMonitor _clipboardMonitor;
+    private readonly EngineStatsRepository _stats;
     private string? _lastDetectedLanguage;
+
+    /// <summary>P0 批 1：本次会话原文是否被阅读清洗过（成功状态行追加「已清洗换行」）。</summary>
+    private bool _cleanedNote;
 
     /// <summary>FR-028：进程内累计降级计数（达阈值时一次性托盘气泡建议改默认引擎）。</summary>
     private readonly EngineFallbackCounter _fallbackCounter = new();
@@ -47,7 +51,8 @@ public partial class QuickTranslateViewModel : ObservableObject
         IHistoryRepository history,
         IVocabularyRepository vocabulary,
         ITtsService tts,
-        ClipboardMonitor clipboardMonitor)
+        ClipboardMonitor clipboardMonitor,
+        EngineStatsRepository stats)
     {
         _catalog = catalog;
         _settings = settings;
@@ -56,6 +61,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         _vocabulary = vocabulary;
         _tts = tts;
         _clipboardMonitor = clipboardMonitor;
+        _stats = stats;
         _targetLanguage = settings.TargetLanguage;
     }
 
@@ -89,6 +95,17 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isPinned;
+
+    /// <summary>术语表命中徽标文案（P0 批 1）：空 = 本次译文无术语替换。</summary>
+    [ObservableProperty]
+    private string _glossaryNote = "";
+
+    /// <summary>命中明细（「源 → 目标 ×次数」逐行），供徽标 tooltip。</summary>
+    [ObservableProperty]
+    private string _glossaryTooltip = "";
+
+    /// <summary>标记本次会话原文经过阅读清洗（呼出方在 ShowForSelection 里调用）。</summary>
+    internal void MarkCleaned() => _cleanedNote = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsFavoriteActive))]
@@ -162,6 +179,9 @@ public partial class QuickTranslateViewModel : ObservableObject
         TargetLanguage = targetLanguage;
         IsFavorited = false;
         _lastDetectedLanguage = null;
+        _cleanedNote = false;
+        GlossaryNote = "";
+        GlossaryTooltip = "";
         _selectionSession = false; // 会话重置即清除，由 SetSelectionSession 在呼出时重新标记
         _tts.Stop(); // 呼出新会话时停止上一次朗读
 
@@ -204,7 +224,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         {
             var result = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage);
             ApplySuccess(translator, text, result);
-            StatusText = "";
+            StatusText = _cleanedNote ? "已清洗换行" : "";
         }
         catch (TranslationException ex)
         {
@@ -249,8 +269,18 @@ public partial class QuickTranslateViewModel : ObservableObject
             translator.Name, SourceLanguage, TargetLanguage, text.Length, result.TranslatedText.Length);
 
         // FR-014：成功翻译自动入库（引擎名写**实际使用的引擎**，降级成功即记为 Bing）；FR-015：刷新收藏态
-        _history.Add(text, result.TranslatedText, SourceLanguage, TargetLanguage, translator.Name);
+        // P0 批 1 / spec §2.2：隐私模式下不写历史（生词本收藏是用户主动动作，不受影响）
+        if (!_settings.PrivacyMode)
+        {
+            _history.Add(text, result.TranslatedText, SourceLanguage, TargetLanguage, translator.Name);
+        }
         RefreshFavoriteState();
+
+        // P0 批 1：术语表命中徽标（命中数与明细由 GlossaryTranslator 回填）
+        GlossaryNote = result.GlossaryHits > 0 ? $"术语 ×{result.GlossaryHits}" : "";
+        GlossaryTooltip = result.GlossaryApplied is { Count: > 0 } applied
+            ? string.Join("\n", applied.Select(a => $"{a.Source} → {a.Target} ×{a.Count}"))
+            : "";
 
         // FR-016：划词会话的首次翻译成功后自动朗读原文（手动输入翻译不朗读）
         TryAutoSpeakSource(text);
@@ -301,7 +331,13 @@ public partial class QuickTranslateViewModel : ObservableObject
         {
             var result = await fallback.TranslateAsync(text, SourceLanguage, TargetLanguage);
             ApplySuccess(fallback, text, result);
-            StatusText = EngineFallback.SuccessStatus(primary.Name, fallback.Name, primaryError.Message);
+            StatusText = EngineFallback.SuccessStatus(primary.Name, fallback.Name, primaryError.Message)
+                + (_cleanedNote ? " · 已清洗换行" : "");
+            // P0 批 1 / spec §4.2：主引擎「失败后被降级救回」计 FallbackUsed（失败列已由装饰器记过，不重复）
+            if (!_settings.PrivacyMode)
+            {
+                _stats.Record(primary.Id, EngineOutcome.FallbackUsed);
+            }
             Log.Information("引擎降级成功：{Fallback}（原文 {InputLength} 字符，译文 {OutputLength} 字符）",
                 fallback.Id, text.Length, result.TranslatedText.Length);
             NotifyFallbackThreshold(primary, fallback);
@@ -692,7 +728,10 @@ public partial class QuickTranslateViewModel : ObservableObject
         if (_settings.CompareIncludeInHistory)
         {
             // 13.4.1：对比模式下每个引擎的译文各存一条，引擎字段可区分
-            _history.Add(InputText?.Trim() ?? "", outcome.Text!, SourceLanguage, TargetLanguage, outcome.EngineName);
+            if (!_settings.PrivacyMode)
+            {
+                _history.Add(InputText?.Trim() ?? "", outcome.Text!, SourceLanguage, TargetLanguage, outcome.EngineName);
+            }
         }
     }
 
