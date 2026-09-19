@@ -256,8 +256,13 @@ a { color: var(--accent-text); text-decoration: none; }
 .expander-head .chev { transition: transform var(--dur) var(--ease); width: 14px; height: 14px; color: var(--text-secondary); }
 .expander-head .chev svg { width: 14px; height: 14px; }
 .expander.open .expander-head .chev { transform: rotate(180deg); }
-.expander-body { display: none; border-top: 1px solid var(--divider); padding: var(--space-3) var(--space-4); }
+.expander-body { border-top: 1px solid var(--divider); padding: var(--space-3) var(--space-4); }
+.expander .expander-body { display: none; }
 .expander.open .expander-body { display: block; }
+/* 展开态下保留弹性布局子类；收起/展开两条规则均需 2+ 类才能赢过 pages.css 的 .engine-order/.check-row */
+.expander.open .expander-body.engine-order,
+.expander.open .expander-body.check-row,
+.expander.open .expander-body.lay-row { display: flex; }
 
 /* ---------- 徽标 / 键帽 ---------- */
 .chip {
