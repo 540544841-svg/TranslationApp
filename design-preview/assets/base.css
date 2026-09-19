@@ -456,10 +456,10 @@ input[type="range"].slider:active::-webkit-slider-thumb { transform: scale(0.9);
 .desktop .fake-win {
   position: absolute;
   border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--scene-glass);
+  border: 1px solid var(--scene-stroke);
   backdrop-filter: blur(8px);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--scene-ink);
   padding: var(--space-4);
   font-size: 13px;
 }

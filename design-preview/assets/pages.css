@@ -114,5 +114,55 @@
 .check-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); padding: var(--space-2) 0; }
 
 /* ---------- pin ---------- */
+.pin-stage { position: absolute; left: 12%; top: 12%; }
+.pin-win {
+  position: relative;
+  width: 360px;
+  border: 1px solid var(--scene-stroke-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-l8);
+  overflow: hidden;
+  transform-origin: top left;
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+  background: var(--card-solid);
+}
+.pin-shot { padding: 18px 18px 44px; font-size: 13px; line-height: 1.8; color: var(--text-primary); }
+.pin-shot .ps-head { font-weight: 600; margin-bottom: 8px; display: flex; justify-content: space-between; }
+.pin-shot p { margin: 6px 0; }
+.pin-shot .code { font-family: Consolas, monospace; font-size: 12px; background: var(--control-bg); border: 1px solid var(--card-stroke); border-radius: 4px; padding: 2px 6px; }
+.pin-overlay {
+  position: absolute; inset: 0;
+  padding: 18px;
+  background: var(--acrylic);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-size: 14px; line-height: 1.9;
+  opacity: 0; pointer-events: none;
+  transition: opacity 120ms var(--ease);
+}
+.pin-overlay.show { opacity: 1; }
+.pin-tools {
+  position: absolute; left: 50%; bottom: 8px; z-index: 5;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-stroke);
+  box-shadow: var(--shadow-l8);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  white-space: nowrap;
+}
+.pin-win:hover .pin-tools, .pin-tools.force-show { opacity: 1; }
+.pin-tools .divider { width: 1px; height: 18px; background: var(--divider); margin: 0 4px; }
+.pin-tools .zoom-val { min-width: 40px; text-align: center; font-size: 12px; }
+.pin-tools input.slider { width: 72px; }
+.pin-hint { position: absolute; left: 12%; top: calc(12% + 380px); width: 360px; color: var(--scene-ink-dim); font-size: 12px; }
+.pin-side {
+  position: absolute; right: 24px; top: 84px; width: 220px;
+  padding: 12px; z-index: 20;
+}
+.pin-side .ps-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.pin-side .btn { margin: 0 6px 6px 0; }
 
 /* ---------- capture ---------- */

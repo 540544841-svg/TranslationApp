@@ -22,6 +22,11 @@
   /* 演示桌面场景色（仅预览稿布景用，非产品令牌） */
   --wall-1: #1F3B54; --wall-2: #2E5B6B; --wall-3: #173F3A; --wall-4: #0E1B24;
   --taskbar: rgba(24, 26, 28, 0.72);
+  --scene-glass: rgba(255, 255, 255, 0.08);
+  --scene-stroke: rgba(255, 255, 255, 0.14);
+  --scene-stroke-strong: rgba(255, 255, 255, 0.25);
+  --scene-ink: rgba(255, 255, 255, 0.85);
+  --scene-ink-dim: rgba(255, 255, 255, 0.75);
 }
 
 :root, [data-theme="light"] {
