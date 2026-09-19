@@ -18,6 +18,7 @@
   /* 双主题同值：截图遮罩与选区（深色场景/入口触点，不跟主题） */
   --capture-scrim: rgba(15, 18, 16, 0.55);
   --capture-selection: #5CE0C7;
+  --capture-on: #08201B;
 
   /* 演示桌面场景色（仅预览稿布景用，非产品令牌） */
   --wall-1: #1F3B54; --wall-2: #2E5B6B; --wall-3: #173F3A; --wall-4: #0E1B24;
