@@ -20,15 +20,28 @@ public static class LlmPrompt
     /// <summary>源语言不是「自动检测」时追加的一句（13.3.2）。</summary>
     internal const string SourceHintTemplate = "源语言为{源}。";
 
+    /// <summary>FR-050：上一段原文作语境时追加的一句（明确"不要翻译它"，防模型把语境续写）。</summary>
+    internal const string ContextTemplate = "上一段原文（仅供理解上下文与术语，不要翻译它、不要输出它）：{语境}";
+
     /// <summary>自定义 Prompt 支持的占位符（中英文两种写法等价）。</summary>
     internal static readonly string[] PlaceholderHint =
-        ["{source}", "{target}", "{text}"];
+        ["{source}", "{target}", "{text}", "{context}", "{style}"];
+
+    /// <summary>写进 Prompt 的语境上限：再多只是白烧 Token，且容易让模型把上下文当正文。</summary>
+    internal const int MaxContextChars = 600;
 
     /// <summary>
     /// 构造系统提示：<paramref name="customPrompt"/> 为空/空白时用内置提示（13.3.2）。
     /// <paramref name="sourceLanguage"/> 为 auto 时不追加源语言说明（与内置提示的规则一致）。
+    /// <paramref name="directive"/>（FR-050/051）在内置提示下追加语境与风格行；
+    /// 自定义提示下**只替换占位符**——用户没写 <c>{context}</c> 就不塞进去，尊重用户自定的 Prompt 结构。
     /// </summary>
-    public static string Build(string? customPrompt, string sourceLanguage, string targetLanguage, string text)
+    public static string Build(
+        string? customPrompt,
+        string sourceLanguage,
+        string targetLanguage,
+        string text,
+        TranslationDirective directive = default)
     {
         var sourceDisplay = TranslationLanguages.DisplayName(sourceLanguage);
         var targetDisplay = TranslationLanguages.DisplayName(targetLanguage);
@@ -36,18 +49,50 @@ public static class LlmPrompt
         if (string.IsNullOrWhiteSpace(customPrompt))
         {
             var builtIn = BuiltInTemplate.Replace("{目标}", targetDisplay, StringComparison.Ordinal);
-            return sourceLanguage == TranslationLanguages.AutoCode
-                ? builtIn
-                : builtIn + "\n" + SourceHintTemplate.Replace("{源}", sourceDisplay, StringComparison.Ordinal);
+            if (sourceLanguage != TranslationLanguages.AutoCode)
+            {
+                builtIn += "\n" + SourceHintTemplate.Replace("{源}", sourceDisplay, StringComparison.Ordinal);
+            }
+
+            if (!string.IsNullOrWhiteSpace(directive.ContextBefore))
+            {
+                builtIn += "\n" + ContextTemplate.Replace("{语境}", TrimContext(directive.ContextBefore!), StringComparison.Ordinal);
+            }
+
+            var style = StyleInstruction(directive.Style);
+            return style is null ? builtIn : builtIn + "\n" + style;
         }
 
         // 自定义 Prompt 由用户负责；占位符中英文两套写法都支持，替换顺序不影响结果（键不重叠）
+        var contextValue = directive.ContextBefore is { } ctx && !string.IsNullOrWhiteSpace(ctx)
+            ? TrimContext(ctx) : "";
+        var styleValue = StyleInstruction(directive.Style) ?? "";
         return customPrompt
             .Replace("{target}", targetDisplay, StringComparison.Ordinal)
             .Replace("{目标}", targetDisplay, StringComparison.Ordinal)
             .Replace("{source}", sourceDisplay, StringComparison.Ordinal)
             .Replace("{源}", sourceDisplay, StringComparison.Ordinal)
             .Replace("{text}", text, StringComparison.Ordinal)
-            .Replace("{文本}", text, StringComparison.Ordinal);
+            .Replace("{文本}", text, StringComparison.Ordinal)
+            .Replace("{context}", contextValue, StringComparison.Ordinal)
+            .Replace("{语境}", contextValue, StringComparison.Ordinal)
+            .Replace("{style}", styleValue, StringComparison.Ordinal)
+            .Replace("{风格}", styleValue, StringComparison.Ordinal);
+    }
+
+    /// <summary>风格指令文案（FR-051 / spec §2.2）；<see cref="TranslationStyle.None"/> 返回 null = 不加。</summary>
+    public static string? StyleInstruction(TranslationStyle style) => style switch
+    {
+        TranslationStyle.Colloquial => "风格要求：用口语化、自然的表达，避免书面腔与生硬直译。",
+        TranslationStyle.Formal => "风格要求：用正式、书面的表达，措辞严谨，避免口语与缩略说法。",
+        TranslationStyle.Concise => "风格要求：在忠实原意的前提下尽量简短，删去冗余修饰与重复。",
+        _ => null,
+    };
+
+    /// <summary>语境取**尾部**：连贯性靠的是紧邻的上文，开头那半句被截掉无害。</summary>
+    private static string TrimContext(string context)
+    {
+        var trimmed = context.Trim();
+        return trimmed.Length <= MaxContextChars ? trimmed : trimmed[^MaxContextChars..];
     }
 }

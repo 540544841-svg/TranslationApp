@@ -10,7 +10,7 @@ namespace TranslationApp.Core.Translation;
 ///   取消不计；隐私模式或 <see cref="SuppressStats"/> 作用域内整体不记——「测试连接」用它排除计数）。
 /// 装饰器本身绝不抛出新异常、绝不吞掉引擎异常。
 /// </summary>
-public sealed class GlossaryTranslator : ITranslator
+public sealed class GlossaryTranslator : ITranslator, IPromptDirectiveTranslator
 {
     private static readonly AsyncLocal<int> SuppressDepth = new();
 
@@ -57,21 +57,59 @@ public sealed class GlossaryTranslator : ITranslator
     public static ITranslator Unwrap(ITranslator translator) =>
         translator is GlossaryTranslator g ? Unwrap(g.Inner) : translator;
 
-    public async Task<TranslationResult> TranslateAsync(
+    public Task<TranslationResult> TranslateAsync(
         string text,
         string sourceLanguage,
         string targetLanguage,
         CancellationToken cancellationToken = default)
     {
+        if (_inner is IPromptDirectiveTranslator directable)
+        {
+            return RunAsync(
+                () => directable.TranslateAsync(text, sourceLanguage, targetLanguage, TranslationDirective.None, cancellationToken),
+                text, cancellationToken);
+        }
+
+        return RunAsync(
+            () => _inner.TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken),
+            text, cancellationToken);
+    }
+
+    /// <summary>
+    /// 带指令的翻译（FR-050 / FR-051）：inner 支持就转发（指令只影响 Prompt，术语替换仍只作用于原文与译文），
+    /// inner 不支持则**忽略指令**照常翻译并记统计——由 UI 保证不会给不支持的引擎派指令（按钮不显示）。
+    /// </summary>
+    public Task<TranslationResult> TranslateAsync(
+        string text,
+        string sourceLanguage,
+        string targetLanguage,
+        TranslationDirective directive,
+        CancellationToken cancellationToken = default)
+    {
+        if (_inner is not IPromptDirectiveTranslator directable)
+        {
+            return TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken);
+        }
+
+        return RunAsync(
+            () => directable.TranslateAsync(text, sourceLanguage, targetLanguage, directive, cancellationToken),
+            text, cancellationToken);
+    }
+
+    /// <summary>请求 + 术语后置替换 + 成败统计的公共尾巴（两种入口共用，行为完全一致）。</summary>
+    private async Task<TranslationResult> RunAsync(
+        Func<Task<TranslationResult>> request, string sourceText, CancellationToken cancellationToken)
+    {
         TranslationResult result;
         var startedAt = Environment.TickCount64;
         try
         {
-            result = await _inner.TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken);
+            result = await request();
         }
         catch (OperationCanceledException)
         {
-            throw; // 取消不算失败（13.1.1），不计数
+            cancellationToken.ThrowIfCancellationRequested();
+            throw; // 引擎内部的超时取消同样抛 OperationCanceledException：由令牌判定是否算失败
         }
         catch (TranslationException ex)
         {
@@ -85,7 +123,7 @@ public sealed class GlossaryTranslator : ITranslator
         }
 
         var elapsed = Environment.TickCount64 - startedAt;
-        var applied = ApplyGlossary(result, text);
+        var applied = ApplyGlossary(result, sourceText);
         Record(EngineOutcome.Success, null, elapsed);
         return applied;
     }

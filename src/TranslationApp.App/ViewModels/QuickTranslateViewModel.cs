@@ -105,6 +105,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultPlaceholderVisible))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyStyleCommand))]
     private bool _isBusy;
 
     [ObservableProperty]
@@ -277,6 +278,9 @@ public partial class QuickTranslateViewModel : ObservableObject
         IsAlignView = false;
         AlignPairs.Clear();
 
+        // 批 5：换说法能力取决于当前引擎（档案切换可能刚换掉引擎），风格按钮随会话现算
+        RefreshStyleSupport();
+
         // FR-049：词典卡随会话清空（在途查询靠输入比对判过期，不会把上一句的释义留下）
         DictionaryDefinition = "";
         DictionaryWord = "";
@@ -312,6 +316,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
 
         var translator = _catalog.Resolve(_settings.Engine);
+        SupportsStyle = TranslatorCatalog.SupportsDirectives(translator);
 
         // FR-045（P0 批 4）：TM 相似句回填——本地查询替代网络请求，只会更快，不破落定延迟红线
         if (_settings.TmReuseEnabled && !_tmSkipThisSession)
@@ -331,7 +336,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
         try
         {
-            var result = await translator.TranslateAsync(text, SourceLanguage, TargetLanguage);
+            var result = await TranslateWithDirectiveAsync(translator, text, BuildDirective(translator, text));
             ApplySuccess(translator, text, result);
             StatusText = _cleanedNote ? "已清洗换行" : "";
         }
@@ -359,7 +364,11 @@ public partial class QuickTranslateViewModel : ObservableObject
     }
 
     /// <summary>成功翻译的统一收尾：回填译文/检测语言、入库（FR-014）、刷新收藏（FR-015）、划词自动朗读（FR-016）。</summary>
-    private void ApplySuccess(ITranslator translator, string text, TranslationResult result)
+    /// <param name="recordHistory">FR-051：换说法的重请求不写历史（同句多译文会污染 TM 候选池）。</param>
+    /// <param name="autoSpeak">FR-051：换说法时用户在看着译文，不再朗读一遍原文。</param>
+    private void ApplySuccess(
+        ITranslator translator, string text, TranslationResult result,
+        bool recordHistory = true, bool autoSpeak = true)
     {
         ResultText = result.TranslatedText;
         _ = LookUpDictionaryAsync(text, result.TranslatedText);
@@ -380,7 +389,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
         // FR-014：成功翻译自动入库（引擎名写**实际使用的引擎**，降级成功即记为 Bing）；FR-015：刷新收藏态
         // P0 批 1 / spec §2.2：隐私模式下不写历史（生词本收藏是用户主动动作，不受影响）
-        if (!_settings.PrivacyMode)
+        if (recordHistory && !_settings.PrivacyMode)
         {
             _history.Add(text, result.TranslatedText, SourceLanguage, TargetLanguage, translator.Name);
         }
@@ -411,7 +420,10 @@ public partial class QuickTranslateViewModel : ObservableObject
         UpdateAlignment(text, result.TranslatedText);
 
         // FR-016：划词会话的首次翻译成功后自动朗读原文（手动输入翻译不朗读）
-        TryAutoSpeakSource(text);
+        if (autoSpeak)
+        {
+            TryAutoSpeakSource(text);
+        }
     }
 
     /// <summary>失败上报：错误条按分类给出文案，状态行必须清掉「翻译中…」（否则与错误提示自相矛盾）。</summary>
@@ -630,6 +642,124 @@ public partial class QuickTranslateViewModel : ObservableObject
             Log.Warning(ex, "复制到剪贴板失败");
         }
     }
+
+    // ==================== 批 5 5a：AI 语境化（FR-050）/ 换说法（FR-051） ====================
+
+    /// <summary>
+    /// 「换说法」按钮组是否可用（FR-051）：只有 AI 引擎有 Prompt 通道。
+    /// 官方引擎一律不显示——不做「点了没反应」的假支持。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyStyleCommand))]
+    private bool _supportsStyle;
+
+    /// <summary>当前风格（设置项的镜像，按钮高亮用）；点已激活的按钮 = 取消。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStyleColloquial))]
+    [NotifyPropertyChangedFor(nameof(IsStyleFormal))]
+    [NotifyPropertyChangedFor(nameof(IsStyleConcise))]
+    private string _activeStyleKey = "none";
+
+    public bool IsStyleColloquial => ActiveStyleKey == "colloquial";
+    public bool IsStyleFormal => ActiveStyleKey == "formal";
+    public bool IsStyleConcise => ActiveStyleKey == "concise";
+
+    /// <summary>每次呼出 / 每次翻译后刷新：档案切换可能刚把引擎换成或换成非 AI。</summary>
+    private void RefreshStyleSupport()
+    {
+        SupportsStyle = TranslatorCatalog.SupportsDirectives(_catalog.Resolve(_settings.Engine));
+        ActiveStyleKey = TranslationStyles.Parse(_settings.TranslationStyle).ToSettingKey();
+    }
+
+    /// <summary>
+    /// 组装本次请求的指令（FR-050 / FR-051）：非 AI 引擎直接给 <see cref="TranslationDirective.None"/>；
+    /// 语境只在「语境开关开 + 非隐私 + 同语言对 30 分钟内有别的原文」时携带——
+    /// 那段文本本来就在同一引擎的历史出网请求里，不因此多送一个新内容。
+    /// </summary>
+    private TranslationDirective BuildDirective(ITranslator translator, string text)
+    {
+        if (!TranslatorCatalog.SupportsDirectives(translator))
+        {
+            return TranslationDirective.None;
+        }
+
+        var style = TranslationStyles.Parse(_settings.TranslationStyle);
+        string? context = null;
+        if (_settings.LlmContextEnabled && !_settings.PrivacyMode)
+        {
+            try
+            {
+                context = _history.ContextSource(TargetLanguage, text);
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "读取语境失败，本次按无语境翻译");
+            }
+        }
+
+        if (context is not null)
+        {
+            // 只记长度，绝不记录语境内容（需求 6 日志脱敏）
+            Log.Debug("AI 语境已携带 {Length} 字符", context.Length);
+        }
+
+        return new TranslationDirective(context, style);
+    }
+
+    private Task<TranslationResult> TranslateWithDirectiveAsync(
+        ITranslator translator, string text, TranslationDirective directive) =>
+        translator is IPromptDirectiveTranslator directable
+            ? directable.TranslateAsync(text, SourceLanguage, TargetLanguage, directive)
+            : translator.TranslateAsync(text, SourceLanguage, TargetLanguage);
+
+    /// <summary>
+    /// 换说法（FR-051）：同一原文带新风格重新请求，成功即替换译文；点已激活的按钮 = 取消风格。
+    /// 不写历史（同句多译会污染 TM 候选池）、不自动朗读、强制跳过 TM 回填（否则风格打不进回填的译文）。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanApplyStyle))]
+    private async Task ApplyStyleAsync(string? styleKey)
+    {
+        var current = TranslationStyles.Parse(ActiveStyleKey);
+        var requested = TranslationStyles.Parse(styleKey);
+        var target = requested == current ? TranslationStyle.None : requested;
+
+        ActiveStyleKey = target.ToSettingKey();
+        _settings.TranslationStyle = ActiveStyleKey;
+        _store.Save(_settings);
+
+        var text = InputText?.Trim() ?? "";
+        if (text.Length == 0)
+        {
+            return;
+        }
+
+        var translator = _catalog.Resolve(_settings.Engine);
+        IsBusy = true;
+        ErrorText = "";
+        StatusText = target == TranslationStyle.None ? "恢复原样…" : $"{target.DisplayName()}…";
+        try
+        {
+            var result = await TranslateWithDirectiveAsync(translator, text, BuildDirective(translator, text));
+            ApplySuccess(translator, text, result, recordHistory: false, autoSpeak: false);
+            StatusText = target == TranslationStyle.None ? "已恢复原样" : $"已换说法：{target.DisplayName()}";
+        }
+        catch (TranslationException ex)
+        {
+            ReportFailure(translator, ex);
+        }
+        catch (Exception ex)
+        {
+            ErrorText = "发生未知错误";
+            StatusText = "";
+            Log.Error(ex, "换说法出现未预期异常（引擎={Engine}）", translator.Name);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private bool CanApplyStyle() => SupportsStyle && HasResult && !IsBusy;
 
     private bool CanSpeakSource() => CanSpeak && !string.IsNullOrWhiteSpace(InputText);
 

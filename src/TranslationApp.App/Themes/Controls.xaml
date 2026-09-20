@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   控件样式与模板。全部颜色/Duration 走 DynamicResource，主题切换即时生效。
   状态层（Material 3）：悬停 = Hover 填充，按下 = Pressed 填充，聚焦 = Primary 描边 + 主色文字。
 -->
@@ -488,11 +488,16 @@
                             <Border.RenderTransform>
                                 <TransformGroup>
                                     <SkewTransform AngleX="-14" AngleY="0"/>
-                                    <TranslateTransform x:Name="BarShift" X="-120"/>
+                                    <TranslateTransform X="-120"/>
                                 </TransformGroup>
                             </Border.RenderTransform>
                         </Border>
                     </Border>
+                                        <!--
+                      目标写「命名元素 + 变换子项路径」而不是给 TranslateTransform 起名字：
+                      Transform 是 Freezable，不进模板名字作用域，Storyboard.TargetName 找它
+                      会在窗口尺寸变化（Loaded 重新广播）时抛「找不到名称」（运行日志实测）。
+                    -->
                     <ControlTemplate.Triggers>
                         <!--
                           动画挂在 Loaded 事件上：属性触发器（IsIndeterminate / Visibility）的
@@ -503,8 +508,8 @@
                         <EventTrigger RoutedEvent="Loaded">
                             <BeginStoryboard Name="Slide">
                                 <Storyboard RepeatBehavior="Forever">
-                                    <DoubleAnimation Storyboard.TargetName="BarShift"
-                                                     Storyboard.TargetProperty="X"
+                                    <DoubleAnimation Storyboard.TargetName="Bar"
+                                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.X)"
                                                      From="-120" To="420" Duration="0:0:1.4">
                                         <DoubleAnimation.EasingFunction>
                                             <SineEase EasingMode="EaseInOut"/>

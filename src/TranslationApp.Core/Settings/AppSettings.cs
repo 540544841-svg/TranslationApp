@@ -364,4 +364,18 @@ public sealed class AppSettings
 
     /// <summary>词典层总开关（默认开：划词为单词且导入过词典时显示「词典」卡）。</summary>
     public bool DictionariesEnabled { get; set; } = true;
+
+    // ==================== 批 5 5a：AI 语境化 / 换说法 ====================
+
+    /// <summary>
+    /// AI 引擎携带语境（FR-050，默认开）：把同语言对 30 分钟内最近一条历史的原文写进系统提示。
+    /// 隐私模式下无效——历史本就不入库，不因此多送一个字的用户内容出网。
+    /// </summary>
+    public bool LlmContextEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 译文风格（FR-051）：none / colloquial / formal / concise，仅 AI 引擎有意义。
+    /// 与小窗「换说法」三按钮同步，「写作」档案钉住 formal。
+    /// </summary>
+    public string TranslationStyle { get; set; } = "none";
 }

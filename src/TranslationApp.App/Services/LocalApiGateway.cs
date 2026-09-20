@@ -97,7 +97,14 @@ public sealed class LocalApiGateway(AppSettings settings, ISettingsStore store, 
         string text, string source, string target, System.Threading.CancellationToken cancellationToken)
     {
         var translator = catalog.Resolve(settings.Engine);
-        var result = await translator.TranslateAsync(text, source, target, cancellationToken);
+
+        // 批 5 / FR-051：脚本调用应与手动翻译同口吻，故沿用同一个「风格」设置。
+        // 语境刻意不带——API 是无状态单句请求，塞上文会让调用方无法预期结果。
+        var style = TranslationStyles.Parse(settings.TranslationStyle);
+        var result = translator is IPromptDirectiveTranslator directable && style != TranslationStyle.None
+            ? await directable.TranslateAsync(text, source, target, new TranslationDirective(null, style), cancellationToken)
+            : await translator.TranslateAsync(text, source, target, cancellationToken);
+
         return new LocalApiTranslation(result.TranslatedText, translator.Name, result.GlossaryHits);
     }
 }

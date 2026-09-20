@@ -6,10 +6,13 @@ using TranslationApp.Core.Settings;
 
 namespace TranslationApp.ViewModels;
 
-/// <summary>「场景档案」卡片里的自定义档案行（内置两档固定显示，不进列表）。</summary>
+/// <summary>「场景档案」卡片里的档案行（内置档与自定义档共用同一套按钮模板）。</summary>
 public sealed class ProfileRowViewModel
 {
     public required string Name { get; init; }
+
+    /// <summary>隐式档案的按钮文案与其它档不同（不是「切到」而是「回到」）。</summary>
+    public string Label => Name == ProfileService.StandardName ? $"回到「{Name}」" : $"切到「{Name}」";
 }
 
 /// <summary>
@@ -20,6 +23,12 @@ public sealed class ProfileRowViewModel
 public partial class SettingsViewModel
 {
     public ObservableCollection<ProfileRowViewModel> ProfileRows { get; } = [];
+
+    /// <summary>
+    /// 内置档按钮 + 「回到标准」：从 <see cref="ProfileService.AllProfiles"/> 现取，
+    /// 新增内置档（如 FR-054 的「写作」）不会再漏到设置页——之前是三个硬编码按钮，加一档就少一档。
+    /// </summary>
+    public IReadOnlyList<ProfileRowViewModel> BuiltinProfileRows { get; private set; } = [];
 
     /// <summary>「当前档案：X（当前设置已偏离）」。</summary>
     [ObservableProperty]
@@ -144,6 +153,11 @@ public partial class SettingsViewModel
 
     private void RefreshProfileUi()
     {
+        var builtins = _profiles.AllProfiles().Select(p => new ProfileRowViewModel { Name = p.Name }).ToList();
+        builtins.Add(new ProfileRowViewModel { Name = ProfileService.StandardName });
+        BuiltinProfileRows = builtins;
+        OnPropertyChanged(nameof(BuiltinProfileRows));
+
         ProfileRows.Clear();
         foreach (var profile in _profiles.CustomProfiles())
         {

@@ -61,8 +61,24 @@ public abstract class OfficialTranslatorBase : ITranslator
     protected abstract Task<(string Text, string? DetectedSourceLanguage)> RequestChunkAsync(
         string text, string engineSource, string engineTarget, CancellationToken cancellationToken);
 
-    public async Task<TranslationResult> TranslateAsync(
-        string text, string sourceLanguage, string targetLanguage, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 带调用方指令（语境 / 风格）的分块请求（FR-050 / FR-051）。
+    /// 默认**忽略指令**转调无指令版——只有 AI 引擎覆写它，其余官方引擎零改动、语义不变。
+    /// </summary>
+    protected virtual Task<(string Text, string? DetectedSourceLanguage)> RequestChunkAsync(
+        string text, string engineSource, string engineTarget, TranslationDirective directive, CancellationToken cancellationToken) =>
+        RequestChunkAsync(text, engineSource, engineTarget, cancellationToken);
+
+    public Task<TranslationResult> TranslateAsync(
+        string text, string sourceLanguage, string targetLanguage, CancellationToken cancellationToken = default) =>
+        TranslateCoreAsync(text, sourceLanguage, targetLanguage, TranslationDirective.None, cancellationToken);
+
+    /// <summary>
+    /// 分块翻译主流程。<paramref name="directive"/> 逐块透传：风格要求作用于每个分块，
+    /// 语境是「上一段」而非「前一块」，故同一请求内各块共用不变。
+    /// </summary>
+    protected async Task<TranslationResult> TranslateCoreAsync(
+        string text, string sourceLanguage, string targetLanguage, TranslationDirective directive, CancellationToken cancellationToken)
     {
         // 语言码缺失时明确报错，不静默透传（13.1.7：映射缺失时给出「不支持此语言」提示）
         var target = ToEngineLanguage(targetLanguage)
@@ -77,7 +93,7 @@ public abstract class OfficialTranslatorBase : ITranslator
         {
             cancellationToken.ThrowIfCancellationRequested();
             var (translated, detectedInChunk) = await TranslateChunkWithRetryAsync(
-                chunk, source, target, cancellationToken);
+                chunk, source, target, directive, cancellationToken);
             builder.Append(translated);
             detected ??= detectedInChunk;
         }
@@ -87,13 +103,13 @@ public abstract class OfficialTranslatorBase : ITranslator
 
     /// <summary>仅网络类错误重试 1 次（FR-006）；其余错误直接抛出，由调用方提示用户。</summary>
     private async Task<(string Text, string? Detected)> TranslateChunkWithRetryAsync(
-        string chunk, string engineSource, string engineTarget, CancellationToken cancellationToken)
+        string chunk, string engineSource, string engineTarget, TranslationDirective directive, CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                return await RequestChunkAsync(chunk, engineSource, engineTarget, cancellationToken);
+                return await RequestChunkAsync(chunk, engineSource, engineTarget, directive, cancellationToken);
             }
             catch (TranslationException ex)
                 when (ex.ErrorType == TranslationErrorType.Network && attempt == 1)

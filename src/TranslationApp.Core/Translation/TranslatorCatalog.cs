@@ -39,4 +39,12 @@ public sealed class TranslatorCatalog
         string.IsNullOrWhiteSpace(engineId)
             ? null
             : _engines.FirstOrDefault(e => string.Equals(e.Id, engineId, StringComparison.Ordinal));
+
+    /// <summary>
+    /// 该引擎是否真的接受「语境 / 换说法」指令（FR-050 / FR-051）。
+    /// 必须**先拆掉装饰层**再判定：<see cref="GlossaryTranslator"/> 恒转发指令，
+    /// 直接对它做类型判断会让 Bing/Google 也显示换说法按钮（它们没有对应通道）。
+    /// </summary>
+    public static bool SupportsDirectives(ITranslator translator) =>
+        GlossaryTranslator.Unwrap(translator) is IPromptDirectiveTranslator;
 }

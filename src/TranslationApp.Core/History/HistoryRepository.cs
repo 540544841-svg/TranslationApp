@@ -17,6 +17,12 @@ public interface IHistoryRepository
     /// </summary>
     IReadOnlyList<TmCandidate> TmCandidates(string targetLanguage, int limit = 200);
 
+    /// <summary>
+    /// AI 语境化翻译的语境来源（FR-050）：同目标语言、<paramref name="maxAgeMinutes"/> 分钟内、
+    /// 与当前输入不同最近一条原文；没有则返回 null（不携带语境）。
+    /// </summary>
+    string? ContextSource(string targetLanguage, string currentSource, int maxAgeMinutes = 30);
+
     void Delete(long id);
 
     /// <summary>清空全部历史（FR-014「一键清空」）。</summary>
@@ -33,6 +39,9 @@ public sealed class HistoryRepository : IHistoryRepository
 {
     /// <summary>历史记录上限（FR-014：仅保留最近 5000 条）。</summary>
     public const int MaxRecords = 5000;
+
+    /// <summary>取语境时探测的最近条数（跳过「与当前输入同句」后仍有备选）。</summary>
+    private const int ContextProbeRows = 5;
 
     private readonly HistoryDatabase _database;
 
@@ -155,8 +164,49 @@ public sealed class HistoryRepository : IHistoryRepository
         }
     }
 
-    public void Delete(long id)
+    /// <summary>
+    /// AI 语境（FR-050 / 批 5 spec §1.3）：取同目标语言、<paramref name="maxAgeMinutes"/> 分钟内、
+    /// 且与当前输入不同的一条原文。取最近 5 条再在内存里跳过同文本——「刚把同一句译了两遍」
+    /// 时上一条恰好就是本句，拿它当语境毫无意义。
+    /// </summary>
+    public string? ContextSource(string targetLanguage, string currentSource, int maxAgeMinutes = 30)
     {
+        if (!_database.IsAvailable || maxAgeMinutes <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var cutoff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - maxAgeMinutes * 60_000L;
+            using var connection = _database.OpenConnection();
+            var rows = connection.Query<Row>(
+                """
+                SELECT SourceText, CreatedAtMs FROM History
+                WHERE TargetLanguage = @TargetLanguage AND CreatedAtMs >= @Cutoff
+                ORDER BY Id DESC LIMIT @Limit;
+                """,
+                new { TargetLanguage = targetLanguage, Cutoff = cutoff, Limit = ContextProbeRows });
+
+            var current = currentSource.Trim();
+            foreach (var row in rows)
+            {
+                var candidate = row.SourceText?.Trim() ?? "";
+                if (candidate.Length > 0 && !string.Equals(candidate, current, StringComparison.Ordinal))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public void Delete(long id)    {
         if (!_database.IsAvailable)
         {
             return;

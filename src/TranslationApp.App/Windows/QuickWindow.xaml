@@ -113,7 +113,8 @@
                 <RowDefinition Height="Auto"/>   <!-- 译文标题行 -->
                 <RowDefinition Height="Auto"/>   <!-- 词典卡（FR-049，无命中时 Collapsed） -->
                 <RowDefinition Height="*"/>      <!-- 译文内容 -->
-                <RowDefinition Height="Auto"/>   <!-- 进度 / 错误 / 状态 -->
+                <RowDefinition Height="Auto"/>  <!-- 换说法（FR-051，非 AI 引擎时 Collapsed） -->
+                <RowDefinition Height="Auto"/>  <!-- 进度 / 错误 / 状态 -->
             </Grid.RowDefinitions>
 
             <!-- ============ 语言栏 ============ -->
@@ -447,8 +448,54 @@
                 </ScrollViewer>
             </Grid>
 
+            <!-- ===== 换说法（FR-051）：仅 AI 引擎显示；点已激活的一项 = 取消风格 ===== -->
+            <StackPanel x:Name="StyleRow" Grid.Row="5" Orientation="Horizontal" Margin="2,8,0,0"
+                        Visibility="{Binding SupportsStyle, Converter={StaticResource BoolToVis}}"
+                        ToolTip="换说法只改发给 AI 的风格指令；重新译一次，不重复写入历史">
+                <TextBlock Text="换说法" Style="{StaticResource Text.Caption}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <Button Height="24" Padding="9,0" Margin="0,0,6,0" Content="更口语"
+                        Command="{Binding ApplyStyleCommand}" CommandParameter="colloquial">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStyleColloquial}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Height="24" Padding="9,0" Margin="0,0,6,0" Content="更正式"
+                        Command="{Binding ApplyStyleCommand}" CommandParameter="formal">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStyleFormal}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Height="24" Padding="9,0" Content="更简短"
+                        Command="{Binding ApplyStyleCommand}" CommandParameter="concise">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsStyleConcise}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+
             <!-- ============ 进度 / 错误 / 状态 ============ -->
-            <StackPanel x:Name="StatusPanel" Grid.Row="5" Margin="0,10,0,0">
+            <StackPanel x:Name="StatusPanel" Grid.Row="6" Margin="0,10,0,0">
                 <ProgressBar Height="3" Margin="0,0,0,8" IsIndeterminate="True"
                              Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
 

@@ -206,21 +206,28 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- FR-037（P0 批 2 / spec §3.4）：场景档案——内置阅读/隐私两档 + 自定义快照 -->
+                    <!-- FR-037（P0 批 2 / spec §3.4）：场景档案——内置阅读/隐私/写作三档 + 自定义快照（FR-054） -->
                     <TextBlock Text="场景档案" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <Border Style="{StaticResource Card}" Margin="0,10,0,0">
                         <StackPanel>
                             <TextBlock Text="{Binding ProfileStatusText}" FontSize="{StaticResource FontSize.Body}"/>
-                            <TextBlock Text="把引擎、语言、清洗、术语、隐私与监听打包成一档：热键 Alt+P 或托盘「场景档案」一键循环切换"
+                            <TextBlock Text="把引擎、语言、清洗、术语、风格、隐私与监听打包成一档：热键 Alt+P 或托盘「场景档案」一键循环切换"
                                        Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,10"/>
-                            <StackPanel Orientation="Horizontal">
-                                <Button Content="切到「阅读」" Style="{StaticResource Button.Outline}"
-                                        Command="{Binding ApplyProfileCommand}" CommandParameter="阅读"/>
-                                <Button Content="切到「隐私」" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
-                                        Command="{Binding ApplyProfileCommand}" CommandParameter="隐私"/>
-                                <Button Content="回到「标准」" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
-                                        Command="{Binding ApplyProfileCommand}" CommandParameter="标准"/>
-                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding BuiltinProfileRows}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Label}" Style="{StaticResource Button.Outline}"
+                                                Margin="0,0,8,0"
+                                                Command="{Binding DataContext.ApplyProfileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding Name}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <Border Style="{StaticResource Hairline}" Margin="0,12"/>
                             <StackPanel Orientation="Horizontal">
                                 <TextBox Width="180" VerticalContentAlignment="Center"
@@ -427,6 +434,21 @@
                             <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
                                       VerticalAlignment="Center"
                                       IsChecked="{Binding TmReuseEnabled}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- FR-050（批 5 / spec §1）：AI 语境化翻译 -->
+                    <TextBlock Text="AI 语境" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                <TextBlock Text="把上一段原文交给 AI 引擎作语境" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="连续翻译时，同语言对 30 分钟内最近一条原文会写进系统提示，术语与人称更连贯；只对 AI 引擎生效，自定义 Prompt 需自行写 {context} 占位符。隐私模式下没有历史可取，不会因此多送任何内容"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      IsChecked="{Binding LlmContextEnabled}"/>
                         </Grid>
                     </Border>
 

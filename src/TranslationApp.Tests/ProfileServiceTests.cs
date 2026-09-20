@@ -71,7 +71,7 @@ public class ProfileServiceTests
     }
 
     [Fact]
-    public void NextProfileName_Cycles_StandardReadingPrivacyCustom()
+    public void NextProfileName_Cycles_StandardReadingPrivacyWritingCustom()
     {
         var settings = new AppSettings();
         var service = NewService(settings);
@@ -80,10 +80,12 @@ public class ProfileServiceTests
         settings.ActiveProfile = "阅读";
         Assert.Equal("隐私", service.NextProfileName());
         settings.ActiveProfile = "隐私";
+        Assert.Equal("写作", service.NextProfileName()); // FR-054 内置三档
+        settings.ActiveProfile = "写作";
         Assert.Equal("标准", service.NextProfileName()); // 无自定义时回到标准
 
         Assert.True(service.SaveCurrentAs("我的档"));
-        settings.ActiveProfile = "隐私";
+        settings.ActiveProfile = "写作";
         Assert.Equal("我的档", service.NextProfileName());
         settings.ActiveProfile = "我的档";
         Assert.Equal("标准", service.NextProfileName());
@@ -101,8 +103,8 @@ public class ProfileServiceTests
         var service = NewService(settings);
 
         Assert.True(service.SaveCurrentAs("俄语档"));
-        settings.ActiveProfile = "隐私";
-        Assert.Equal("俄语档", service.NextProfileName()); // 自定义档接在隐私之后
+        settings.ActiveProfile = "写作";
+        Assert.Equal("俄语档", service.NextProfileName()); // 自定义档接在最后
 
         // 把当前值改成别的，再应用自定义档应还原快照
         settings.Engine = "bing";
@@ -196,7 +198,7 @@ public class ProfileServiceTests
         var service = NewService(settings);
 
         Assert.Empty(service.CustomProfiles());
-        Assert.Equal(2, service.AllProfiles().Count); // 仅内置两档
+        Assert.Equal(3, service.AllProfiles().Count); // 仅内置三档
         Assert.True(service.SaveCurrentAs("重建档")); // 保存时覆盖坏数据
         var restored = Assert.Single(service.CustomProfiles());
         Assert.Equal("重建档", restored.Name);
@@ -208,6 +210,6 @@ public class ProfileServiceTests
         var settings = new AppSettings();
         var service = NewService(settings);
         service.SaveCurrentAs("我的档");
-        Assert.Equal(["阅读", "隐私", "我的档"], service.AllProfiles().Select(p => p.Name));
+        Assert.Equal(["阅读", "隐私", "写作", "我的档"], service.AllProfiles().Select(p => p.Name));
     }
 }

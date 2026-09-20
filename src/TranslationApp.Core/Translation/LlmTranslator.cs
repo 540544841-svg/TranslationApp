@@ -17,7 +17,7 @@ namespace TranslationApp.Core.Translation;
 /// </list>
 /// 默认不启用：BaseURL / Key / 模型名三者齐备才算「已配置」（13.3.1），未配置时设置页显示「未配置」且不可选。
 /// </summary>
-public sealed class LlmTranslator : OfficialTranslatorBase
+public sealed class LlmTranslator : OfficialTranslatorBase, IPromptDirectiveTranslator
 {
     /// <summary>13.7 默认接口地址（DeepSeek）。</summary>
     public const string DefaultBaseUrl = "https://api.deepseek.com/v1";
@@ -117,11 +117,16 @@ public sealed class LlmTranslator : OfficialTranslatorBase
         });
 
     /// <summary>构造完整请求（internal 供单测断言头、地址与请求体，不实际发送）。</summary>
-    internal HttpRequestMessage CreateRequest(string text, string engineSource, string engineTarget)
+    internal HttpRequestMessage CreateRequest(string text, string engineSource, string engineTarget) =>
+        CreateRequest(text, engineSource, engineTarget, TranslationDirective.None);
+
+    /// <summary>带语境/风格指令的请求构造（FR-050 / FR-051）：指令只进 system prompt，user 消息恒为原文本体。</summary>
+    internal HttpRequestMessage CreateRequest(
+        string text, string engineSource, string engineTarget, TranslationDirective directive)
     {
         var apiKey = ReadSecret(Settings.LlmApiKeyEncrypted);
         var url = NormalizeEndpoint(Settings.LlmBaseUrl);
-        var prompt = LlmPrompt.Build(Settings.LlmPrompt, engineSource, engineTarget, text);
+        var prompt = LlmPrompt.Build(Settings.LlmPrompt, engineSource, engineTarget, text, directive);
         var body = BuildRequestBody(Settings.LlmModel, prompt, text, Settings.LlmTemperature);
 
         var content = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
@@ -137,11 +142,15 @@ public sealed class LlmTranslator : OfficialTranslatorBase
         return request;
     }
 
+    protected override Task<(string Text, string? DetectedSourceLanguage)> RequestChunkAsync(
+        string text, string engineSource, string engineTarget, CancellationToken cancellationToken) =>
+        RequestChunkAsync(text, engineSource, engineTarget, TranslationDirective.None, cancellationToken);
+
     protected override async Task<(string Text, string? DetectedSourceLanguage)> RequestChunkAsync(
-        string text, string engineSource, string engineTarget, CancellationToken cancellationToken)
+        string text, string engineSource, string engineTarget, TranslationDirective directive, CancellationToken cancellationToken)
     {
         var (isSuccess, status, body) = await SendAsync(
-            CreateRequest(text, engineSource, engineTarget), text.Length, cancellationToken);
+            CreateRequest(text, engineSource, engineTarget, directive), text.Length, cancellationToken);
 
         if (!isSuccess)
         {
@@ -151,4 +160,13 @@ public sealed class LlmTranslator : OfficialTranslatorBase
         // 13.3.1：LLM 不回传检测结果 → 源语言保持「自动检测」，不回填（与其它引擎的行为差异）
         return (LlmResponseParser.Parse(body), null);
     }
+
+    /// <summary>AI 引擎是本产品唯一支持「语境 / 换说法」指令的通道（批 5 spec §1.1）。</summary>
+    public Task<TranslationResult> TranslateAsync(
+        string text,
+        string sourceLanguage,
+        string targetLanguage,
+        TranslationDirective directive,
+        CancellationToken cancellationToken = default) =>
+        TranslateCoreAsync(text, sourceLanguage, targetLanguage, directive, cancellationToken);
 }

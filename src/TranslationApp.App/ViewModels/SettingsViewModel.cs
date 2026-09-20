@@ -123,6 +123,7 @@ public partial class SettingsViewModel : ObservableObject
         _mouseSideButtonCapture = settings.MouseSideButtonCapture;
         _pasteTranslateEnabled = settings.PasteTranslateEnabled;
         _tmReuseEnabled = settings.TmReuseEnabled;
+        _llmContextEnabled = settings.LlmContextEnabled;
         // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
         InitializeApiPage();
         // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
@@ -795,6 +796,15 @@ public partial class SettingsViewModel : ObservableObject
     private bool _tmReuseEnabled;
 
     partial void OnTmReuseEnabledChanged(bool value) => Save(s => s.TmReuseEnabled = value);
+
+    /// <summary>
+    /// AI 语境化（FR-050，默认开）：把同语言对 30 分钟内最近一条原文写进系统提示，让连续翻译保持术语与语气连贯。
+    /// 只对 AI 引擎有效；隐私模式下历史不入库 → 自然无语境，也不会因此多送一个字出网。
+    /// </summary>
+    [ObservableProperty]
+    private bool _llmContextEnabled;
+
+    partial void OnLlmContextEnabledChanged(bool value) => Save(s => s.LlmContextEnabled = value);
 
     /// <summary>目标修饰键下拉项。</summary>
     public IReadOnlyList<ThemeOption> DoubleTapKeyOptions { get; } =

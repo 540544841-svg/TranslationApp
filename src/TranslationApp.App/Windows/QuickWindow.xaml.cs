@@ -777,6 +777,7 @@ public partial class QuickWindow : Window
     {
         var chrome = MeasureElementDip(LanguageRow, contentWidthDip)
                      + MeasureElementDip(TitleRow, contentWidthDip)
+                     + MeasureElementDip(StyleRow, contentWidthDip)
                      + MeasureElementDip(StatusPanel, contentWidthDip)
                      + SurfaceBorder.Padding.Top + SurfaceBorder.Padding.Bottom
                      + SurfaceBorder.Margin.Top + SurfaceBorder.Margin.Bottom;
@@ -985,6 +986,8 @@ public partial class QuickWindow : Window
             // FR-049：词典卡出现/消失、展开/收起都改变所需高度（同样走防抖，避免连续两次重排）
             case nameof(QuickTranslateViewModel.DictionaryDefinition):
             case nameof(QuickTranslateViewModel.IsDictionaryExpanded):
+            // FR-051：换说法行只在 AI 引擎下出现，出现即多占一行
+            case nameof(QuickTranslateViewModel.SupportsStyle):
                 ScheduleAdaptiveRecompute();
                 return;
 
