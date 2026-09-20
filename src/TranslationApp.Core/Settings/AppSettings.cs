@@ -158,6 +158,13 @@ public sealed class AppSettings
     public string GlossaryJson { get; set; } = "[]";
 
     /// <summary>
+    /// 术语表全局开关（P0 批 2 / FR-037 spec §4）：false = 词条保留但不参与替换
+    /// （场景档案用它做「阅读/隐私」档的术语维度，不清空用户词表）。
+    /// </summary>
+    public bool GlossaryEnabled { get; set; } = true;
+
+
+    /// <summary>
     /// 隐私模式（P0 批 1 / spec §2）：开启后不写翻译历史、暂停剪贴板监听、引擎统计不记录、
     /// --verbose 日志不落盘；翻译请求本身仍会发送（否则无法翻译）。生词本收藏为用户主动动作，不受影响。
     /// </summary>
@@ -264,4 +271,46 @@ public sealed class AppSettings
     /// 永不遮挡图片文字，自动淡出失去意义。字段与设置页开关暂保留以兼容旧配置，不再影响钉图行为。
     /// </summary>
     public bool PinToolbarAutoFade { get; set; } = true;
+
+    // ==================== FR-035 Anki 直推（P0 批 2） ====================
+
+    /// <summary>Anki 直推总开关（默认关）：开启后收藏生词顺带推给本机 Anki（AnkiConnect 插件）。</summary>
+    public bool AnkiEnabled { get; set; }
+
+    /// <summary>目标牌组名（以 Anki 内实际名称为准）。</summary>
+    public string AnkiDeck { get; set; } = "生词本";
+
+    /// <summary>笔记模板名（Anki 内置「基本」即可用）。</summary>
+    public string AnkiModel { get; set; } = "基本";
+
+    /// <summary>模板正面字段名（放原文）。</summary>
+    public string AnkiFrontField { get; set; } = "正面";
+
+    /// <summary>模板背面字段名（放译文）。</summary>
+    public string AnkiBackField { get; set; } = "背面";
+
+    /// <summary>收藏生词时是否顺带推送（仅 <see cref="AnkiEnabled"/> 开启时生效）。</summary>
+    public bool AnkiPushOnFavorite { get; set; } = true;
+
+    // ==================== FR-036 悬停取词（P0 批 2） ====================
+
+    /// <summary>
+    /// 悬停取词（默认关）：选中文字后光标旁浮出图标，点击才翻译。需要常驻低级鼠标钩子，
+    /// 隐私模式开启时**绝不安装**（spec §2.3 红线）；开关本身即「一键全关」。
+    /// </summary>
+    public bool HoverSelectEnabled { get; set; }
+
+    // ==================== FR-037 场景档案（P0 批 2） ====================
+
+    /// <summary>当前档案名；空 = 标准档（不设任何覆盖）。</summary>
+    public string ActiveProfile { get; set; } = "";
+
+    /// <summary>
+    /// 自定义档案列表（<c>List&lt;AppProfile&gt;</c> 的 JSON，上限 10 个）：
+    /// 解析与切换统一走 <see cref="ProfileService"/>，损坏按空表读。内置「阅读/隐私」两档不在此列。
+    /// </summary>
+    public string CustomProfilesJson { get; set; } = "[]";
+
+    /// <summary>场景档案循环切换热键（标准 → 阅读 → 隐私 → 自定义 → 标准）。</summary>
+    public string HotkeySwitchProfile { get; set; } = "Alt+P";
 }
