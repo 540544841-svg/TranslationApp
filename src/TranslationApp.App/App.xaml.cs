@@ -6,6 +6,7 @@ using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
+using TranslationApp.Core.Anki;
 using TranslationApp.Core.Capture;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Hotkey;
@@ -31,6 +32,7 @@ public partial class App : Application
     private ServiceProvider? _services;
     private TaskbarIcon? _trayIcon;
     private HotkeyManager? _hotkeyManager;
+    private HoverTriggerLogic? _hoverLogic;
     private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -71,6 +73,7 @@ public partial class App : Application
             }
             RegisterHotkeysFromSettings();
             InitClipboardMonitor(settings);
+            InitHoverSelect();
             InitScreenCapture();
             InitEngineFallback();
             WarmUpEngine();
@@ -97,6 +100,7 @@ public partial class App : Application
         _hotkeyManager?.Dispose();
         _services?.GetService<PinWindowManager>()?.CloseAll(); // FR-027：退出前释放钉图位图
         _services?.GetService<ClipboardMonitor>()?.Dispose();
+        _services?.GetService<MouseButtonHook>()?.Dispose(); // FR-036：卸载鼠标钩子
         _services?.GetService<ITtsService>()?.Stop();
         _trayIcon?.Dispose();
         _services?.Dispose();
@@ -218,7 +222,8 @@ public partial class App : Application
         {
             var appSettings = sp.GetRequiredService<AppSettings>();
             var stats = sp.GetRequiredService<EngineStatsRepository>();
-            var glossary = new GlossaryCache(() => appSettings.GlossaryJson);
+            // FR-037（批 2 / spec §4）：GlossaryEnabled=false 时给空表——词条保留、替换直通
+            var glossary = new GlossaryCache(() => appSettings.GlossaryJson, () => appSettings.GlossaryEnabled);
             ITranslator Wrap(ITranslator inner) => new GlossaryTranslator(
                 inner, glossary.Items,
                 (id, outcome, err) => stats.Record(id, outcome, err),
@@ -245,8 +250,15 @@ public partial class App : Application
         services.AddSingleton(database);
         services.AddSingleton<IHistoryRepository>(_ => new HistoryRepository(database));
         services.AddSingleton<IVocabularyRepository>(_ => new VocabularyRepository(database));
+        // FR-035：Anki 直推客户端——专用 HttpClient 强制不经代理（127.0.0.1 被系统代理转发会假失败）
+        services.AddSingleton(_ => new AnkiConnectClient(AnkiConnectClient.CreateLocalHostClient()));
         services.AddSingleton<ITtsService, TtsService>();
         services.AddSingleton<HotkeyManager>();
+        // FR-036：悬停取词的鼠标钩子与决策层（默认不安装，见 ApplyPrivacySideEffects 门控）
+        services.AddSingleton<MouseButtonHook>();
+        services.AddSingleton<HoverBadgeWindow>();
+        // FR-037：场景档案服务（对 AppSettings 单例做稀疏覆盖；落盘仍由 ISettingsStore 负责）
+        services.AddSingleton(sp => new ProfileService(sp.GetRequiredService<AppSettings>()));
         services.AddSingleton<AutoStart>();
         // FR-021 截图翻译：OCR 能力探测（Windows.Media.Ocr）+ 截屏/遮罩/识别流程编排。
         // FR-030（14.9.2）：识别按 OcrLocalEngine 分发 windows/paddle 双引擎；paddle 降级一次性气泡走同一回调
@@ -322,6 +334,13 @@ public partial class App : Application
             failures.Add(captureDefinition.ToString());
         }
 
+        // FR-037（批 2）：场景档案循环切换热键（标准 → 阅读 → 隐私 → 自定义 → 标准）
+        var profileDefinition = HotkeyDefinition.ParseOrDefault(settings.HotkeySwitchProfile, HotkeyDefinition.DefaultProfile);
+        if (!_hotkeyManager.TryRegister("profile", profileDefinition))
+        {
+            failures.Add(profileDefinition.ToString());
+        }
+
         if (failures.Count > 0)
         {
             _trayIcon!.ShowNotification(
@@ -347,6 +366,92 @@ public partial class App : Application
         else if (e.Name == "capture")
         {
             _ = _services!.GetRequiredService<ScreenCaptureTranslateFlow>().StartAsync();
+        }
+        else if (e.Name == "profile")
+        {
+            // FR-037：循环切换到下一个档案
+            var profiles = _services!.GetRequiredService<ProfileService>();
+            SwitchProfile(profiles.NextProfileName());
+        }
+    }
+
+    /// <summary>
+    /// FR-037：应用档案并跑副作用。档案只改 <see cref="AppSettings"/> 的 8 个键（Core <c>ProfileService</c>），
+    /// 这里负责落盘 + 与托盘/设置页同一套启停门控（剪贴板监听、鼠标钩子、隐私）。
+    /// </summary>
+    private void SwitchProfile(string name)
+    {
+        var services = _services!;
+        var profiles = services.GetRequiredService<ProfileService>();
+        var settings = services.GetRequiredService<AppSettings>();
+
+        profiles.Apply(name);
+        services.GetRequiredService<ISettingsStore>().Save(settings);
+        ApplyPrivacySideEffects(services, settings.PrivacyMode);
+        _trayIcon!.ShowNotification("速译", $"已切换场景档案：{profiles.DisplayName}", NotificationIcon.Info);
+        Log.Information("场景档案切换：{Profile}（偏离标记 {Deviation}）", profiles.DisplayName, profiles.IsDeviation());
+    }
+
+    /// <summary>托盘「场景档案」子菜单：展开时重建列表与勾选态（自定义档案可能已在设置页增删）。</summary>
+    private void RebuildProfileMenu(MenuItem host)
+    {
+        var profiles = _services!.GetRequiredService<ProfileService>();
+        host.Items.Clear();
+        foreach (var name in new[] { ProfileService.StandardName }
+                     .Concat(profiles.AllProfiles().Select(p => p.Name)))
+        {
+            var item = new MenuItem
+            {
+                Header = name,
+                IsCheckable = true,
+                IsChecked = profiles.DisplayName == name,
+            };
+            var captured = name;
+            item.Click += (_, _) => SwitchProfile(captured);
+            host.Items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// FR-036（spec §2.2）：悬停取词接线。钩子只观察不拦截；显隐判定在 Core <c>HoverTriggerLogic</c>；
+    /// 浮标点击复用 Alt+S 的 <see cref="TranslateSelectionAsync"/>，不新建第二条取词链路。
+    /// 开关（含隐私模式豁免）在 <see cref="ApplyPrivacySideEffects"/>，这里只连事件与初始状态。
+    /// </summary>
+    private void InitHoverSelect()
+    {
+        var services = _services!;
+        var settings = services.GetRequiredService<AppSettings>();
+        var hook = services.GetRequiredService<MouseButtonHook>();
+        var badge = services.GetRequiredService<HoverBadgeWindow>();
+
+        _hoverLogic = new HoverTriggerLogic(() => Environment.TickCount64);
+        badge.BadgeClicked += () => _ = TranslateSelectionAsync();
+
+        hook.LeftButtonDown += (x, y, self) =>
+        {
+            _hoverLogic.OnMouseDown(x, y, self);
+            // 任意鼠标按下即收起浮标；点向浮标自身的那一下必须放过（钩子事件先于窗口点击到达）
+            if (!badge.HitTestBadge(x, y))
+            {
+                Dispatcher.BeginInvoke(badge.HideBadge);
+            }
+        };
+        hook.LeftButtonUp += (x, y, _, self) =>
+        {
+            if (_hoverLogic.OnMouseUp(x, y, self))
+            {
+                Dispatcher.BeginInvoke(() => badge.ShowAt(x, y));
+            }
+        };
+
+        if (settings.HoverSelectEnabled && !settings.PrivacyMode)
+        {
+            hook.Start();
+            Log.Information("悬停取词已启用（鼠标钩子安装）");
+        }
+        else if (settings.HoverSelectEnabled)
+        {
+            Log.Information("隐私模式开启，悬停取词钩子未安装");
         }
     }
 
@@ -377,8 +482,12 @@ public partial class App : Application
     /// </summary>
     private void InitEngineFallback()
     {
-        _services!.GetRequiredService<QuickTranslateViewModel>().NotifyBalloon =
+        var vm = _services!.GetRequiredService<QuickTranslateViewModel>();
+        vm.NotifyBalloon =
             (title, message) => _trayIcon?.ShowNotification(title, message, NotificationIcon.Info);
+        // FR-035：Anki 推送在后台线程完成，回 UI 线程只改状态行文本（不参与翻译时序，无落定延迟）
+        vm.NotifyAnkiPushed = (added, reason) =>
+            Dispatcher.BeginInvoke(() => vm.AppendAnkiResult(added, reason));
     }
 
     /// <summary>
@@ -455,6 +564,11 @@ public partial class App : Application
         var settingsItem = new MenuItem { Header = "设置" };
         settingsItem.Click += (_, _) => ShowSettings();
 
+        // FR-037（批 2）：场景档案子菜单（标准/内置/自定义，展开时重建勾选态）
+        var profileMenu = new MenuItem { Header = "场景档案" };
+        profileMenu.SubmenuOpened += (_, _) => RebuildProfileMenu(profileMenu);
+        profileMenu.Items.Add(new MenuItem { Header = ProfileService.StandardName }); // 占位，展开时重建
+
         // P0 批 1 / spec §2.1：隐私模式快捷开关（勾选态跟随设置，切换即时生效并落盘）
         var appSettings = _services!.GetRequiredService<AppSettings>();
         var privacyItem = new MenuItem
@@ -482,6 +596,7 @@ public partial class App : Application
         menu.Items.Add(selectItem);
         menu.Items.Add(captureItem);
         menu.Items.Add(closePinsItem);
+        menu.Items.Add(profileMenu);
         menu.Items.Add(settingsItem);
         menu.Items.Add(privacyItem);
         menu.Items.Add(new Separator());
@@ -547,13 +662,31 @@ public partial class App : Application
     /// <summary>
     /// P0 批 1 / spec §2：隐私模式开关变更后同步副作用（剪贴板监听启停）。
     /// 托盘菜单与设置页共用；历史/统计/日志的门控在各自路径内读取最新值，无需回调。
+    /// 批 2（FR-036）扩展：悬停取词的鼠标钩子——**隐私模式开启时绝不安装**（B5 红线），
+    /// 隐私关闭时按 <c>HoverSelectEnabled</c> 决定启停；Start/Stop 幂等，可放心重放。
     /// </summary>
     internal static void ApplyPrivacySideEffects(IServiceProvider services, bool on)
     {
         var monitor = services.GetService<ClipboardMonitor>();
         var settings = services.GetRequiredService<AppSettings>();
-        if (on) monitor?.Stop();
-        else if (settings.ClipboardMonitorEnabled) monitor?.Start();
+        if (on)
+        {
+            monitor?.Stop();
+        }
+        else if (settings.ClipboardMonitorEnabled)
+        {
+            monitor?.Start();
+        }
+
+        var hook = services.GetService<MouseButtonHook>();
+        if (on || !settings.HoverSelectEnabled)
+        {
+            hook?.Stop();
+        }
+        else
+        {
+            hook?.Start();
+        }
     }
 
     private void OnClipboardTextCopied(object? sender, string text)

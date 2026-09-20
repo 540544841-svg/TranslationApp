@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
+using TranslationApp.Core.Anki;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
@@ -27,6 +28,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     private readonly ITtsService _tts;
     private readonly ClipboardMonitor _clipboardMonitor;
     private readonly EngineStatsRepository _stats;
+    private readonly AnkiConnectClient? _anki;
     private string? _lastDetectedLanguage;
 
     /// <summary>P0 批 1：本次会话原文是否被阅读清洗过（成功状态行追加「已清洗换行」）。</summary>
@@ -52,7 +54,8 @@ public partial class QuickTranslateViewModel : ObservableObject
         IVocabularyRepository vocabulary,
         ITtsService tts,
         ClipboardMonitor clipboardMonitor,
-        EngineStatsRepository stats)
+        EngineStatsRepository stats,
+        AnkiConnectClient? anki = null)
     {
         _catalog = catalog;
         _settings = settings;
@@ -62,6 +65,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         _tts = tts;
         _clipboardMonitor = clipboardMonitor;
         _stats = stats;
+        _anki = anki;
         _targetLanguage = settings.TargetLanguage;
     }
 
@@ -511,6 +515,59 @@ public partial class QuickTranslateViewModel : ObservableObject
         _vocabulary.Add(source, ResultText, SourceLanguage, TargetLanguage);
         IsFavorited = true;
         StatusText = "已加入生词本";
+        TryPushToAnki(source, ResultText);
+    }
+
+    /// <summary>
+    /// FR-035：Anki 推送完成回调（由 App 注入，负责调度回 UI 线程再调 <see cref="AppendAnkiResult"/>）。
+    /// 与 <see cref="NotifyBalloon"/> 同款解耦：VM 不依赖 Application/托盘。
+    /// </summary>
+    public Action<bool, string?>? NotifyAnkiPushed { get; set; }
+
+    /// <summary>
+    /// 收藏成功后顺带推 Anki（spec §1.3）：fire-and-forget，推送快慢不影响收藏与状态行；
+    /// 失败只降级为状态行追加一句，用户仍可在设置页批量补推。隐私模式不拦截——收藏是显式动作。
+    /// </summary>
+    private void TryPushToAnki(string source, string translated)
+    {
+        if (_anki is null || !_settings.AnkiEnabled || !_settings.AnkiPushOnFavorite)
+        {
+            return;
+        }
+
+        var sourceLanguage = SourceLanguage == TranslationLanguages.AutoCode
+            ? _lastDetectedLanguage ?? TranslationLanguages.AutoCode
+            : SourceLanguage;
+        var note = AnkiRequestBuilder.FromVocabulary(
+            _settings.AnkiDeck, _settings.AnkiModel, _settings.AnkiFrontField, _settings.AnkiBackField,
+            source, translated, sourceLanguage, TargetLanguage);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await _anki.PushNotesAsync([note]);
+                NotifyAnkiPushed?.Invoke(result.Added > 0, result.Reason);
+            }
+            catch (Exception ex)
+            {
+                // 理论上 PushNotesAsync 内部已全捕获；这里是最后一道防线，绝不让推送弄崩小窗
+                Log.Debug(ex, "Anki 收藏直推异常（忽略）");
+            }
+        });
+    }
+
+    /// <summary>Anki 推送结果回填状态行；状态行已被更新的操作改写时不抢话。</summary>
+    public void AppendAnkiResult(bool added, string? reason)
+    {
+        if (!StatusText.StartsWith("已加入生词本", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        StatusText = added
+            ? "已加入生词本 · 已推送 Anki"
+            : $"已加入生词本 · Anki 未推送（{reason ?? "连接失败"}）";
     }
 
     /// <summary>刷新当前「原文 + 目标语言」是否已在生词本中。</summary>

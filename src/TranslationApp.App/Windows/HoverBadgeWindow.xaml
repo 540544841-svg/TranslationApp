@@ -1,0 +1,16 @@
+<Window x:Class="TranslationApp.Windows.HoverBadgeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="HoverBadge"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" ShowActivated="False" Topmost="True"
+        ResizeMode="NoResize" Focusable="False"
+        Width="32" Height="32">
+    <!-- P0 批 2 / FR-036：悬停取词浮标。不抢焦点（ShowActivated=False）以免目标应用丢选区 -->
+    <Border CornerRadius="16" Background="{DynamicResource Brush.Primary}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
+            MouseLeftButtonUp="OnBadgeClick" ToolTip="翻译选中内容">
+        <TextBlock Text="译" Foreground="{DynamicResource Brush.OnPrimary}" FontSize="14" FontWeight="SemiBold"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Border>
+</Window>
