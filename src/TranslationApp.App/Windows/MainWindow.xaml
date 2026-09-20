@@ -110,6 +110,18 @@
                                           VerticalAlignment="Center"
                                           IsChecked="{Binding PrivacyMode}"/>
                             </Grid>
+                            <!-- FR-059：上手卡只看一次，改了热键后还得有地方再看 -->
+                            <Border Style="{StaticResource Hairline}"/>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                    <TextBlock Text="30 秒上手卡" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="首次启动会自动弹一次；改了热键或想再看一遍，点右侧按钮"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Button Content="再看一次" Style="{StaticResource Button.Outline}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Command="{Binding ShowOnboardingCommand}"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -496,6 +508,49 @@
                                       VerticalAlignment="Center"
                                       IsChecked="{Binding LlmContextEnabled}"/>
                         </Grid>
+                    </Border>
+
+                    <!-- FR-058（批 6 / spec §3）：按前台应用记忆语言对 -->
+                    <TextBlock Text="按应用语言对" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,150,0">
+                                    <TextBlock Text="记住每个应用里用的语言对" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="命中规则时只改本次会话的语言（不改全局默认，切个浏览器不会把你的默认语言偷偷换掉）；在某个应用里手动改语言就会被记住，最多 20 条。只认前台进程的进程名，不读窗口标题、路径或内容"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding AppLanguageMemoryEnabled}"/>
+                            </Grid>
+                            <Border Style="{StaticResource Hairline}"/>
+                            <Grid Margin="0,8,0,0">
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Caption}"
+                                           Text="还没有记住任何应用：开启后在某个程序里改一次目标语言即可。"
+                                           Visibility="{Binding HasNoAppLanguageRules, Converter={StaticResource BoolToVisibility}}"/>
+                                <ItemsControl ItemsSource="{Binding AppLanguageRuleRows}"
+                                              Visibility="{Binding HasAppLanguageRules, Converter={StaticResource BoolToVisibility}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <TextBlock Text="{Binding Display}" VerticalAlignment="Center"
+                                                           FontSize="{StaticResource FontSize.Small}"
+                                                           TextTrimming="CharacterEllipsis" Margin="0,0,70,0"/>
+                                                <Button Content="删除" Style="{StaticResource Button.Outline}"
+                                                        Padding="8,2" Height="22" HorizontalAlignment="Right"
+                                                        Command="{Binding DataContext.ForgetAppLanguageRuleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding Process}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="全部清除" Style="{StaticResource Button.Outline}"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                        Visibility="{Binding HasAppLanguageRules, Converter={StaticResource BoolToVisibility}}"
+                                        Command="{Binding ClearAppLanguageRulesCommand}"/>
+                            </Grid>
+                        </StackPanel>
                     </Border>
 
                     <TextBlock Text="结果对比" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using System.Windows.Media.Imaging;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
@@ -68,6 +69,12 @@ public partial class App : Application
         {
             InitTray();
             ShowStartBalloonIfEnabled();
+            // FR-059：首次运行弹一次上手卡（延后一拍，不与启动气泡挤在同一帧）
+            if (!settings.OnboardingShown)
+            {
+                ScheduleOnboardingCard(settings, _services!.GetRequiredService<ISettingsStore>());
+            }
+
             if (_verboseStartup && settings.PrivacyMode)
             {
                 // spec §2.2：用户明确要了 --verbose 但隐私模式压住了日志，必须说明而不是静默失效
@@ -872,5 +879,29 @@ public partial class App : Application
         var window = _services!.GetRequiredService<MainWindow>();
         window.Show();
         window.Activate();
+    }
+
+    /// <summary>
+    /// 首次运行上手卡（FR-059）：弹之前先把"看过"落盘——用户直接关掉进程也不该下次再被弹一次。
+    /// 设置页「再看一次」走的是另一条路径（不改动这个标记）。
+    /// </summary>
+    private void ScheduleOnboardingCard(AppSettings settings, ISettingsStore store)
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            settings.OnboardingShown = true;
+            store.Save(settings);
+            try
+            {
+                new OnboardingWindow(settings).Show();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "上手卡显示失败（忽略）");
+            }
+        };
+        timer.Start();
     }
 }

@@ -55,6 +55,9 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>本次会话是否由划词/剪贴板自动进入（决定翻译成功后是否自动朗读原文，FR-016）。</summary>
     private bool _selectionSession;
 
+    /// <summary>本次会话的前台应用进程名（FR-058；空 = 不知道 / 不适用）。</summary>
+    private string _foregroundApp = "";
+
     public QuickTranslateViewModel(
         TranslatorCatalog catalog,
         AppSettings settings,
@@ -316,8 +319,47 @@ public partial class QuickTranslateViewModel : ObservableObject
             _store.Save(_settings);
         }
 
+        // FR-058：用户在某个应用里手动改了语言 = 这就是他下次想要的，记住它
+        if (!string.IsNullOrEmpty(value) && _settings.AppLanguageMemoryEnabled && _foregroundApp.Length > 0)
+        {
+            _settings.AppLanguagePairs = AppLanguageRules.Learn(
+                _settings.AppLanguagePairs, _foregroundApp, SourceLanguage, value).ToList();
+            _store.Save(_settings);
+            Log.Debug("按应用语言对已记忆（会话级命中，不记录进程名）");
+        }
+
         // 13.4.1：语言变更后已有对比结果不再对应当前语言对，清空并提示需重新对比
         ClearCompareResultsForLanguageChange();
+    }
+
+    /// <summary>
+    /// 记录本次会话的前台应用（FR-058），并在这一步套用「按应用语言对」规则。
+    /// 命中只改**本次会话**的语言：改全局默认会让用户切个浏览器就发现设置被偷偷动过。
+    /// </summary>
+    public void SetForegroundApp(string? processName)
+    {
+        _foregroundApp = AppLanguageRules.Normalize(processName);
+        if (_foregroundApp.Length == 0
+            || !_settings.AppLanguageMemoryEnabled
+            || AppLanguageRules.Match(_settings.AppLanguagePairs, _foregroundApp) is not { } rule)
+        {
+            return;
+        }
+
+        // 有意绕开属性 setter：setter 会把会话级选择写进全局设置并落盘
+#pragma warning disable MVVMTK0034
+        _sourceLanguage = string.IsNullOrWhiteSpace(rule.SourceLanguage)
+            ? TranslationLanguages.AutoCode : rule.SourceLanguage;
+        OnPropertyChanged(nameof(SourceLanguage));
+        if (!string.IsNullOrWhiteSpace(rule.TargetLanguage))
+        {
+            _targetLanguage = rule.TargetLanguage;
+            OnPropertyChanged(nameof(TargetLanguage));
+        }
+#pragma warning restore MVVMTK0034
+
+        // 日志只记"命中"，不记进程名与语言对（B5 红线：这类信息不该进可外传的日志文件）
+        Log.Debug("按应用语言对命中，本次会话语言已套用");
     }
 
     partial void OnSourceLanguageChanged(string value) => ClearCompareResultsForLanguageChange();

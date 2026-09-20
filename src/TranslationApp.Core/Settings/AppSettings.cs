@@ -409,4 +409,18 @@ public sealed class AppSettings
 
     /// <summary>历史页按会话分组（FR-057，默认开）：连续翻译（相邻 ≤30 分钟）归一组；搜索时自动回平铺。</summary>
     public bool HistoryGroupedView { get; set; } = true;
+
+    // ==================== 批 6 6b：按应用语言对 / 上手卡 ====================
+
+    /// <summary>
+    /// 按前台应用记忆语言对（FR-058，默认关）：命中规则时只改**本次会话**的语言，
+    /// 用户在会话内改语言则记住该应用。只认进程名，不读窗口标题与内容。
+    /// </summary>
+    public bool AppLanguageMemoryEnabled { get; set; }
+
+    /// <summary>已记住的「应用 → 语言对」规则（进程名小写去 .exe，最多 20 条，新的在前）。</summary>
+    public List<AppLanguagePair> AppLanguagePairs { get; set; } = [];
+
+    /// <summary>首次运行上手卡是否已看过（FR-059）：看过就不再弹，设置页可再看一次。</summary>
+    public bool OnboardingShown { get; set; }
 }

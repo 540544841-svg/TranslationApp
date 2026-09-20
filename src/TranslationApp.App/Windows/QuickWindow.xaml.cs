@@ -275,6 +275,9 @@ public partial class QuickWindow : Window
         _vm.ResetForShow(notice, _settings.TargetLanguage, inputText, sourceLanguage);
         // FR-016：仅划词会话在翻译成功后自动朗读原文；手动输入/OCR 会话不朗读
         _vm.SetSelectionSession(selectionSource);
+        // FR-058：告诉 VM 用户当时在哪个程序里（只给进程名）；必须在 ResetForShow 之后，
+        // 否则命中的语言对会被重置覆盖
+        _vm.SetForegroundApp(ForegroundAppProbe.ProcessNameOf(_previousForeground));
         // FR-026（14.2.4 时机 1）：**每次呼出都回到设置的默认宽高**（清掉上次会话的拖拽结果），
         // 并在**定位之前**按当前内容算一次尺寸，否则这次定位用的还是上一次会话的旧尺寸
         // （这是与 FR-025 的耦合点）。呼出时不做动画：窗口尚未显示，动画可能不计时导致尺寸落不到目标值。

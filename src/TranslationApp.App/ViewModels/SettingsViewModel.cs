@@ -128,6 +128,8 @@ public partial class SettingsViewModel : ObservableObject
         _shadowReadingEnabled = settings.ShadowReadingEnabled;
         _shadowPauseMs = settings.ShadowPauseMs;
         _historyGroupedView = settings.HistoryGroupedView;
+        _appLanguageMemoryEnabled = settings.AppLanguageMemoryEnabled;
+        RefreshAppLanguageRules();
         // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
         InitializeApiPage();
         // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
@@ -874,6 +876,81 @@ public partial class SettingsViewModel : ObservableObject
     private bool _llmContextEnabled;
 
     partial void OnLlmContextEnabledChanged(bool value) => Save(s => s.LlmContextEnabled = value);
+
+    /// <summary>一条已记住的「应用 → 语言对」规则（FR-058 设置页展示用）。</summary>
+    public sealed class AppLanguageRuleRow
+    {
+        public required string Process { get; init; }
+        public required string Display { get; init; }
+    }
+
+    public ObservableCollection<AppLanguageRuleRow> AppLanguageRuleRows { get; } = [];
+
+    /// <summary>有没有记住过规则（决定卡片里显示空态提示还是列表）。</summary>
+    public bool HasAppLanguageRules => AppLanguageRuleRows.Count > 0;
+
+    public bool HasNoAppLanguageRules => !HasAppLanguageRules;
+
+    /// <summary>按应用记忆语言对（FR-058，默认关）：命中只改本次会话，不改全局默认。</summary>
+    [ObservableProperty]
+    private bool _appLanguageMemoryEnabled;
+
+    partial void OnAppLanguageMemoryEnabledChanged(bool value) => Save(s => s.AppLanguageMemoryEnabled = value);
+
+    /// <summary>
+    /// 再看一次上手卡（FR-059）：窗口用完即关、不可复用，所以每次直接新建。
+    /// 显示失败不打扰用户（它只是个提示卡，不该挡住任何操作）。
+    /// </summary>
+    [RelayCommand]
+    private void ShowOnboarding()
+    {
+        try
+        {
+            new TranslationApp.Windows.OnboardingWindow(_settings).Show();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "上手卡显示失败（忽略）");
+        }
+    }
+
+    private void RefreshAppLanguageRules()
+    {
+        AppLanguageRuleRows.Clear();
+        foreach (var rule in _settings.AppLanguagePairs)
+        {
+            AppLanguageRuleRows.Add(new AppLanguageRuleRow
+            {
+                Process = rule.Process,
+                Display = $"{rule.Process}：{TranslationLanguages.DisplayName(rule.SourceLanguage)} → "
+                          + $"{TranslationLanguages.DisplayName(rule.TargetLanguage)}",
+            });
+        }
+
+        OnPropertyChanged(nameof(HasAppLanguageRules));
+        OnPropertyChanged(nameof(HasNoAppLanguageRules));
+    }
+
+    [RelayCommand]
+    private void ForgetAppLanguageRule(string? process)
+    {
+        if (string.IsNullOrWhiteSpace(process))
+        {
+            return;
+        }
+
+        _settings.AppLanguagePairs = AppLanguageRules.Forget(_settings.AppLanguagePairs, process).ToList();
+        Save(s => s.AppLanguagePairs = _settings.AppLanguagePairs);
+        RefreshAppLanguageRules();
+    }
+
+    [RelayCommand]
+    private void ClearAppLanguageRules()
+    {
+        _settings.AppLanguagePairs = [];
+        Save(s => s.AppLanguagePairs = _settings.AppLanguagePairs);
+        RefreshAppLanguageRules();
+    }
 
     /// <summary>每日复习 5 词（FR-052，默认关）：纯轮转提醒，不统计熟悉度。</summary>
     [ObservableProperty]

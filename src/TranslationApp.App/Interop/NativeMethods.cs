@@ -105,6 +105,10 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
 
+    /// <summary>同一个入口点的 out 重载（FR-058 取窗口所属进程名时更好用）。</summary>
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
     // GetCurrentThreadId 由 kernel32 导出（不是 user32），写错会在调用时抛 EntryPointNotFoundException
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
