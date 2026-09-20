@@ -285,10 +285,25 @@ public partial class QuickTranslateViewModel : ObservableObject
         RefreshFavoriteState();
 
         // P0 批 1：术语表命中徽标（命中数与明细由 GlossaryTranslator 回填）
-        GlossaryNote = result.GlossaryHits > 0 ? $"术语 ×{result.GlossaryHits}" : "";
-        GlossaryTooltip = result.GlossaryApplied is { Count: > 0 } applied
-            ? string.Join("\n", applied.Select(a => $"{a.Source} → {a.Target} ×{a.Count}"))
-            : "";
+        // 批 3 / FR-041：反向保护跳过的冲突词条并入徽标与 tooltip
+        var conflicts = result.GlossaryConflicts;
+        GlossaryNote = result.GlossaryHits > 0
+            ? conflicts is { Count: > 0 }
+                ? $"术语 ×{result.GlossaryHits} · 冲突跳过 ×{conflicts.Count}"
+                : $"术语 ×{result.GlossaryHits}"
+            : conflicts is { Count: > 0 }
+                ? $"术语冲突跳过 ×{conflicts.Count}"
+                : "";
+        var tooltipLines = new List<string>();
+        if (result.GlossaryApplied is { Count: > 0 } applied)
+        {
+            tooltipLines.AddRange(applied.Select(a => $"{a.Source} → {a.Target} ×{a.Count}"));
+        }
+        if (conflicts is { Count: > 0 })
+        {
+            tooltipLines.AddRange(conflicts.Select(c => $"跳过 {c.Source} → {c.Target}（原文已含该译法）"));
+        }
+        GlossaryTooltip = string.Join("\n", tooltipLines);
 
         // FR-016：划词会话的首次翻译成功后自动朗读原文（手动输入翻译不朗读）
         TryAutoSpeakSource(text);

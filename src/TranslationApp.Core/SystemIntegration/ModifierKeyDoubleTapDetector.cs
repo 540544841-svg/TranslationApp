@@ -8,7 +8,7 @@ namespace TranslationApp.Core.SystemIntegration;
 /// </summary>
 public sealed class ModifierKeyDoubleTapDetector(
     Func<long> nowMs,
-    int targetVirtualKey,
+    Func<int> targetVirtualKey,
     Action onTriggered,
     long windowMs = 250,   // = DefaultWindowMs（主构造函数默认值引用不了自身 const，用字面量）
     long cooldownMs = 500) // = DefaultCooldownMs
@@ -36,7 +36,7 @@ public sealed class ModifierKeyDoubleTapDetector(
 
     public void OnKeyDown(int virtualKey, bool foregroundIsSelf = false)
     {
-        if (virtualKey != targetVirtualKey)
+        if (virtualKey != targetVirtualKey())
         {
             OnOtherKeyDown();
             return;
@@ -78,7 +78,7 @@ public sealed class ModifierKeyDoubleTapDetector(
 
     public void OnKeyUp(int virtualKey)
     {
-        if (virtualKey != targetVirtualKey || !_firstDown)
+        if (virtualKey != targetVirtualKey() || !_firstDown)
         {
             return;
         }

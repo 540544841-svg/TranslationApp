@@ -89,7 +89,7 @@ public partial class SettingsViewModel
             _clipboardMonitor.Start();
         }
 
-        ApplyHoverHook();
+        ApplyHookGates();
     }
 
     /// <summary>把档案改动的键回填到各页显示字段（只发通知、不走属性 setter，避免二次落盘/递归副作用）。</summary>
@@ -121,6 +121,17 @@ public partial class SettingsViewModel
 
         _ankiEnabled = _settings.AnkiEnabled;
         OnPropertyChanged(nameof(AnkiEnabled));
+
+        _doubleTapTranslateEnabled = _settings.DoubleTapTranslateEnabled;
+        OnPropertyChanged(nameof(DoubleTapTranslateEnabled));
+        _doubleTapKey = NormalizeDoubleTapKey(_settings.DoubleTapKey);
+        OnPropertyChanged(nameof(DoubleTapKey));
+        _mouseSideButtonSelect = _settings.MouseSideButtonSelect;
+        OnPropertyChanged(nameof(MouseSideButtonSelect));
+        _mouseSideButtonCapture = _settings.MouseSideButtonCapture;
+        OnPropertyChanged(nameof(MouseSideButtonCapture));
+        _pasteTranslateEnabled = _settings.PasteTranslateEnabled;
+        OnPropertyChanged(nameof(PasteTranslateEnabled));
 #pragma warning restore MVVMTK0034
     }
 

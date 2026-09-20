@@ -46,6 +46,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly OcrService _ocr;
     private readonly TranslationApp.Core.History.EngineStatsRepository _engineStats;
     private readonly MouseButtonHook _mouseHook;
+    private readonly KeyboardButtonHook _keyboardHook;
     private readonly ProfileService _profiles;
     private readonly AnkiConnectClient _anki;
     private bool _suppressAutoStartCallback;
@@ -65,6 +66,7 @@ public partial class SettingsViewModel : ObservableObject
         OcrService ocr,
         TranslationApp.Core.History.EngineStatsRepository engineStats,
         MouseButtonHook mouseHook,
+        KeyboardButtonHook keyboardHook,
         ProfileService profiles,
         AnkiConnectClient anki)
     {
@@ -81,6 +83,7 @@ public partial class SettingsViewModel : ObservableObject
         _ocr = ocr;
         _engineStats = engineStats;
         _mouseHook = mouseHook;
+        _keyboardHook = keyboardHook;
         _profiles = profiles;
         _anki = anki;
 
@@ -108,6 +111,12 @@ public partial class SettingsViewModel : ObservableObject
         _glossaryEnabled = settings.GlossaryEnabled;
         InitializeAnkiPage();
         InitializeProfilePage();
+        // P0 批 3：双击修饰键 / 鼠标侧键 / 粘贴即译
+        _doubleTapTranslateEnabled = settings.DoubleTapTranslateEnabled;
+        _doubleTapKey = NormalizeDoubleTapKey(settings.DoubleTapKey);
+        _mouseSideButtonSelect = settings.MouseSideButtonSelect;
+        _mouseSideButtonCapture = settings.MouseSideButtonCapture;
+        _pasteTranslateEnabled = settings.PasteTranslateEnabled;
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
@@ -743,21 +752,97 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnHoverSelectEnabledChanged(bool value)
     {
         Save(s => s.HoverSelectEnabled = value);
-        ApplyHoverHook();
+        ApplyHookGates();
     }
 
     partial void OnGlossaryEnabledChanged(bool value) => Save(s => s.GlossaryEnabled = value);
 
-    /// <summary>与 App.ApplyPrivacySideEffects 同一条门控：隐私开 → 绝不装钩子；否则按开关启停。</summary>
-    private void ApplyHoverHook()
+    // ==================== P0 批 3：双击修饰键 / 鼠标侧键 / 粘贴即译 ====================
+
+    /// <summary>双击修饰键划词（FR-038，默认关）：需要常驻键盘钩子，隐私模式开启时绝不安装。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DoubleTapLockedByPrivacy))]
+    private bool _doubleTapTranslateEnabled;
+
+    /// <summary>双击的目标修饰键：alt / ctrl / shift / win（检测器每次现读，改完即生效）。</summary>
+    [ObservableProperty]
+    private string _doubleTapKey = "alt";
+
+    /// <summary>X1 后退键 = 划词翻译（FR-039，默认关）。</summary>
+    [ObservableProperty]
+    private bool _mouseSideButtonSelect;
+
+    /// <summary>X2 前进键 = 截图翻译（FR-039，默认关）。</summary>
+    [ObservableProperty]
+    private bool _mouseSideButtonCapture;
+
+    /// <summary>粘贴即译（FR-040，默认开）：小窗输入框为空时 Ctrl+V 直接翻译剪贴板。</summary>
+    [ObservableProperty]
+    private bool _pasteTranslateEnabled;
+
+    /// <summary>目标修饰键下拉项。</summary>
+    public IReadOnlyList<ThemeOption> DoubleTapKeyOptions { get; } =
+    [
+        new("alt", "Alt"),
+        new("ctrl", "Ctrl"),
+        new("shift", "Shift"),
+        new("win", "Win"),
+    ];
+
+    /// <summary>双击开关被隐私模式压住（卡片显示说明行）。</summary>
+    public bool DoubleTapLockedByPrivacy => PrivacyMode && DoubleTapTranslateEnabled;
+
+    private static string NormalizeDoubleTapKey(string? key) => key switch
     {
-        if (HoverSelectEnabled && !_settings.PrivacyMode)
+        "ctrl" or "shift" or "win" => key,
+        _ => "alt",
+    };
+
+    partial void OnDoubleTapTranslateEnabledChanged(bool value)
+    {
+        Save(s => s.DoubleTapTranslateEnabled = value);
+        ApplyHookGates();
+    }
+
+    partial void OnDoubleTapKeyChanged(string value) =>
+        Save(s => s.DoubleTapKey = NormalizeDoubleTapKey(value));
+
+    partial void OnMouseSideButtonSelectChanged(bool value)
+    {
+        Save(s => s.MouseSideButtonSelect = value);
+        ApplyHookGates();
+    }
+
+    partial void OnMouseSideButtonCaptureChanged(bool value)
+    {
+        Save(s => s.MouseSideButtonCapture = value);
+        ApplyHookGates();
+    }
+
+    partial void OnPasteTranslateEnabledChanged(bool value) => Save(s => s.PasteTranslateEnabled = value);
+
+    /// <summary>
+    /// 两个全局钩子的统一门控（与 App.ApplyPrivacySideEffects 同一条规则）：
+    /// 隐私模式开启 → 全停；否则鼠标钩子按「悬停/侧键任一开」、键盘钩子按「双击开关」启停。
+    /// </summary>
+    private void ApplyHookGates()
+    {
+        if (App.MouseHookNeeded(_settings) && !_settings.PrivacyMode)
         {
             _mouseHook.Start();
         }
         else
         {
             _mouseHook.Stop();
+        }
+
+        if (_settings.DoubleTapTranslateEnabled && !_settings.PrivacyMode)
+        {
+            _keyboardHook.Start();
+        }
+        else
+        {
+            _keyboardHook.Stop();
         }
     }
 
@@ -774,7 +859,7 @@ public partial class SettingsViewModel : ObservableObject
             _clipboardMonitor.Start();
         }
 
-        ApplyHoverHook(); // 批 2：隐私模式联动鼠标钩子（B5 红线）
+        ApplyHookGates(); // 批 2/3：隐私模式联动两个全局钩子（B5 红线）
     }
 
     partial void OnCleanClipboardTextChanged(bool value) => Save(s => s.CleanClipboardText = value);

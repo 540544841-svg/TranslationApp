@@ -33,6 +33,7 @@ public partial class App : Application
     private TaskbarIcon? _trayIcon;
     private HotkeyManager? _hotkeyManager;
     private HoverTriggerLogic? _hoverLogic;
+    private ModifierKeyDoubleTapDetector? _doubleTap;
     private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -74,6 +75,8 @@ public partial class App : Application
             RegisterHotkeysFromSettings();
             InitClipboardMonitor(settings);
             InitHoverSelect();
+            InitDoubleTap();
+            InitPasteTranslate();
             InitScreenCapture();
             InitEngineFallback();
             WarmUpEngine();
@@ -100,7 +103,8 @@ public partial class App : Application
         _hotkeyManager?.Dispose();
         _services?.GetService<PinWindowManager>()?.CloseAll(); // FR-027：退出前释放钉图位图
         _services?.GetService<ClipboardMonitor>()?.Dispose();
-        _services?.GetService<MouseButtonHook>()?.Dispose(); // FR-036：卸载鼠标钩子
+        _services?.GetService<MouseButtonHook>()?.Dispose(); // FR-036/039：卸载鼠标钩子
+        _services?.GetService<KeyboardButtonHook>()?.Dispose(); // FR-038：卸载键盘钩子
         _services?.GetService<ITtsService>()?.Stop();
         _trayIcon?.Dispose();
         _services?.Dispose();
@@ -226,7 +230,7 @@ public partial class App : Application
             var glossary = new GlossaryCache(() => appSettings.GlossaryJson, () => appSettings.GlossaryEnabled);
             ITranslator Wrap(ITranslator inner) => new GlossaryTranslator(
                 inner, glossary.Items,
-                (id, outcome, err) => stats.Record(id, outcome, err),
+                (id, outcome, err, latency) => stats.Record(id, outcome, err, latency),
                 () => appSettings.PrivacyMode);
             // 顺序即设置页下拉顺序，且 Catalog 回落引擎 = 首个（Bing），与装饰前一致
             return new TranslatorCatalog(new ITranslator[]
@@ -256,6 +260,8 @@ public partial class App : Application
         services.AddSingleton<HotkeyManager>();
         // FR-036：悬停取词的鼠标钩子与决策层（默认不安装，见 ApplyPrivacySideEffects 门控）
         services.AddSingleton<MouseButtonHook>();
+        // FR-038：双击修饰键的键盘钩子（同一门控纪律；目标键经 Func 读取，设置改动即时生效）
+        services.AddSingleton<KeyboardButtonHook>();
         services.AddSingleton<HoverBadgeWindow>();
         // FR-037：场景档案服务（对 AppSettings 单例做稀疏覆盖；落盘仍由 ISettingsStore 负责）
         services.AddSingleton(sp => new ProfileService(sp.GetRequiredService<AppSettings>()));
@@ -444,15 +450,85 @@ public partial class App : Application
             }
         };
 
-        if (settings.HoverSelectEnabled && !settings.PrivacyMode)
+        if (MouseHookNeeded(settings) && !settings.PrivacyMode)
         {
             hook.Start();
-            Log.Information("悬停取词已启用（鼠标钩子安装）");
+            Log.Information("鼠标观察钩子已安装（悬停取词 / 侧键映射任一开启）");
         }
-        else if (settings.HoverSelectEnabled)
+
+        // FR-039（批 3）：侧键抬起 = 划词(X1)/截图(X2)。前台是本程序时忽略；
+        // 钩子只观察不拦截——侧键的浏览器前进/后退照常发生，卡片文案如实写明。
+        hook.XButtonUp += (button, self) =>
         {
-            Log.Information("隐私模式开启，悬停取词钩子未安装");
+            if (self)
+            {
+                return;
+            }
+
+            var current = _services!.GetRequiredService<AppSettings>();
+            if (button == 1 && current.MouseSideButtonSelect)
+            {
+                Dispatcher.BeginInvoke(() => _ = TranslateSelectionAsync());
+            }
+            else if (button == 2 && current.MouseSideButtonCapture)
+            {
+                Dispatcher.BeginInvoke(() => _ = _services!.GetRequiredService<ScreenCaptureTranslateFlow>().StartAsync());
+            }
+        };
+    }
+
+    /// <summary>
+    /// FR-038（批 3 / spec §1）：双击修饰键划词。键盘钩子只观察；判定在 Core
+    /// <see cref="ModifierKeyDoubleTapDetector"/>（250ms 窗口、混键作废、500ms 冷却）。
+    /// 目标键经 Func 每次现读 <c>DoubleTapKey</c>，设置改动即时生效、无需重建检测器。
+    /// </summary>
+    private void InitDoubleTap()
+    {
+        var services = _services!;
+        var settings = services.GetRequiredService<AppSettings>();
+        var hook = services.GetRequiredService<KeyboardButtonHook>();
+
+        _doubleTap = new ModifierKeyDoubleTapDetector(
+            () => Environment.TickCount64,
+            () => DoubleTapVirtualKey(settings.DoubleTapKey),
+            () => Dispatcher.BeginInvoke(() => _ = TranslateSelectionAsync()));
+
+        hook.KeyDown += (vk, self) => _doubleTap.OnKeyDown(vk, self);
+        hook.KeyUp += (vk, _) => _doubleTap.OnKeyUp(vk);
+
+        if (settings.DoubleTapTranslateEnabled && !settings.PrivacyMode)
+        {
+            hook.Start();
+            Log.Information("双击修饰键划词已启用（键盘钩子安装，目标键 {Key}）", settings.DoubleTapKey);
         }
+    }
+
+    /// <summary>双击目标键名 → 虚拟键码（未知值按 alt，与设置下拉可选集一致）。</summary>
+    internal static int DoubleTapVirtualKey(string? key) => key switch
+    {
+        "ctrl" => 0x11,
+        "shift" => 0x10,
+        "win" => 0x5B,
+        _ => 0x12,
+    };
+
+    /// <summary>
+    /// FR-040（批 3 / spec §3）：粘贴即译。小窗输入框为空时 Ctrl+V 由 QuickWindow 拦下并带着
+    /// 剪贴板文本回调到这里——复用划词的「清洗→翻译」入口，不新建链路，也不新增剪贴板监听。
+    /// </summary>
+    private void InitPasteTranslate()
+    {
+        var quickWindow = _services!.GetRequiredService<QuickWindow>();
+        quickWindow.PasteTranslateRequested += (_, text) =>
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                quickWindow.ShowForInput("剪贴板里没有文本");
+                return;
+            }
+
+            quickWindow.ShowForSelection(PrepareCapturedText(text, out var cleaned), cleaned: cleaned);
+        };
     }
 
     /// <summary>
@@ -662,8 +738,9 @@ public partial class App : Application
     /// <summary>
     /// P0 批 1 / spec §2：隐私模式开关变更后同步副作用（剪贴板监听启停）。
     /// 托盘菜单与设置页共用；历史/统计/日志的门控在各自路径内读取最新值，无需回调。
-    /// 批 2（FR-036）扩展：悬停取词的鼠标钩子——**隐私模式开启时绝不安装**（B5 红线），
-    /// 隐私关闭时按 <c>HoverSelectEnabled</c> 决定启停；Start/Stop 幂等，可放心重放。
+    /// 批 2（FR-036）+ 批 3（FR-038/039）扩展：两个全局钩子——**隐私模式开启时绝不安装**（B5 红线）；
+    /// 隐私关闭时鼠标钩子按「悬停 / 侧键X1 / 侧键X2 任一开」启停，键盘钩子按「双击开关」启停；
+    /// Start/Stop 幂等，可放心重放。
     /// </summary>
     internal static void ApplyPrivacySideEffects(IServiceProvider services, bool on)
     {
@@ -678,16 +755,38 @@ public partial class App : Application
             monitor?.Start();
         }
 
-        var hook = services.GetService<MouseButtonHook>();
-        if (on || !settings.HoverSelectEnabled)
+        var mouseHook = services.GetService<MouseButtonHook>();
+        var keyboardHook = services.GetService<KeyboardButtonHook>();
+        if (on)
         {
-            hook?.Stop();
+            mouseHook?.Stop();
+            keyboardHook?.Stop();
         }
         else
         {
-            hook?.Start();
+            if (MouseHookNeeded(settings))
+            {
+                mouseHook?.Start();
+            }
+            else
+            {
+                mouseHook?.Stop();
+            }
+
+            if (settings.DoubleTapTranslateEnabled)
+            {
+                keyboardHook?.Start();
+            }
+            else
+            {
+                keyboardHook?.Stop();
+            }
         }
     }
+
+    /// <summary>鼠标观察钩子的安装条件：悬停取词或任一侧键映射开着就需要。</summary>
+    internal static bool MouseHookNeeded(AppSettings settings) =>
+        settings.HoverSelectEnabled || settings.MouseSideButtonSelect || settings.MouseSideButtonCapture;
 
     private void OnClipboardTextCopied(object? sender, string text)
     {

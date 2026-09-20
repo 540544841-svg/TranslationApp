@@ -111,6 +111,9 @@ public partial class QuickWindow : Window
     /// <summary>小窗内点击「截图翻译」：由 App 订阅并启动截图流程（FR-021）。</summary>
     public event EventHandler? CaptureRequested;
 
+    /// <summary>FR-040：小窗内 Ctrl+V 请求「粘贴即译」（参数 = 剪贴板文本，可能为 null）；由 App 接清洗与翻译。</summary>
+    public event EventHandler<string?>? PasteTranslateRequested;
+
     public QuickWindow(QuickTranslateViewModel vm, AppSettings settings, ISettingsStore store)
     {
         InitializeComponent();
@@ -1123,6 +1126,28 @@ public partial class QuickWindow : Window
 
     private void OnInputKeyDown(object sender, KeyEventArgs e)
     {
+        // FR-040（批 3）粘贴即译：输入框为空时 Ctrl+V 不粘贴，把剪贴板文本交给 App 走完整链路
+        // （清洗→翻译）；输入框已有内容时保持普通粘贴——用户可能在续写/编辑。
+        if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) != 0
+            && _settings.PasteTranslateEnabled && InputBox.Text.Length == 0)
+        {
+            e.Handled = true;
+            string? clipboardText = null;
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    clipboardText = Clipboard.GetText();
+                }
+            }
+            catch
+            {
+                // 剪贴板被占用：按空处理，绝不崩
+            }
+            PasteTranslateRequested?.Invoke(this, clipboardText);
+            return;
+        }
+
         if (e.Key is not (Key.Enter or Key.Return))
         {
             return;

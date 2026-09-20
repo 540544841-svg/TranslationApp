@@ -158,6 +158,54 @@
                         </Grid>
                     </Border>
 
+                    <!-- FR-038（P0 批 3 / spec §1）：双击修饰键划词——默认关，隐私模式不装键盘钩子 -->
+                    <TextBlock Text="双击修饰键" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                    <TextBlock Text="双击 Alt 划词翻译" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="快速连按两下修饰键即翻译当前选中文本（250ms 内完成、按住期间混按其他键不算）；需要常驻键盘钩子，可随时关闭，隐私模式下绝不启用"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    <TextBlock Text="隐私模式开启中，键盘钩子未启用" Foreground="{DynamicResource Brush.Warning}"
+                                               FontSize="{StaticResource FontSize.Small}" Margin="0,4,0,0"
+                                               Visibility="{Binding DoubleTapLockedByPrivacy, Converter={StaticResource BoolToVisibility}}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <ComboBox Width="86" Margin="0,0,10,0" ItemsSource="{Binding DoubleTapKeyOptions}"
+                                              SelectedValue="{Binding DoubleTapKey}" SelectedValuePath="Value"
+                                              DisplayMemberPath="Display" ToolTip="双击哪个修饰键"/>
+                                    <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding DoubleTapTranslateEnabled}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Style="{StaticResource Hairline}" Margin="0,10"/>
+
+                            <!-- FR-039（P0 批 3 / spec §2）：鼠标侧键映射——只观察不拦截，前进/后退照常发生 -->
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                    <TextBlock Text="鼠标侧键映射" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="X1（后退键）= 划词翻译，X2（前进键）= 截图翻译；本程序只观察不拦截，浏览器的前进 / 后退仍照常发生，介意请勿开启"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="X1 划词" Width="88" VerticalAlignment="Center"
+                                                   FontSize="{StaticResource FontSize.Small}"/>
+                                        <CheckBox Style="{StaticResource ToggleSwitch}"
+                                                  IsChecked="{Binding MouseSideButtonSelect}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <TextBlock Text="X2 截图" Width="88" VerticalAlignment="Center"
+                                                   FontSize="{StaticResource FontSize.Small}"/>
+                                        <CheckBox Style="{StaticResource ToggleSwitch}"
+                                                  IsChecked="{Binding MouseSideButtonCapture}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <!-- FR-037（P0 批 2 / spec §3.4）：场景档案——内置阅读/隐私两档 + 自定义快照 -->
                     <TextBlock Text="场景档案" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <Border Style="{StaticResource Card}" Margin="0,10,0,0">
@@ -349,6 +397,21 @@
                             <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
                                       VerticalAlignment="Center"
                                       IsChecked="{Binding CleanClipboardText}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- FR-040（P0 批 3 / spec §3）：粘贴即译——输入框为空时 Ctrl+V 直接翻译剪贴板 -->
+                    <TextBlock Text="粘贴即译" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                <TextBlock Text="小窗内 Ctrl+V 直接翻译剪贴板" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="输入框为空时按 Ctrl+V 不再粘贴，直接取剪贴板文本走完整链路（含阅读清洗）；输入框已有内容时仍是普通粘贴"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      IsChecked="{Binding PasteTranslateEnabled}"/>
                         </Grid>
                     </Border>
 

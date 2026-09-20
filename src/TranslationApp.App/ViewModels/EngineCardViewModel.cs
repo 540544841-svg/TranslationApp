@@ -187,9 +187,15 @@ public sealed partial class EngineCardViewModel : ObservableObject
             parts.Add($"失败 {s.FailTotal}（{string.Join(" / ", detail)}）");
         }
         if (s.FallbackUsed > 0) parts.Add($"已自动降级 {s.FallbackUsed}");
+        // P0 批 3 / FR-042：只记耗时数字（无内容），帮用户选「能直连里最快的」
+        if (s.P50Ms is { } p50) parts.Add($"P50 {FormatLatency(p50)}");
         if (s.LastError.Length > 0 && s.FailTotal > 0) parts.Add($"最近失败：{s.LastError}");
 
         StatsText = string.Join(" · ", parts);
+        return;
+
+        static string FormatLatency(double ms) =>
+            ms < 1000 ? $"{ms:0}ms" : $"{ms / 1000:0.#}s";
     }
 
     /// <summary>是否显示端点不可达提示条。</summary>

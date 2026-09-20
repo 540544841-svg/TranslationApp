@@ -16,7 +16,7 @@ public class ModifierKeyDoubleTapDetectorTests
     private readonly List<int> _fired = [];
 
     private ModifierKeyDoubleTapDetector New(int targetVk = Alt) =>
-        new(() => _now, targetVk, () => _fired.Add(1));
+        new(() => _now, () => targetVk, () => _fired.Add(1));
 
     [Fact]
     public void TwoQuickTaps_Fires()
