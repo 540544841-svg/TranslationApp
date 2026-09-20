@@ -151,12 +151,14 @@ public partial class QuickTranslateViewModel : ObservableObject
     public bool IsDictionaryVisible => DictionaryDefinition.Length > 0;
 
     /// <summary>
-    /// 查一次本地词典（FR-049 最小可行）。只在译文成功落地后跑，且**在 await 处回到 UI 线程**再改属性。
-    /// 门控：<c>DictionariesEnabled</c> 关、非单词（&gt;32 字符或含换行）、没装词典 → 直接清零不查。
+    /// 查一次词典（FR-049 本地 mdx + FR-056 AI 兜底）。只在译文成功落地后跑，
+    /// 且**在 await 处回到 UI 线程**再改属性。两者都缺席（开关全关 / 非单词）→ 直接清零不查。
     /// </summary>
     private async Task LookUpDictionaryAsync(string source, string translated)
     {
-        if (_dictionaries is null || !_settings.DictionariesEnabled || !IsSingleWord(source))
+        var mdxAllowed = _dictionaries is not null && _settings.DictionariesEnabled;
+        var aiAllowed = _settings.AiDictionaryEnabled;
+        if ((!mdxAllowed && !aiAllowed) || !IsSingleWord(source))
         {
             DictionaryDefinition = "";
             DictionaryWord = "";
@@ -166,9 +168,25 @@ public partial class QuickTranslateViewModel : ObservableObject
 
         try
         {
-            // 首次查词会把资源块解到缓存目录，可能上百毫秒 —— 放后台，别把译文落地的节奏拖住
+            // 首次查词会把资源块解到缓存目录（上百毫秒），AI 词典更是一次网络往返 ——
+            // 全放后台，别把译文落地的节奏拖住
             var hit = await Task.Run(() =>
-                _dictionaries.Query(source) ?? (IsSingleWord(translated) ? _dictionaries.Query(translated) : null));
+            {
+                if (mdxAllowed)
+                {
+                    var local = _dictionaries!.Query(source)
+                        ?? (IsSingleWord(translated) ? _dictionaries.Query(translated) : null);
+                    if (local is not null)
+                    {
+                        return new DictionaryCard(local.Word, local.Definition, local.SourceName);
+                    }
+                }
+
+                var entry = aiAllowed ? QueryAiDictionary(source) : null;
+                return entry is null
+                    ? null
+                    : new DictionaryCard(entry.Wordhead, entry.Definition, "AI 词典");
+            });
 
             // 等结果期间用户可能已经改写输入或换了会话：过期结果直接丢弃，不给小窗挂上不相干的释义
             if (!IsSingleWord(InputText) || !string.Equals(InputText.Trim(), source, StringComparison.Ordinal))
@@ -187,7 +205,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
             DictionaryWord = string.Equals(hit.Word, source, StringComparison.OrdinalIgnoreCase) ? "" : hit.Word;
             DictionaryDefinition = hit.Definition;
-            DictionarySource = hit.SourceName ?? "";
+            DictionarySource = hit.Source ?? "";
             IsDictionaryExpanded = false;
         }
         catch (Exception ex)
@@ -196,6 +214,44 @@ public partial class QuickTranslateViewModel : ObservableObject
             Log.Debug(ex, "本地词典查询失败（忽略）");
         }
     }
+
+    /// <summary>词典卡的一行数据（本地 mdx 与 AI 词典共用）。</summary>
+    private sealed record DictionaryCard(string Word, string Definition, string? Source);
+
+    /// <summary>
+    /// AI 词典兜底（FR-056）：只有当前引擎是 AI 且已配置时才发这次额外请求，
+    /// 走 <see cref="GlossaryTranslator.Unwrap"/> 后的裸引擎——词典答案不是译文，
+    /// 既不该被术语表改写，也不该计入引擎看板（会让 P50 与失败率失真）。
+    /// 8 秒拿不到就放弃：这是卡片，不是用户等的答案。
+    /// </summary>
+    private AiDictionaryEntry? QueryAiDictionary(string word)
+    {
+        if (GlossaryTranslator.Unwrap(_catalog.Resolve(_settings.Engine))
+            is not LlmTranslator { IsConfigured: true } llm)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(AiDictionaryTimeout);
+            return llm.QueryDictionaryAsync(word, TargetLanguage, timeout.Token).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("AI 词典超时（{Timeout}ms），本次不显示词典卡", (int)AiDictionaryTimeout.TotalMilliseconds);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // 只记异常类型，不记词面（需求 6 日志脱敏）
+            Log.Debug("AI 词典查询失败（{Type}），忽略", ex.GetType().Name);
+            return null;
+        }
+    }
+
+    /// <summary>AI 词典请求的等待上限：拿不到就不显示卡片，绝不拖住词典线程。</summary>
+    private static readonly TimeSpan AiDictionaryTimeout = TimeSpan.FromSeconds(8);
 
     /// <summary>「单词」判据：≤32 字符且无换行（spec §7：划词结果为单词时才出词典卡）。</summary>
     private static bool IsSingleWord(string? text) =>

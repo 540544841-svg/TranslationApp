@@ -89,6 +89,19 @@ public static class LlmPrompt
         _ => null,
     };
 
+    /// <summary>
+    /// AI 词典请求（FR-056 / 批 6 spec §1）的系统提示：只要一个 JSON 对象，字段名固定，
+    /// 并明确"不要解释、不要多余文字"——解析侧 <c>AiDictionaryParser</c> 容忍围栏与散文，
+    /// 但提示越硬，返回越干净，用户看到半截 JSON 的概率越低。
+    /// </summary>
+    public static string BuildDictionaryRequest(string word, string targetLanguage) =>
+        $$"""
+          你是词典。给单词「{{word}}」写一条简明词典条目，释义用{{TranslationLanguages.DisplayName(targetLanguage)}}。
+          只输出一个 JSON 对象，不要任何解释、前后缀或代码围栏之外的文字，格式：
+          {"wordhead":"{{word}}","phonetic":"国际音标","senses":["词性. 释义一","词性. 释义二"]}
+          要求：senses 最多 6 条，每条不超过 40 字，按常用程度排序；没有音标时 phonetic 给空字符串。
+          """;
+
     /// <summary>语境取**尾部**：连贯性靠的是紧邻的上文，开头那半句被截掉无害。</summary>
     private static string TrimContext(string context)
     {

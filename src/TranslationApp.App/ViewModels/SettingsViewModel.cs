@@ -127,6 +127,7 @@ public partial class SettingsViewModel : ObservableObject
         _dailyReviewEnabled = settings.DailyReviewEnabled;
         _shadowReadingEnabled = settings.ShadowReadingEnabled;
         _shadowPauseMs = settings.ShadowPauseMs;
+        _historyGroupedView = settings.HistoryGroupedView;
         // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
         InitializeApiPage();
         // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
@@ -550,6 +551,43 @@ public partial class SettingsViewModel : ObservableObject
 
     public ObservableCollection<TranslationRecord> HistoryItems { get; } = [];
 
+    /// <summary>按会话分组后的视图行（FR-057）：组标题 + 该组记录 + 折叠状态。</summary>
+    public sealed partial class HistoryGroupRow : ObservableObject
+    {
+        public required string Label { get; init; }
+
+        public ObservableCollection<TranslationRecord> Records { get; } = [];
+
+        /// <summary>默认展开：分组的目的是"少滚动"，不是"多点两下才看得到"。</summary>
+        [ObservableProperty]
+        private bool _isExpanded = true;
+
+        public string ToggleText => IsExpanded ? "收起" : "展开";
+
+        public System.Windows.Visibility BodyVisibility =>
+            IsExpanded ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+        partial void OnIsExpandedChanged(bool value)
+        {
+            OnPropertyChanged(nameof(ToggleText));
+            OnPropertyChanged(nameof(BodyVisibility));
+        }
+    }
+
+    public ObservableCollection<HistoryGroupRow> HistoryGroups { get; } = [];
+
+    /// <summary>历史页是否走分组视图（关掉或有搜索词时回到平铺）。</summary>
+    [ObservableProperty]
+    private bool _historyGroupedView;
+
+    partial void OnHistoryGroupedViewChanged(bool value) => Save(s => s.HistoryGroupedView = value);
+
+    /// <summary>
+    /// 实际生效的分组开关：搜索时强制平铺——跨组命中的结果按相关性排，
+    /// 再按会话切组会让"最该看的那条"藏在某个组里。
+    /// </summary>
+    public bool IsHistoryGrouped => HistoryGroupedView && string.IsNullOrWhiteSpace(HistoryKeyword);
+
     [ObservableProperty]
     private string _historyKeyword = "";
 
@@ -563,14 +601,42 @@ public partial class SettingsViewModel : ObservableObject
     {
         var records = _history.Search(HistoryKeyword);
         HistoryItems.Clear();
+        HistoryGroups.Clear();
         foreach (var record in records)
         {
             HistoryItems.Add(record);
         }
 
+        if (IsHistoryGrouped)
+        {
+            foreach (var group in HistoryGrouper.Group(records))
+            {
+                var row = new HistoryGroupRow { Label = group.Label };
+                foreach (var record in group.Records)
+                {
+                    row.Records.Add(record);
+                }
+
+                HistoryGroups.Add(row);
+            }
+        }
+
+        OnPropertyChanged(nameof(IsHistoryGrouped));
         HistoryMessage = HistoryItems.Count == 0
             ? (string.IsNullOrWhiteSpace(HistoryKeyword) ? "暂无翻译历史" : "没有匹配的记录")
-            : $"共 {HistoryItems.Count} 条" + (HistoryItems.Count >= 500 ? "（仅显示最近 500 条）" : "");
+            : $"共 {HistoryItems.Count} 条"
+              + (IsHistoryGrouped ? $" · {HistoryGroups.Count} 个会话" : "")
+              + (HistoryItems.Count >= 500 ? "（仅显示最近 500 条）" : "");
+    }
+
+    /// <summary>折叠/展开一个会话组（FR-057）。</summary>
+    [RelayCommand]
+    private void ToggleHistoryGroup(HistoryGroupRow? row)
+    {
+        if (row is not null)
+        {
+            row.IsExpanded = !row.IsExpanded;
+        }
     }
 
     [RelayCommand]

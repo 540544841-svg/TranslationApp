@@ -38,6 +38,11 @@ if os.environ.get("B5_BATCH5B") == "1":
         "ShadowPauseMs": 600,
     })
 
+# Batch 6a switches the AI dictionary fallback on and the local mdx layer off, so the
+# card that appears can only have come from the model.
+if os.environ.get("B6_AI_DICT") == "1":
+    data.update({"AiDictionaryEnabled": True, "DictionariesEnabled": False})
+
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, ensure_ascii=False, indent=2)
 

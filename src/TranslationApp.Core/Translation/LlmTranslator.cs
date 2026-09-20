@@ -122,12 +122,15 @@ public sealed class LlmTranslator : OfficialTranslatorBase, IPromptDirectiveTran
 
     /// <summary>带语境/风格指令的请求构造（FR-050 / FR-051）：指令只进 system prompt，user 消息恒为原文本体。</summary>
     internal HttpRequestMessage CreateRequest(
-        string text, string engineSource, string engineTarget, TranslationDirective directive)
+        string text, string engineSource, string engineTarget, TranslationDirective directive) =>
+        BuildRequest(text, LlmPrompt.Build(Settings.LlmPrompt, engineSource, engineTarget, text, directive));
+
+    /// <summary>请求构造的公共部分：system = 传入的提示，user = 文本本体，Key 只在请求头。</summary>
+    private HttpRequestMessage BuildRequest(string text, string systemPrompt)
     {
         var apiKey = ReadSecret(Settings.LlmApiKeyEncrypted);
         var url = NormalizeEndpoint(Settings.LlmBaseUrl);
-        var prompt = LlmPrompt.Build(Settings.LlmPrompt, engineSource, engineTarget, text, directive);
-        var body = BuildRequestBody(Settings.LlmModel, prompt, text, Settings.LlmTemperature);
+        var body = BuildRequestBody(Settings.LlmModel, systemPrompt, text, Settings.LlmTemperature);
 
         var content = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
         content.Headers.ContentType = MediaTypeHeaderValue.Parse(ContentType);
@@ -140,6 +143,24 @@ public sealed class LlmTranslator : OfficialTranslatorBase, IPromptDirectiveTran
         // Key 只放请求头，绝不进 URL 或日志（13.3.1 / FR-010）
         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
         return request;
+    }
+
+    /// <summary>
+    /// AI 词典查询（FR-056）：同一个端点、同一套超时与错误映射，只是系统提示换成"只要 JSON 的词典"。
+    /// 刻意走 <c>Unwrap</c> 后的裸引擎调用——词典答案不是译文，混进引擎看板会让 P50 与失败率失真，
+    /// 也不该被术语表后置替换（那是给译文用的）。
+    /// </summary>
+    public async Task<TranslationApp.Core.Dictionary.AiDictionaryEntry?> QueryDictionaryAsync(
+        string word, string targetLanguage, CancellationToken cancellationToken = default)
+    {
+        var request = BuildRequest(word, LlmPrompt.BuildDictionaryRequest(word, targetLanguage));
+        var (isSuccess, status, body) = await SendAsync(request, word.Length, cancellationToken);
+        if (!isSuccess)
+        {
+            throw LlmResponseParser.CreateError(status, LlmResponseParser.TryReadErrorMessage(body));
+        }
+
+        return TranslationApp.Core.Dictionary.AiDictionaryParser.Parse(LlmResponseParser.Parse(body));
     }
 
     protected override Task<(string Text, string? DetectedSourceLanguage)> RequestChunkAsync(

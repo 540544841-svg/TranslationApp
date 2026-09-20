@@ -29,9 +29,15 @@ class Handler(BaseHTTPRequestHandler):
                 "system": messages.get("system"),
                 "user": messages.get("user"),
             }, ensure_ascii=False) + "\n")
-        # three sentences on purpose: batch 5b checks that shadow reading splits the
-        # translation into per-sentence lines and highlights them one by one
-        reply = f"桩译文{counter}。这是第二句内容。最后是第三句！"
+        # Batch-6 dictionary requests are recognisable by their system prompt ("你是词典…");
+        # answer with the JSON contract (trailing comma on purpose: the parser must repair it)
+        # so FR-056 can be exercised end to end.
+        if "词典" in (messages.get("system") or ""):
+            reply = '{"wordhead":"apple","phonetic":"/ˈæpl/","senses":["n. 苹果","n. 苹果状的东西"],}'
+        else:
+            # three sentences on purpose: batch 5b checks that shadow reading splits the
+            # translation into per-sentence lines and highlights them one by one
+            reply = f"桩译文{counter}。这是第二句内容。最后是第三句！"
         body = json.dumps({
             "id": f"stub-{counter}",
             "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}}],

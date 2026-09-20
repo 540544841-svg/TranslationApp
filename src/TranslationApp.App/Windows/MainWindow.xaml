@@ -11,6 +11,52 @@
     <Window.Resources>
         <!-- FR-024 引擎页：按字段类型 / 状态显隐输入控件与提示条 -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <!-- FR-057：历史行模板——平铺列表与分组列表共用一份，改样式不会只改到一边 -->
+        <DataTemplate x:Key="HistoryRowTemplate">
+            <Border Padding="14,10" BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="{Binding SourceSummary}"
+                                   TextTrimming="CharacterEllipsis" FontSize="{StaticResource FontSize.Small}"/>
+                        <TextBlock Text="{Binding TranslatedSummary}" Margin="0,3,0,0"
+                                   TextTrimming="CharacterEllipsis"
+                                   FontSize="{StaticResource FontSize.Small}"
+                                   Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}">
+                            <Run Text="{Binding CreatedAtDisplay, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding SourceLanguage, Mode=OneWay}"/>
+                            <Run Text="→"/>
+                            <Run Text="{Binding TargetLanguage, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding Engine, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="复制原文与译文"
+                                Command="{Binding DataContext.CopyHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Copy}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="删除该条"
+                                Command="{Binding DataContext.DeleteHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Delete}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
     <!--
       FR-009：左侧导航式设置窗口（对齐 Windows 11 设置 / macOS 系统设置的导航习惯），
@@ -775,6 +821,14 @@
                         </Border>
                         <Button Content="刷新" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
                                 Command="{Binding RefreshHistoryCommand}"/>
+                        <!-- FR-057：分组视图开关（搜索时自动回平铺，这里如实说明） -->
+                        <StackPanel Orientation="Horizontal" Margin="14,0,0,0" VerticalAlignment="Center">
+                            <CheckBox Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                      IsChecked="{Binding HistoryGroupedView}"
+                                      ToolTip="相邻 30 分钟内的翻译归为一个会话；搜索时自动回到平铺列表"/>
+                            <TextBlock Text="按会话分组" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       FontSize="{StaticResource FontSize.Small}"/>
+                        </StackPanel>
                     </StackPanel>
                     <Button Content="清空历史" Style="{StaticResource Button.Outline}"
                             HorizontalAlignment="Right" Command="{Binding ClearHistoryCommand}"/>
@@ -785,55 +839,57 @@
 
                 <Border Style="{StaticResource Card}" Padding="0">
                     <Grid>
+                        <!-- 平铺列表（分组关闭 或 正在搜索时） -->
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <ItemsControl x:Name="HistoryList" ItemsSource="{Binding HistoryItems}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="14,10" BorderBrush="{DynamicResource Brush.Border}"
-                                            BorderThickness="0,0,0,1">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                                <TextBlock Text="{Binding SourceSummary}"
-                                                           TextTrimming="CharacterEllipsis" FontSize="{StaticResource FontSize.Small}"/>
-                                                <TextBlock Text="{Binding TranslatedSummary}" Margin="0,3,0,0"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           FontSize="{StaticResource FontSize.Small}"
-                                                           Foreground="{DynamicResource Brush.TextSecondary}"/>
-                                                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}">
-                                                    <Run Text="{Binding CreatedAtDisplay, Mode=OneWay}"/>
-                                                    <Run Text=" · "/>
-                                                    <Run Text="{Binding SourceLanguage, Mode=OneWay}"/>
-                                                    <Run Text="→"/>
-                                                    <Run Text="{Binding TargetLanguage, Mode=OneWay}"/>
-                                                    <Run Text=" · "/>
-                                                    <Run Text="{Binding Engine, Mode=OneWay}"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                                <Button Style="{StaticResource IconButton}" Width="26" Height="26"
-                                                        ToolTip="复制原文与译文"
-                                                        Command="{Binding DataContext.CopyHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}">
-                                                    <TextBlock Text="{StaticResource Icon.Copy}" FontFamily="{StaticResource Font.Icon}"
-                                                               FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
-                                                </Button>
-                                                <Button Style="{StaticResource IconButton}" Width="26" Height="26"
-                                                        ToolTip="删除该条"
-                                                        Command="{Binding DataContext.DeleteHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}">
-                                                    <TextBlock Text="{StaticResource Icon.Delete}" FontFamily="{StaticResource Font.Icon}"
-                                                               FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            <ScrollViewer.Style>
+                                <Style TargetType="ScrollViewer">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsHistoryGrouped}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ScrollViewer.Style>
+                            <ItemsControl x:Name="HistoryList" ItemsSource="{Binding HistoryItems}"
+                                          ItemTemplate="{StaticResource HistoryRowTemplate}"/>
+                        </ScrollViewer>
+
+                        <!-- FR-057：按会话分组（相邻 ≤30 分钟归一组，组标题可折叠） -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ScrollViewer.Style>
+                                <Style TargetType="ScrollViewer">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsHistoryGrouped}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ScrollViewer.Style>
+                            <ItemsControl ItemsSource="{Binding HistoryGroups}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <Border Background="{DynamicResource Brush.SurfaceSubtle}" Padding="12,6">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                                                               FontSize="{StaticResource FontSize.Small}"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"
+                                                               TextTrimming="CharacterEllipsis" Margin="0,0,64,0"/>
+                                                    <Button Content="{Binding ToggleText}" HorizontalAlignment="Right"
+                                                            Style="{StaticResource Button.Outline}" Padding="8,2" Height="22"
+                                                            FontSize="{StaticResource FontSize.Small}"
+                                                            Command="{Binding DataContext.ToggleHistoryGroupCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                            <ItemsControl ItemsSource="{Binding Records}"
+                                                          Visibility="{Binding BodyVisibility}"
+                                                          ItemTemplate="{StaticResource HistoryRowTemplate}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </ScrollViewer>
 
                         <!-- 空状态（语言人格：动词句说清下一步）：列表为空时给出引导而非一片空白 -->
@@ -1193,6 +1249,18 @@
                                           VerticalAlignment="Center"
                                           IsChecked="{Binding DictionariesEnabled}"/>
                             </Grid>
+                            <!-- FR-056：AI 词典兜底（会多花一次 API 额度，所以默认关） -->
+                            <Border Style="{StaticResource Hairline}"/>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,150,0">
+                                    <TextBlock Text="本地没命中时用 AI 引擎补一条词典释义" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="让模型返回「词头 + 音标 + 简明释义」的结构化结果，显示在同一张词典卡上（来源标「AI 词典」）。每查一个词会多发一次请求、消耗 API 额度，因此默认关闭；不计入引擎看板，也不写历史"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding AiDictionaryEnabled}"/>
+                            </Grid>
                             <Border Style="{StaticResource Hairline}"/>
                             <Grid>
                                 <TextBlock Text="{Binding DictionaryStatusText}" Style="{StaticResource Text.Caption}"
@@ -1327,7 +1395,7 @@
                             <Border Style="{StaticResource Hairline}"/>
 
                             <Grid>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,220,0">
                                     <TextBlock Text="OCR 识别语言" FontSize="{StaticResource FontSize.Body}"/>
                                     <TextBlock Text="「自动」跟随系统语言偏好；显式指定时会作为翻译的源语言"
                                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
@@ -1358,7 +1426,7 @@
 
                             <!-- FR-029-1（14.3.12.4）：识别前预处理，归属同一卡片（13.5.1） -->
                             <Grid>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,250,0">
                                     <TextBlock Text="识别前预处理" FontSize="{StaticResource FontSize.Body}"/>
                                     <TextBlock Text="小字号或疑似漏识时自动放大并拉伸对比度后再识别一遍（择优采用），更准但略慢；关闭则仅识别原图"
                                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
@@ -1373,7 +1441,7 @@
 
                             <!-- FR-030（14.9.2 / 14.9.3）：本地识别引擎，归属同一卡片（13.5.1） -->
                             <Grid>
-                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,250,0">
                                     <TextBlock Text="本地识别引擎" FontSize="{StaticResource FontSize.Body}"/>
                                     <TextBlock Text="默认用 Windows 自带引擎（快）；PaddleOCR 内置本地模型（约 22MB，随程序附带），对斜体、小字、低对比度更准，但单次识别约慢 2~4 倍、程序体积更大；不可用时自动改回系统引擎并提示"
                                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>

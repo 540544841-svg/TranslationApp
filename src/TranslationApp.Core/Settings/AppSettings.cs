@@ -398,4 +398,15 @@ public sealed class AppSettings
 
     /// <summary>跟读时句间停顿毫秒（留时间给用户跟着念一句）。</summary>
     public int ShadowPauseMs { get; set; } = 600;
+
+    // ==================== 批 6 6a：AI 词典 / 历史分组 ====================
+
+    /// <summary>
+    /// AI 词典兜底（FR-056，默认关）：划词为单词且本地 mdx 没命中时，再发一次请求让模型给
+    /// 「词头 + 音标 + 简明释义」。**默认关是因为它会花用户的 API 额度**——每次查词多一次调用。
+    /// </summary>
+    public bool AiDictionaryEnabled { get; set; }
+
+    /// <summary>历史页按会话分组（FR-057，默认开）：连续翻译（相邻 ≤30 分钟）归一组；搜索时自动回平铺。</summary>
+    public bool HistoryGroupedView { get; set; } = true;
 }

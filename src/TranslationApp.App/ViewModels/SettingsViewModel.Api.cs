@@ -114,9 +114,16 @@ public partial class SettingsViewModel
     {
 #pragma warning disable MVVMTK0034
         _dictionariesEnabled = _settings.DictionariesEnabled;
+        _aiDictionaryEnabled = _settings.AiDictionaryEnabled;
 #pragma warning restore MVVMTK0034
         RefreshDictionaryList();
     }
+
+    /// <summary>AI 词典兜底（FR-056，默认关）：开=每个生词多一次模型调用，所以要花额度。</summary>
+    [ObservableProperty]
+    private bool _aiDictionaryEnabled;
+
+    partial void OnAiDictionaryEnabledChanged(bool value) => Save(s => s.AiDictionaryEnabled = value);
 
     partial void OnDictionariesEnabledChanged(bool value)
     {
