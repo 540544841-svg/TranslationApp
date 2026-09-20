@@ -1,12 +1,15 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Windows;
+using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Serilog;
 using TranslationApp.Core.Api;
 using TranslationApp.Core.Capture;
+using TranslationApp.Core.Dictionary;
 using TranslationApp.Services;
 
 namespace TranslationApp.ViewModels;
@@ -46,6 +49,184 @@ public partial class SettingsViewModel
         _localApiPort = _settings.LocalApiPort;
 #pragma warning restore MVVMTK0034
         UpdateLocalApiStatus();
+    }
+
+    // ---------------- FR-049：本地 mdx 词典 ----------------
+
+    private DictionaryManager? _dictionaries;
+
+    /// <summary>词典列表项（不可用项直接把原因写在第二行，不静默隐藏用户的词典）。</summary>
+    public sealed partial class DictionaryRow : ObservableObject
+    {
+        private readonly DictionaryInfo _info;
+
+        public DictionaryRow(DictionaryInfo info) => _info = info;
+
+        public string FileName => _info.FileName;
+
+        public string Title => _info.IsAvailable
+            ? $"{_info.DisplayName}（{_info.WordCount:N0} 条）"
+            : _info.FileName;
+
+        public string Subtitle => _info.IsAvailable ? _info.FileName : _info.Reason ?? "无法解析";
+
+        public bool IsAvailable => _info.IsAvailable;
+
+        /// <summary>释义全文（测试查询的结果，展开态才占高度）。</summary>
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(Shown))]
+        private string? _definition;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(Shown))]
+        [NotifyPropertyChangedFor(nameof(IsExpandedVisible))]
+        private bool _isExpanded;
+
+        public bool IsExpandedVisible => IsExpanded && Definition is { Length: > 0 };
+
+        /// <summary>折叠时只显示前 120 字。</summary>
+        public string Shown => Definition is { Length: > 120 } text && !IsExpanded
+            ? text[..120] + "…"
+            : Definition ?? "";
+
+        public void SetDefinition(string? text)
+        {
+            Definition = text;
+            IsExpanded = false;
+        }
+
+        [RelayCommand]
+        private void ToggleExpanded() => IsExpanded = !IsExpanded;
+    }
+
+    public ObservableCollection<DictionaryRow> DictionaryItems { get; } = [];
+
+    [ObservableProperty]
+    private bool _dictionariesEnabled;
+
+    [ObservableProperty]
+    private string _dictionaryTestWord = "";
+
+    [ObservableProperty]
+    private string _dictionaryStatusText = "";
+
+    private void InitializeDictionariesPage()
+    {
+#pragma warning disable MVVMTK0034
+        _dictionariesEnabled = _settings.DictionariesEnabled;
+#pragma warning restore MVVMTK0034
+        RefreshDictionaryList();
+    }
+
+    partial void OnDictionariesEnabledChanged(bool value)
+    {
+        Save(s => s.DictionariesEnabled = value);
+        DictionaryStatusText = value ? "" : "词典功能已关闭（词典文件保留，小窗不再查词）";
+    }
+
+    private void RefreshDictionaryList()
+    {
+        DictionaryItems.Clear();
+        if (_dictionaries is null)
+        {
+            return;
+        }
+
+        foreach (var info in _dictionaries.List())
+        {
+            DictionaryItems.Add(new DictionaryRow(info));
+        }
+
+        DictionaryStatusText = DictionaryItems.Count == 0
+            ? "还没有词典：点「导入词典」选择 .mdx 文件（仅支持 MDX v3-SQLite）"
+            : $"共 {DictionaryItems.Count} 份词典，按列表顺序取首个命中";
+    }
+
+    [RelayCommand]
+    private void ImportDictionary()
+    {
+        if (_dictionaries is null)
+        {
+            return;
+        }
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "选择 mdx 词典",
+            Filter = "MDX 词典 (*.mdx)|*.mdx|所有文件 (*.*)|*.*",
+            Multiselect = false,
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        // 解析可能要解压几十 MB 的 SQLite 资源块，别把设置页冻住
+        Task.Run(() =>
+        {
+            var result = _dictionaries.Import(dialog.FileName);
+            Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                DictionaryStatusText = result.Ok
+                    ? $"已导入 {result.FileName}"
+                    : $"导入失败：{result.Reason}";
+                RefreshDictionaryList();
+            });
+        });
+    }
+
+    [RelayCommand]
+    private void DeleteDictionary(DictionaryRow? row)
+    {
+        if (_dictionaries is null || row is null)
+        {
+            return;
+        }
+
+        if (!_dictionaries.Delete(row.FileName))
+        {
+            DictionaryStatusText = $"删除失败：{row.FileName}";
+            return;
+        }
+
+        RefreshDictionaryList();
+    }
+
+    /// <summary>测试查询：对每份可用词典各查一次，看清「哪份命中、命中在哪个词头」。</summary>
+    [RelayCommand]
+    private async Task TestDictionaryLookupAsync()
+    {
+        if (_dictionaries is null)
+        {
+            return;
+        }
+
+        var word = (DictionaryTestWord ?? "").Trim();
+        if (word.Length == 0)
+        {
+            DictionaryStatusText = "先输入要测试的词";
+            return;
+        }
+
+        var hits = await Task.Run(() =>
+        {
+            var map = new Dictionary<string, string?>();
+            foreach (var row in DictionaryItems.Where(r => r.IsAvailable))
+            {
+                map[row.FileName] = _dictionaries.QueryFrom(row.FileName, word)?.Definition;
+            }
+
+            return map;
+        });
+
+        var any = false;
+        foreach (var row in DictionaryItems)
+        {
+            row.SetDefinition(hits.TryGetValue(row.FileName, out var text) ? text : null);
+            any |= row.Definition is { Length: > 0 };
+        }
+
+        DictionaryStatusText = any ? $"「{word}」命中 {hits.Count(h => h.Value is { Length: > 0})} 份词典" : $"「{word}」没有命中";
     }
 
     partial void OnLocalApiEnabledChanged(bool value)

@@ -70,7 +70,8 @@ public partial class SettingsViewModel : ObservableObject
         KeyboardButtonHook keyboardHook,
         ProfileService profiles,
         TranslationApp.Services.LocalApiGateway localApiGateway,
-        AnkiConnectClient anki)
+        AnkiConnectClient anki,
+        TranslationApp.Core.Dictionary.DictionaryManager? dictionaries = null)
     {
         _settings = settings;
         _store = store;
@@ -89,6 +90,7 @@ public partial class SettingsViewModel : ObservableObject
         _profiles = profiles;
         _localApiGateway = localApiGateway;
         _anki = anki;
+        _dictionaries = dictionaries;
 
         _showStartBalloon = settings.ShowStartBalloon;
         _autoStartEnabled = autoStart.IsEnabled;
@@ -123,6 +125,8 @@ public partial class SettingsViewModel : ObservableObject
         _tmReuseEnabled = settings.TmReuseEnabled;
         // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
         InitializeApiPage();
+        // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
+        InitializeDictionariesPage();
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）

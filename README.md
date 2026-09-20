@@ -329,6 +329,41 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
       旧库 `PRAGMA table_info` 探测自动 `ALTER TABLE` 迁移；装饰器 Stopwatch 计时、仅成功且非抑制作用域记样本；
       引擎卡统计行追加「P50 0.8s」
 
+### P0 批 4（FR-043 ~ FR-049，2026-09-20，spec `docs/superpowers/specs/2026-09-20-p0-batch4-alignment-tm-api-dict-design.md`）
+
+- [x] **FR-043 段落对照视图**：`ParagraphAligner`（纯函数）按空行切段（无空行退单换行），两侧段数相等且
+      ≥3 段才成对；小窗出现「对照」按钮，整块译文 ⇄ 逐段（原文段灰 / 译文段）堆叠滚动，`AlignViewPreferred`
+      记住偏好；钉图路径不动（仍走 BlockOverlay）
+- [x] **FR-044 复制策略菜单**：「复制译文」按钮不变（左击=只复制译文），右侧「▾」弹三项
+      只译 / 只原 / 原文+译文，拼接逻辑在 Core `ClipboardContentBuilder`（可单测），
+      状态行如实反馈「译文已复制 / 原文已复制 / 原文+译文已复制」；全走既有剪贴板写入路径（备份-还原-自写抑制）
+- [x] **FR-045 TM 相似句回填**（默认开）：`TmMatcher` 归一化 Levenshtein，先按长度差 >15% 预筛，
+      阈值 0.92（完全相等 1.0 直命中）；候选由 `HistoryRepository.SearchSimilarCandidates` 取同语言对最近 500 条
+      再 C# 比对（≤200 条参与，纯 CPU <5ms，**不给译文落定加延迟**——本地命中替代的是网络请求）；
+      命中即回填译文 + 状态行「TM 命中 98% · 来自 3 天前的记录」+「重新机器翻译」（点了本会话强制走引擎）；
+      隐私模式下无历史自然不命中
+- [x] **FR-046 本地 HTTP API**（默认关）：`HttpListener` **只绑 127.0.0.1**（默认 46610），
+      `POST /api/translate` + `GET /api/status`（后者不含任何用户数据）；`X-Auth` token 首次启用
+      `RandomNumberGenerator` 生成、**DPAPI 加密**存盘、界面只显掩码（明文仅经「复制」进剪贴板，可一键重新生成使旧 token 立即失效）；
+      翻译走与手动完全相同的引擎+术语链，`SemaphoreSlim(2)` 并发闸 + 15s 超时；**隐私模式开启即不监听**
+- [x] **FR-047 批量识别导出 Markdown**：`BatchOcrRunner`（注入识别器，单张失败不中断、进度回调）+
+      「高级」页多选图片（png/jpg/jpeg/bmp/webp/tiff）→ 逐张复用现有 OCR 引擎路由 → 另存为 md（`## 文件名` + 正文）
+      或 txt，结果行「成功 n / 失败 m」；**不支持 PDF**（无第三方解析依赖，UI 文案写明「PDF 请先转图片」）
+- [x] **FR-048 钉图译文墨色取样**：`TextRenderStyleSampler` 在段框内做 4bit/通道量化聚类，剔除与底色同簇后
+      取最大簇为文字色，需同时满足「墨簇占比 ≥8%」与「与底色相对亮度差 ≥0.30」，否则返回 null 沿用黑/白令牌；
+      采样在识别线程一次完成，按块透传（模式 A 逐块用自己的墨色，模式 B 统一底板取出现最多的墨色），
+      重试/强制翻译复用同一批采样——**零额外交互延迟**；复杂底纹宁缺毋滥（不画花）
+- [x] **FR-049 mdx 离线词典（最小可行）**：`MdxDictionaryReader` 解容器头 → **顺序走块**定位资源块 →
+      该位置页头为 `SQLite format 3\0` 才继续，只读连接查 `Term`/`Definition`（先精确后前缀，按词头长度排序）；
+      释义经 `DefinitionTextStripper` 剥 RTF/HTML（RTF 只有 `\u` 的数值是正文码点）；解压结果按
+      词典名+长度+mtime+偏移缓存于 `%TEMP%\TranslationApp\dict-cache`；`DictionaryManager` 全程惰性
+      （启动不扫描，译文落定链路零开销）。小窗译文为**单词**（≤32 字符且无换行）且词典开启时出现「词典」卡
+      （点击展开释义，Anki 收藏时把词典义并入背面字段，生词本/历史不变）；设置页「高级 → 本地词典」
+      支持导入（复制到 `%AppData%\TranslationApp\dicts`，重名自动 ` (2)`）、列表、删除、逐词典测试查询
+      批 4 已知边界：**词典仅支持 MDX v3-SQLite**，判据是「资源块页头 + `Term` 表」，不做全文页头扫描
+      （那会把任意位置撞上 SQLite 魔数谎称支持）；v1/v2、缺表、非 mdx 文件都在导入时给出中文原因并回滚，
+      列表里显示为「不可用」而非静默消失。段落对齐不做逐句（段 = 空行分隔），对齐失败静默回整块。
+
 已知限制：
 
 - **截图翻译不支持跨显示器框选**（13.2.3）：遮罩只覆盖鼠标所在的单个显示器。混合 DPI

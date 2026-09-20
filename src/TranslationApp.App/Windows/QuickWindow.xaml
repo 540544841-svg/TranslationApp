@@ -111,6 +111,7 @@
                 <RowDefinition Height="Auto"/>   <!-- 语言栏 -->
                 <RowDefinition Height="Auto"/>   <!-- 输入区 -->
                 <RowDefinition Height="Auto"/>   <!-- 译文标题行 -->
+                <RowDefinition Height="Auto"/>   <!-- 词典卡（FR-049，无命中时 Collapsed） -->
                 <RowDefinition Height="*"/>      <!-- 译文内容 -->
                 <RowDefinition Height="Auto"/>   <!-- 进度 / 错误 / 状态 -->
             </Grid.RowDefinitions>
@@ -301,8 +302,51 @@
                 </StackPanel>
             </Grid>
 
+            <!-- ============ 词典卡（FR-049：划词/输入为单词且本地词典命中时出现） ============ -->
+            <Border x:Name="DictionaryCard" Grid.Row="3" Style="{StaticResource Card}"
+                    Margin="0,4,0,0" Padding="10,8"
+                    MouseLeftButtonUp="OnDictionaryCardClick"
+                    Cursor="Hand"
+                    Visibility="{Binding IsDictionaryVisible, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <Grid>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="词典" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding DictionaryWord}" Style="{StaticResource Text.Caption}"
+                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.Primary}"/>
+                        </StackPanel>
+                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Brush.TextTertiary}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                    <Setter Property="Text" Value="展开全文"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
+                                            <Setter Property="Text" Value="收起"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <TextBlock x:Name="DictionaryText" Text="{Binding DictionaryDefinition}" TextWrapping="Wrap" Margin="0,4,0,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Hint}">
+                                <Setter Property="MaxHeight" Value="40"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
+                                        <Setter Property="MaxHeight" Value="180"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
             <!-- ============ 译文内容 / 对比分栏 ============ -->
-            <Grid x:Name="ResultArea" Grid.Row="3">
+            <Grid x:Name="ResultArea" Grid.Row="4">
                 <!--
                   FR-026 测量影子（14.2.1 第 1 点）：不可见、不参与命中，只用来 Measure 出「译文所需高度」。
                   刻意**不测真实的只读 TextBox**（Field.ReadOnlyResult）：它的 MaxHeight / 内边距 /
@@ -404,7 +448,7 @@
             </Grid>
 
             <!-- ============ 进度 / 错误 / 状态 ============ -->
-            <StackPanel x:Name="StatusPanel" Grid.Row="4" Margin="0,10,0,0">
+            <StackPanel x:Name="StatusPanel" Grid.Row="5" Margin="0,10,0,0">
                 <ProgressBar Height="3" Margin="0,0,0,8" IsIndeterminate="True"
                              Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
 

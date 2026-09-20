@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using TranslationApp.Core.Anki;
 using TranslationApp.Core.Capture;
+using TranslationApp.Core.Dictionary;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Hotkey;
 using TranslationApp.Core.Settings;
@@ -258,6 +259,13 @@ public partial class App : Application
         services.AddSingleton<IVocabularyRepository>(_ => new VocabularyRepository(database));
         // FR-035：Anki 直推客户端——专用 HttpClient 强制不经代理（127.0.0.1 被系统代理转发会假失败）
         services.AddSingleton(_ => new AnkiConnectClient(AnkiConnectClient.CreateLocalHostClient()));
+        // FR-049：mdx 离线词典（%AppData%\TranslationApp\dicts）。构造不扫描磁盘，首次查词/列示才解析，
+        // 词典开关关闭时连解析都不做；只用本地文件，不产生任何网络请求。
+        services.AddSingleton(sp => new DictionaryManager(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "TranslationApp", "dicts"),
+            enabledProvider: () => sp.GetRequiredService<AppSettings>().DictionariesEnabled));
         services.AddSingleton<ITtsService, TtsService>();
         services.AddSingleton<HotkeyManager>();
         // FR-036：悬停取词的鼠标钩子与决策层（默认不安装，见 ApplyPrivacySideEffects 门控）

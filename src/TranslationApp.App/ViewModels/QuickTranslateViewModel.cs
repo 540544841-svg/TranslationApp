@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using TranslationApp.Core.Anki;
 using TranslationApp.Core.ClipboardFormats;
+using TranslationApp.Core.Dictionary;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
@@ -30,6 +31,9 @@ public partial class QuickTranslateViewModel : ObservableObject
     private readonly ClipboardMonitor _clipboardMonitor;
     private readonly EngineStatsRepository _stats;
     private readonly AnkiConnectClient? _anki;
+
+    /// <summary>FR-049：mdx 离线词典（可为 null = 未启用词典层）。只读本地文件，不产生网络请求。</summary>
+    private readonly DictionaryManager? _dictionaries;
     private string? _lastDetectedLanguage;
 
     /// <summary>P0 批 1：本次会话原文是否被阅读清洗过（成功状态行追加「已清洗换行」）。</summary>
@@ -59,7 +63,8 @@ public partial class QuickTranslateViewModel : ObservableObject
         ITtsService tts,
         ClipboardMonitor clipboardMonitor,
         EngineStatsRepository stats,
-        AnkiConnectClient? anki = null)
+        AnkiConnectClient? anki = null,
+        DictionaryManager? dictionaries = null)
     {
         _catalog = catalog;
         _settings = settings;
@@ -70,6 +75,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         _clipboardMonitor = clipboardMonitor;
         _stats = stats;
         _anki = anki;
+        _dictionaries = dictionaries;
         _targetLanguage = settings.TargetLanguage;
     }
 
@@ -115,6 +121,74 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>命中明细（「源 → 目标 ×次数」逐行），供徽标 tooltip。</summary>
     [ObservableProperty]
     private string _glossaryTooltip = "";
+
+    /// <summary>FR-049：词典释义（空 = 本次没有词典命中；不在 UI 线程外的回调里赋值）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDictionaryVisible))]
+    private string _dictionaryDefinition = "";
+
+    /// <summary>词典命中的词头（与输入不同才显示，省得用户看重复信息）。</summary>
+    [ObservableProperty]
+    private string _dictionaryWord = "";
+
+    /// <summary>词典释义是否展开全文（卡片默认截断，点一下看全）。</summary>
+    [ObservableProperty]
+    private bool _isDictionaryExpanded;
+
+    /// <summary>词典卡是否可见。</summary>
+    public bool IsDictionaryVisible => DictionaryDefinition.Length > 0;
+
+    /// <summary>
+    /// 查一次本地词典（FR-049 最小可行）。只在译文成功落地后跑，且**在 await 处回到 UI 线程**再改属性。
+    /// 门控：<c>DictionariesEnabled</c> 关、非单词（&gt;32 字符或含换行）、没装词典 → 直接清零不查。
+    /// </summary>
+    private async Task LookUpDictionaryAsync(string source, string translated)
+    {
+        if (_dictionaries is null || !_settings.DictionariesEnabled || !IsSingleWord(source))
+        {
+            DictionaryDefinition = "";
+            DictionaryWord = "";
+            return;
+        }
+
+        try
+        {
+            // 首次查词会把资源块解到缓存目录，可能上百毫秒 —— 放后台，别把译文落地的节奏拖住
+            var hit = await Task.Run(() =>
+                _dictionaries.Query(source) ?? (IsSingleWord(translated) ? _dictionaries.Query(translated) : null));
+
+            // 等结果期间用户可能已经改写输入或换了会话：过期结果直接丢弃，不给小窗挂上不相干的释义
+            if (!IsSingleWord(InputText) || !string.Equals(InputText.Trim(), source, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (hit is null)
+            {
+                DictionaryDefinition = "";
+                DictionaryWord = "";
+                IsDictionaryExpanded = false;
+                return;
+            }
+
+            DictionaryWord = string.Equals(hit.Word, source, StringComparison.OrdinalIgnoreCase) ? "" : hit.Word;
+            DictionaryDefinition = hit.Definition;
+            IsDictionaryExpanded = false;
+        }
+        catch (Exception ex)
+        {
+            // 词典只是加分项：任何异常都不该影响已落地的译文
+            Log.Debug(ex, "本地词典查询失败（忽略）");
+        }
+    }
+
+    /// <summary>「单词」判据：≤32 字符且无换行（spec §7：划词结果为单词时才出词典卡）。</summary>
+    private static bool IsSingleWord(string? text) =>
+        !string.IsNullOrWhiteSpace(text) && text.Length <= 32 && !text.Contains('\n') && !text.Contains('\r');
+
+    /// <summary>展开 / 收起词典释义。</summary>
+    [RelayCommand]
+    private void ToggleDictionaryExpanded() => IsDictionaryExpanded = !IsDictionaryExpanded;
 
     /// <summary>标记本次会话原文经过阅读清洗（呼出方在 ShowForSelection 里调用）。</summary>
     internal void MarkCleaned() => _cleanedNote = true;
@@ -203,6 +277,11 @@ public partial class QuickTranslateViewModel : ObservableObject
         IsAlignView = false;
         AlignPairs.Clear();
 
+        // FR-049：词典卡随会话清空（在途查询靠输入比对判过期，不会把上一句的释义留下）
+        DictionaryDefinition = "";
+        DictionaryWord = "";
+        IsDictionaryExpanded = false;
+
         // FR-020 AC 4：再次打开小窗不残留上次对比结果，并取消可能仍在途的请求
         CancelCompareRequests();
         CompareItems.Clear();
@@ -283,6 +362,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     private void ApplySuccess(ITranslator translator, string text, TranslationResult result)
     {
         ResultText = result.TranslatedText;
+        _ = LookUpDictionaryAsync(text, result.TranslatedText);
         if (!string.IsNullOrEmpty(result.DetectedSourceLanguage))
         {
             _lastDetectedLanguage = result.DetectedSourceLanguage;
@@ -468,6 +548,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         var ageText = age.TotalDays < 1 ? "今天的记录" : $"{age.TotalDays:0} 天前的记录";
         StatusText = $"TM 命中 {hit.Score:P0} · 来自 {ageText}";
         UpdateAlignment(text, hit.Entry.Translated);
+        _ = LookUpDictionaryAsync(text, hit.Entry.Translated);
         RefreshFavoriteState();
         TryAutoSpeakSource(text);
     }
@@ -652,8 +733,15 @@ public partial class QuickTranslateViewModel : ObservableObject
         _vocabulary.Add(source, ResultText, SourceLanguage, TargetLanguage);
         IsFavorited = true;
         StatusText = "已加入生词本";
-        TryPushToAnki(source, ResultText);
+        TryPushToAnki(source, WithDictionary(ResultText));
     }
+
+    /// <summary>
+    /// FR-049：卡片上显示的词典释义并入 Anki 背面字段（生词本本身仍只存引擎译文，
+    /// 免得离线词典的版权文本被写进历史记录）。
+    /// </summary>
+    private string WithDictionary(string translated) =>
+        DictionaryDefinition.Length == 0 ? translated : $"{translated}\n{DictionaryDefinition}";
 
     /// <summary>
     /// FR-035：Anki 推送完成回调（由 App 注入，负责调度回 UI 线程再调 <see cref="AppendAnkiResult"/>）。

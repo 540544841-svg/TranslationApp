@@ -1144,6 +1144,61 @@
                         </Grid>
                     </Border>
 
+                    <!-- FR-049（P0 批 4 / spec §7）：本地 mdx 词典（仅 MDX v3-SQLite） -->
+                    <TextBlock Text="本地词典" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,150,0">
+                                    <TextBlock Text="划词/输入为单词时显示词典卡" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="只读本地文件、不产生网络请求；释义可并入 Anki 背面字段。仅支持 MDX v3（后端为 SQLite）的词典"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding DictionariesEnabled}"/>
+                            </Grid>
+                            <Border Style="{StaticResource Hairline}"/>
+                            <Grid>
+                                <TextBlock Text="{Binding DictionaryStatusText}" Style="{StaticResource Text.Caption}"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,220,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <TextBox Width="110" Text="{Binding DictionaryTestWord, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="测试查询：看每份词典各自命中什么"/>
+                                    <Button Content="测试" Style="{StaticResource Button.Outline}" Padding="10,4" Margin="6,0,0,0"
+                                            Command="{Binding TestDictionaryLookupCommand}"/>
+                                    <Button Content="导入词典…" Style="{StaticResource Button.Outline}" Padding="10,4" Margin="6,0,0,0"
+                                            Command="{Binding ImportDictionaryCommand}"/>
+                                </StackPanel>
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding DictionaryItems}" Margin="0,8,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,3">
+                                            <Grid>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}" FontSize="{StaticResource FontSize.Small}"/>
+                                                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Text.Caption}"
+                                                               TextWrapping="Wrap" Margin="0,1,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <Button Content="展开" Style="{StaticResource Button.Outline}" Padding="10,4"
+                                                            Command="{Binding ToggleExpandedCommand}"/>
+                                                    <Button Content="删除" Style="{StaticResource Button.Outline}" Padding="10,4" Margin="6,0,0,0"
+                                                            Command="{Binding DataContext.DeleteDictionaryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Shown}" Style="{StaticResource Text.Caption}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Visibility="{Binding IsExpandedVisible, Converter={StaticResource BoolToVisibility}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="自动化" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <Border Style="{StaticResource Card}" Margin="0,10,0,0">
                         <StackPanel>

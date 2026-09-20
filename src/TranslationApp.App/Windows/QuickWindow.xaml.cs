@@ -806,7 +806,7 @@ public partial class QuickWindow : Window
             }
 
             MeasureShadow.FontSize = contentFont;
-            return chrome + inputHeight + alignHeight;
+            return chrome + inputHeight + alignHeight + MeasureDictionaryCardHeightDip(contentWidthDip);
         }
 
         MeasureShadow.Text = _vm.ResultText ?? "";
@@ -814,7 +814,28 @@ public partial class QuickWindow : Window
         MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
         var resultHeight = MeasureShadow.DesiredSize.Height;
 
-        return chrome + inputHeight + resultHeight;
+        return chrome + inputHeight + resultHeight + MeasureDictionaryCardHeightDip(contentWidthDip);
+    }
+
+    /// <summary>
+    /// 词典卡所需高度（DIP）：卡片隐藏时 0；可见时 = 卡内 StackPanel 的排版高度 + 内边距 + 外边距。
+    /// 释义的 MaxHeight 由样式触发器按展开态夹好（40 / 180），这里测一次即可，不另算一遍。
+    /// </summary>
+    private double MeasureDictionaryCardHeightDip(double availableWidth)
+    {
+        if (DictionaryCard.Visibility != Visibility.Visible
+            || DictionaryCard.Child is not FrameworkElement body)
+        {
+            return 0;
+        }
+
+        var inner = Math.Max(1, availableWidth
+                              - DictionaryCard.Padding.Left - DictionaryCard.Padding.Right
+                              - DictionaryCard.BorderThickness.Left - DictionaryCard.BorderThickness.Right);
+        body.Measure(new Size(inner, double.PositiveInfinity));
+        return body.DesiredSize.Height
+               + DictionaryCard.Padding.Top + DictionaryCard.Padding.Bottom
+               + DictionaryCard.Margin.Top + DictionaryCard.Margin.Bottom;
     }
 
     /// <summary>
@@ -961,6 +982,9 @@ public partial class QuickWindow : Window
             case nameof(QuickTranslateViewModel.IsBusy):
             case nameof(QuickTranslateViewModel.StatusText):
             case nameof(QuickTranslateViewModel.ErrorText):
+            // FR-049：词典卡出现/消失、展开/收起都改变所需高度（同样走防抖，避免连续两次重排）
+            case nameof(QuickTranslateViewModel.DictionaryDefinition):
+            case nameof(QuickTranslateViewModel.IsDictionaryExpanded):
                 ScheduleAdaptiveRecompute();
                 return;
 
@@ -977,6 +1001,13 @@ public partial class QuickWindow : Window
     }
 
     /// <summary>FR-044：复制策略菜单——IconButton 无内建下拉，点击手动打开按钮自带的 ContextMenu。</summary>
+    /// <summary>点词典卡任意处 = 展开 / 收起释义（FR-049：默认两行，长文不必占满小窗）。</summary>
+    private void OnDictionaryCardClick(object sender, MouseButtonEventArgs e)
+    {
+        _vm.ToggleDictionaryExpandedCommand.Execute(null);
+        e.Handled = true;
+    }
+
     private void OnCopyMenuClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { ContextMenu: { } menu })
