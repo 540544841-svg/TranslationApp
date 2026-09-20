@@ -313,6 +313,22 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
       （≤10 个）；托盘「场景档案」子菜单 + Alt+P 循环切换 + 设置页卡片（含「当前设置已偏离」标注）；
       新增术语表全局开关 `GlossaryEnabled`（关闭=词条保留、替换直通）
 
+### P0 批 3（FR-038 ~ FR-042，2026-09-20，spec `docs/superpowers/specs/2026-09-20-p0-batch3-triggers-visibility-design.md`）
+
+- [x] **FR-038 双击修饰键划词**：`KeyboardButtonHook`（WH_KEYBOARD_LL 只观察）+ `ModifierKeyDoubleTapDetector`
+      纯状态机（250ms 窗口、按住期间混按其他键作废、500ms 冷却、前台自窗豁免）；目标键可选 Alt/Ctrl/Shift/Win，
+      检测器每次现读、改完即生效；**默认关 + 隐私模式绝不安装**（B5 红线）
+- [x] **FR-039 鼠标侧键映射**：观察钩子扩 XButtonUp（X1=划词 / X2=截图，各自默认关）；
+      只观察不拦截——浏览器前进/后退照常发生，卡片文案如实写明；鼠标钩子安装条件扩为「悬停/侧键任一开」
+- [x] **FR-040 粘贴即译**（默认开）：小窗输入框为空时 Ctrl+V 不粘贴，直接取剪贴板文本走
+      「清洗→翻译」完整链路（与划词同一入口，不新增常驻监听）；输入框非空时仍是普通粘贴
+- [x] **FR-041 术语反向保护**：`GlossaryReplacer.Apply` 传入原文——词条 Target 已出现在原文中即判冲突，
+      **跳过替换**并计入 `Conflicts`（防"Target 撞日常词"把不该换的换掉）；小窗徽标「术语 ×N · 冲突跳过 ×M」，
+      tooltip 列冲突明细；装饰器为唯一改动点，调用链零变化
+- [x] **FR-042 看板 P50 延迟**：`EngineStats` 加 `Latencies` 样本列（每引擎×日 ≤200 条，只存耗时数字），
+      旧库 `PRAGMA table_info` 探测自动 `ALTER TABLE` 迁移；装饰器 Stopwatch 计时、仅成功且非抑制作用域记样本；
+      引擎卡统计行追加「P50 0.8s」
+
 已知限制：
 
 - **截图翻译不支持跨显示器框选**（13.2.3）：遮罩只覆盖鼠标所在的单个显示器。混合 DPI
