@@ -11,6 +11,12 @@ public interface IHistoryRepository
     /// <summary>按关键字模糊搜索（原文或译文），关键字为空时返回最近的记录；按时间倒序。</summary>
     IReadOnlyList<TranslationRecord> Search(string? keyword, int limit = 500);
 
+    /// <summary>
+    /// TM 候选（FR-045 / spec §3）：同目标语言最近 limit 条的轻量投影，供 <see cref="TmMatcher"/> 比对。
+    /// 只按目标语言过滤（源语言可能从 auto 检测得到，交由相似度兜底）。
+    /// </summary>
+    IReadOnlyList<TmCandidate> TmCandidates(string targetLanguage, int limit = 200);
+
     void Delete(long id);
 
     /// <summary>清空全部历史（FR-014「一键清空」）。</summary>
@@ -121,6 +127,33 @@ public sealed class HistoryRepository : IHistoryRepository
     /// <summary>转义 LIKE 通配符，避免用户输入的 % 和 _ 被当作通配符。</summary>
     private static string Escape(string value) =>
         value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    public IReadOnlyList<TmCandidate> TmCandidates(string targetLanguage, int limit = 200)
+    {
+        if (!_database.IsAvailable)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var connection = _database.OpenConnection();
+            var rows = connection.Query<Row>(
+                """
+                SELECT SourceText, TranslatedText, CreatedAtMs FROM History
+                WHERE TargetLanguage = @TargetLanguage ORDER BY Id DESC LIMIT @Limit;
+                """,
+                new { TargetLanguage = targetLanguage, Limit = limit });
+            return rows
+                .Select(r => new TmCandidate(r.SourceText, r.TranslatedText,
+                    DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs)))
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
 
     public void Delete(long id)
     {

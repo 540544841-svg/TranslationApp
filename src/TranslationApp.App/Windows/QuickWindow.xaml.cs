@@ -785,6 +785,30 @@ public partial class QuickWindow : Window
         var inputHeight = MeasureElementDip(InputBox, contentWidthDip);
 
         // 译文区：影子测量（14.2.1 第 2 点明确禁止直接测只读结果 TextBox）
+        // FR-043（P0 批 4）：对照视图打开时按「原文段 + 译文段」逐对测量
+        if (_vm.IsAlignView && _vm.AlignPairs.Count > 0)
+        {
+            var alignHeight = 0.0;
+            var smallFont = (double)FindResource("FontSize.Small");
+            var contentFont = (double)FindResource("FontSize.Content");
+            MeasureShadow.Padding = ResultBox.Padding;
+            foreach (var pair in _vm.AlignPairs)
+            {
+                MeasureShadow.FontSize = smallFont;
+                MeasureShadow.Text = pair.Source;
+                MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
+                alignHeight += MeasureShadow.DesiredSize.Height;
+
+                MeasureShadow.FontSize = contentFont;
+                MeasureShadow.Text = pair.Translated;
+                MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
+                alignHeight += MeasureShadow.DesiredSize.Height + 12; // 段间距，与 XAML Margin 一致
+            }
+
+            MeasureShadow.FontSize = contentFont;
+            return chrome + inputHeight + alignHeight;
+        }
+
         MeasureShadow.Text = _vm.ResultText ?? "";
         MeasureShadow.Padding = ResultBox.Padding; // 与真实结果区同一可用宽度（内边距一致）
         MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
@@ -944,7 +968,25 @@ public partial class QuickWindow : Window
                 ScheduleAdaptiveRecompute(ResultDebounceMs);
                 PlaySignatureStreak();
                 return;
+
+            // FR-043（P0 批 4）：对照视图开合改变内容高度，按译文返回同档短防抖重算
+            case nameof(QuickTranslateViewModel.IsAlignView):
+                ScheduleAdaptiveRecompute(ResultDebounceMs);
+                return;
         }
+    }
+
+    /// <summary>FR-044：复制策略菜单——IconButton 无内建下拉，点击手动打开按钮自带的 ContextMenu。</summary>
+    private void OnCopyMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu })
+        {
+            return;
+        }
+
+        menu.PlacementTarget = sender as UIElement;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
     }
 
     /// <summary>

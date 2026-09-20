@@ -117,6 +117,7 @@ public partial class SettingsViewModel : ObservableObject
         _mouseSideButtonSelect = settings.MouseSideButtonSelect;
         _mouseSideButtonCapture = settings.MouseSideButtonCapture;
         _pasteTranslateEnabled = settings.PasteTranslateEnabled;
+        _tmReuseEnabled = settings.TmReuseEnabled;
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
@@ -779,6 +780,12 @@ public partial class SettingsViewModel : ObservableObject
     /// <summary>粘贴即译（FR-040，默认开）：小窗输入框为空时 Ctrl+V 直接翻译剪贴板。</summary>
     [ObservableProperty]
     private bool _pasteTranslateEnabled;
+
+    /// <summary>TM 相似句回填（FR-045，默认开）：近似句直接复用历史译文，可一键重译。</summary>
+    [ObservableProperty]
+    private bool _tmReuseEnabled;
+
+    partial void OnTmReuseEnabledChanged(bool value) => Save(s => s.TmReuseEnabled = value);
 
     /// <summary>目标修饰键下拉项。</summary>
     public IReadOnlyList<ThemeOption> DoubleTapKeyOptions { get; } =

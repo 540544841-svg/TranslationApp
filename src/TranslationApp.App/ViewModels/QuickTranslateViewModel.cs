@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using TranslationApp.Core.Anki;
+using TranslationApp.Core.ClipboardFormats;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
@@ -33,6 +34,9 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>P0 批 1：本次会话原文是否被阅读清洗过（成功状态行追加「已清洗换行」）。</summary>
     private bool _cleanedNote;
+
+    /// <summary>P0 批 4 / FR-045：本会话是否点了「重新机器翻译」（点了之后本次输入不再走 TM 回填）。</summary>
+    private bool _tmSkipThisSession;
 
     /// <summary>FR-028：进程内累计降级计数（达阈值时一次性托盘气泡建议改默认引擎）。</summary>
     private readonly EngineFallbackCounter _fallbackCounter = new();
@@ -193,6 +197,12 @@ public partial class QuickTranslateViewModel : ObservableObject
         _selectionSession = false; // 会话重置即清除，由 SetSelectionSession 在呼出时重新标记
         _tts.Stop(); // 呼出新会话时停止上一次朗读
 
+        // P0 批 4：TM 跳过标记与对照视图状态随会话重置
+        _tmSkipThisSession = false;
+        IsTmHit = false;
+        IsAlignView = false;
+        AlignPairs.Clear();
+
         // FR-020 AC 4：再次打开小窗不残留上次对比结果，并取消可能仍在途的请求
         CancelCompareRequests();
         CompareItems.Clear();
@@ -223,6 +233,18 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
 
         var translator = _catalog.Resolve(_settings.Engine);
+
+        // FR-045（P0 批 4）：TM 相似句回填——本地查询替代网络请求，只会更快，不破落定延迟红线
+        if (_settings.TmReuseEnabled && !_tmSkipThisSession)
+        {
+            var tmHit = TmMatcher.Find(text, _history.TmCandidates(TargetLanguage));
+            if (tmHit is not null)
+            {
+                ApplyTmSuccess(text, tmHit);
+                return;
+            }
+        }
+
         IsBusy = true;
         ErrorText = "";
         ResultText = "";
@@ -304,6 +326,9 @@ public partial class QuickTranslateViewModel : ObservableObject
             tooltipLines.AddRange(conflicts.Select(c => $"跳过 {c.Source} → {c.Target}（原文已含该译法）"));
         }
         GlossaryTooltip = string.Join("\n", tooltipLines);
+
+        // FR-043（P0 批 4）：≥3 段且段数对齐时提供「对照」视图（默认仍是整块译文）
+        UpdateAlignment(text, result.TranslatedText);
 
         // FR-016：划词会话的首次翻译成功后自动朗读原文（手动输入翻译不朗读）
         TryAutoSpeakSource(text);
@@ -425,6 +450,103 @@ public partial class QuickTranslateViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Warning(ex, "复制译文到剪贴板失败");
+        }
+    }
+
+    // ==================== P0 批 4：TM 回填 / 段落对照 / 复制策略 ====================
+
+    /// <summary>
+    /// TM 命中的收尾（FR-045 / spec §3）：直接回填历史译文并标注来源（A2-2 可视化），
+    /// 不重复入库（同句同译早已在历史里）、不记引擎统计（没有引擎调用）；
+    /// 「重新机器翻译」给一次点击机会，点了本会话强制走引擎。
+    /// </summary>
+    private void ApplyTmSuccess(string text, TmHit hit)
+    {
+        ResultText = hit.Entry.Translated;
+        IsTmHit = true;
+        var age = DateTimeOffset.UtcNow - hit.Entry.CreatedAt;
+        var ageText = age.TotalDays < 1 ? "今天的记录" : $"{age.TotalDays:0} 天前的记录";
+        StatusText = $"TM 命中 {hit.Score:P0} · 来自 {ageText}";
+        UpdateAlignment(text, hit.Entry.Translated);
+        RefreshFavoriteState();
+        TryAutoSpeakSource(text);
+    }
+
+    /// <summary>FR-045：TM 回填后强制用引擎重译本句（会话级跳过，切句/重开小窗后恢复）。</summary>
+    [RelayCommand(CanExecute = nameof(CanReTranslateMachine))]
+    private async Task ReTranslateMachineAsync()
+    {
+        _tmSkipThisSession = true;
+        IsTmHit = false;
+        await TranslateAsync();
+    }
+
+    private bool CanReTranslateMachine() => IsTmHit;
+
+    /// <summary>一段原文 + 对应译文（FR-043 对照视图行）。</summary>
+    public sealed record ParagraphPairView(string Source, string Translated);
+
+    /// <summary>逐段对照对（对齐失败为空）。</summary>
+    public ObservableCollection<ParagraphPairView> AlignPairs { get; } = [];
+
+    /// <summary>本句是否可对照（≥3 段且段数对齐）——决定「对照」按钮是否出现。</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ToggleAlignViewCommand))]
+    private bool _hasAlignment;
+
+    /// <summary>当前是否显示对照视图（默认关，整块译文）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
+    private bool _isAlignView;
+
+    /// <summary>整块译文区是否显示（对照打开时隐藏）。</summary>
+    public bool IsBlockViewVisible => !IsAlignView;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ReTranslateMachineCommand))]
+    private bool _isTmHit;
+
+    private void UpdateAlignment(string source, string translated)
+    {
+        AlignPairs.Clear();
+        var pairs = ParagraphAligner.Align(source, translated);
+        HasAlignment = pairs is not null;
+        if (pairs is null)
+        {
+            return;
+        }
+
+        foreach (var (src, tgt) in pairs)
+        {
+            AlignPairs.Add(new ParagraphPairView(src, tgt));
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasAlignment))]
+    private void ToggleAlignView() => IsAlignView = !IsAlignView;
+
+    /// <summary>FR-044：只复制原文。</summary>
+    [RelayCommand(CanExecute = nameof(HasResultText))]
+    private void CopySource() => CopyToClipboard(
+        ClipboardContentBuilder.Build(InputText ?? "", ResultText, ClipboardCopyMode.SourceOnly), "原文已复制");
+
+    /// <summary>FR-044：复制原文+译文（空行分隔，listing 场景粘贴后可整块删改）。</summary>
+    [RelayCommand(CanExecute = nameof(HasResultText))]
+    private void CopyBoth() => CopyToClipboard(
+        ClipboardContentBuilder.Build(InputText ?? "", ResultText, ClipboardCopyMode.Both), "原文+译文已复制");
+
+    private void CopyToClipboard(string content, string doneText)
+    {
+        try
+        {
+            // 与复制译文同一条纪律：自写抑制，避免触发剪贴板监听自我循环（FR-017）
+            _clipboardMonitor.Suppress(TimeSpan.FromSeconds(1));
+            System.Windows.Clipboard.SetText(content);
+            StatusText = doneText;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "复制到剪贴板失败");
         }
     }
 

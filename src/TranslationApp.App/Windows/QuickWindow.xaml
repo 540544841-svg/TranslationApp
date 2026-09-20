@@ -207,6 +207,25 @@
                 <TextBlock Text="译文" Style="{StaticResource Text.Caption}"
                            VerticalAlignment="Center" HorizontalAlignment="Left"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <!-- FR-045：TM 回填后一键改用机器重译 -->
+                    <Button Content="重新机器翻译" Style="{StaticResource Button.Tonal}"
+                            Padding="8,0" Height="24" Margin="0,0,4,0"
+                            Command="{Binding ReTranslateMachineCommand}"
+                            Visibility="{Binding IsTmHit, Converter={StaticResource BoolToVis}}"/>
+                    <!-- FR-043：≥3 段且段数对齐时出现「对照」开关（激活态主色底，与对比按钮同款） -->
+                    <Button Content="对照" Padding="8,0" Height="24" Margin="0,0,4,0"
+                            Command="{Binding ToggleAlignViewCommand}"
+                            Visibility="{Binding HasAlignment, Converter={StaticResource BoolToVis}}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAlignView}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <!-- FR-020 结果对比：默认无底透明，激活态 PrimaryContainer 底 + Primary 图标（13.5.2） -->
                     <Button Width="24" Height="24" Margin="0,0,2,0"
                             ToolTip="{Binding CompareToolTip}"
@@ -266,6 +285,19 @@
                             Padding="8,0" Height="24"
                             Command="{Binding CopyResultCommand}"
                             Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
+                    <!-- FR-044：复制策略菜单（译文 / 原文 / 原文+译文），点击弹菜单 -->
+                    <Button x:Name="CopyMenuButton" Style="{StaticResource IconButton}" Width="22" Height="24"
+                            Margin="2,0,0,0" Content="⌄" FontSize="12" Click="OnCopyMenuClick"
+                            ToolTip="复制策略：译文 / 原文 / 原文+译文"
+                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="只复制译文" Command="{Binding CopyResultCommand}"/>
+                                <MenuItem Header="只复制原文" Command="{Binding CopySourceCommand}"/>
+                                <MenuItem Header="原文 + 译文" Command="{Binding CopyBothCommand}"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
                 </StackPanel>
             </Grid>
 
@@ -288,11 +320,40 @@
                            Foreground="{DynamicResource Brush.TextDisabled}"
                            VerticalAlignment="Top" Margin="2,2,0,0"
                            Visibility="{Binding IsResultPlaceholderVisible, Converter={StaticResource BoolToVis}}"/>
-                <TextBox x:Name="ResultBox" Style="{StaticResource Field.ReadOnlyResult}"
-                         Text="{Binding ResultText, Mode=OneWay}"
+                <TextBox x:Name="ResultBox" Text="{Binding ResultText, Mode=OneWay}"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                         FontSize="{StaticResource FontSize.Content}"
-                         Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
+                         FontSize="{StaticResource FontSize.Content}">
+                    <TextBox.Style>
+                        <!-- FR-043：对照视图打开时整块译文让位（多一条 DataTrigger，其余沿用原样式） -->
+                        <Style TargetType="TextBox" BasedOn="{StaticResource Field.ReadOnlyResult}">
+                            <Setter Property="Visibility"
+                                    Value="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsAlignView}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBox.Style>
+                </TextBox>
+
+                <!-- FR-043：逐段对照视图（原文灰 + 译文，段对堆叠滚动） -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsAlignView, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding AlignPairs}" Margin="2,0,8,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="{Binding Source}" TextWrapping="Wrap"
+                                               FontSize="{StaticResource FontSize.Small}"
+                                               Foreground="{DynamicResource Brush.TextTertiary}"/>
+                                    <TextBlock Text="{Binding Translated}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                               FontSize="{StaticResource FontSize.Content}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
                 <!-- 对比结果被语言/引擎集合变更清空后的提示（13.4.1） -->
                 <TextBlock Text="请重新点击「对比」以获取结果" Style="{StaticResource Text.Hint}"

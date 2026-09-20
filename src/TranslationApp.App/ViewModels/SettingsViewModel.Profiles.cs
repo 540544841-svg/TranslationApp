@@ -132,6 +132,8 @@ public partial class SettingsViewModel
         OnPropertyChanged(nameof(MouseSideButtonCapture));
         _pasteTranslateEnabled = _settings.PasteTranslateEnabled;
         OnPropertyChanged(nameof(PasteTranslateEnabled));
+        _tmReuseEnabled = _settings.TmReuseEnabled;
+        OnPropertyChanged(nameof(TmReuseEnabled));
 #pragma warning restore MVVMTK0034
     }
 

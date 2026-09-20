@@ -415,6 +415,21 @@
                         </Grid>
                     </Border>
 
+                    <!-- FR-045（P0 批 4 / spec §3）：TM 相似句回填 -->
+                    <TextBlock Text="翻译记忆" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                <TextBlock Text="近似句复用历史译文" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="翻译前先查历史：与原句相似度 ≥92% 时直接回填并标注「来自 N 天前的记录」，点「重新机器翻译」可强制重译；隐私模式下没有历史可复用"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      IsChecked="{Binding TmReuseEnabled}"/>
+                        </Grid>
+                    </Border>
+
                     <TextBlock Text="结果对比" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <Border Style="{StaticResource Card}" Margin="0,10,0,0">
                         <StackPanel>

@@ -340,4 +340,28 @@ public sealed class AppSettings
     /// 关闭后 Ctrl+V 恢复普通粘贴。输入框非空时永远走普通粘贴。
     /// </summary>
     public bool PasteTranslateEnabled { get; set; } = true;
+
+    // ==================== FR-045 TM 相似句回填（P0 批 4） ====================
+
+    /// <summary>
+    /// 翻译前先用历史做相似句匹配（≥92% 直接回填并标注来源，可一键重译），默认开。
+    /// 隐私模式不写历史 → 自然无候选，无需额外门控。
+    /// </summary>
+    public bool TmReuseEnabled { get; set; } = true;
+
+    // ==================== FR-046 本地 HTTP API（P0 批 4） ====================
+
+    /// <summary>本地 HTTP API（默认关）：仅 127.0.0.1 + token 鉴权；隐私模式开启时不监听。</summary>
+    public bool LocalApiEnabled { get; set; }
+
+    /// <summary>API 监听端口（仅回环地址；范围 1024~65535）。</summary>
+    public int LocalApiPort { get; set; } = 46610;
+
+    /// <summary>API 访问令牌（DPAPI 密文；首次启用自动生成，绝不明文落盘）。</summary>
+    public string LocalApiTokenEncrypted { get; set; } = "";
+
+    // ==================== FR-049 mdx 词典（P0 批 4） ====================
+
+    /// <summary>词典层总开关（默认开：划词为单词且导入过词典时显示「词典」卡）。</summary>
+    public bool DictionariesEnabled { get; set; } = true;
 }
