@@ -7,17 +7,20 @@ namespace TranslationApp.Core.Translation;
 /// <summary>一次术语替换的命中明细（供 UI 显示「术语 ×N」与 tooltip）。</summary>
 public sealed record GlossaryReplacement(string Source, string Target, int Count);
 
-/// <summary>替换结果：文本 + 总命中数 + 按词条聚合的明细。</summary>
+/// <summary>替换结果：文本 + 总命中数 + 按词条聚合的明细 + 反向保护跳过的冲突词条（FR-041）。</summary>
 public sealed record GlossaryResult(
     string Text,
     int Hits,
-    IReadOnlyList<GlossaryReplacement> Applied);
+    IReadOnlyList<GlossaryReplacement> Applied,
+    IReadOnlyList<GlossaryReplacement> Conflicts);
 
 /// <summary>
 /// 术语表后置替换（P0 批 1 / spec §1.2，纯函数、永不抛异常）。
 /// 规则：长词优先；纯 ASCII 词条做词边界感知的大小写不敏感匹配（"AI" 不伤 "OpenAI"），
 /// 含非 ASCII 的词条按子串匹配；命中处先落私有区占位符，全部词条处理完再回填目标词，
 /// 保证已替换文本不会被后续词条二次命中。
+/// 批 3（FR-041）加反向保护：传入原文时，Target 已出现在原文中的词条**跳过替换**并计入 Conflicts
+/// ——Target 撞日常词时后置替换会把不该换的换掉，宁可不换。
 /// </summary>
 public static class GlossaryReplacer
 {
@@ -27,10 +30,12 @@ public static class GlossaryReplacer
     private const char TokenOpen = '\uE000';
     private const char TokenClose = '\uE001';
 
-    public static GlossaryResult Apply(string translated, IReadOnlyList<GlossaryItem> items)
+    public static GlossaryResult Apply(
+        string translated, IReadOnlyList<GlossaryItem> items, string? sourceText = null)
     {
         if (string.IsNullOrEmpty(translated) || items is not { Count: > 0 })
-            return new GlossaryResult(translated ?? string.Empty, 0, Array.Empty<GlossaryReplacement>());
+            return new GlossaryResult(translated ?? string.Empty, 0,
+                Array.Empty<GlossaryReplacement>(), Array.Empty<GlossaryReplacement>());
 
         try
         {
@@ -43,10 +48,19 @@ public static class GlossaryReplacer
             var text = translated;
             var tokens = new List<(string Token, string Target)>();
             var applied = new List<GlossaryReplacement>();
+            var conflicts = new List<GlossaryReplacement>();
             var totalHits = 0;
 
             foreach (var item in usable)
             {
+                // 反向保护（FR-041）：原文里已有 Target → 该词对本条内容不可靠，跳过
+                if (sourceText is not null
+                    && sourceText.Contains(item.Target, StringComparison.OrdinalIgnoreCase))
+                {
+                    conflicts.Add(new GlossaryReplacement(item.Source, item.Target, 0));
+                    continue;
+                }
+
                 var token = $"{TokenOpen}{tokens.Count}{TokenClose}";
                 var (replaced, count) = ReplaceOne(text, item, token);
                 if (count == 0) continue;
@@ -60,12 +74,13 @@ public static class GlossaryReplacer
             foreach (var (token, target) in tokens)
                 text = text.Replace(token, target, StringComparison.Ordinal);
 
-            return new GlossaryResult(text, totalHits, applied);
+            return new GlossaryResult(text, totalHits, applied, conflicts);
         }
         catch
         {
             // 术语替换永远不能弄坏翻译结果（spec §1.2-5）
-            return new GlossaryResult(translated, 0, Array.Empty<GlossaryReplacement>());
+            return new GlossaryResult(translated, 0,
+                Array.Empty<GlossaryReplacement>(), Array.Empty<GlossaryReplacement>());
         }
     }
 

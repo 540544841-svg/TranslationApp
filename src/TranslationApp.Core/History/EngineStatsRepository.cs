@@ -13,7 +13,7 @@ public enum EngineOutcome
     FallbackUsed,
 }
 
-/// <summary>窗口聚合结果，供设置页引擎卡看板行直接渲染。</summary>
+/// <summary>窗口聚合结果，供设置页引擎卡看板行直接渲染。P50Ms = 近 N 天成功请求耗时中位数（FR-042）。</summary>
 public sealed record EngineStatsSummary(
     int Success,
     int FailNetwork,
@@ -21,7 +21,8 @@ public sealed record EngineStatsSummary(
     int FailKey,
     int FailQuota,
     int FallbackUsed,
-    string LastError)
+    string LastError,
+    double? P50Ms = null)
 {
     public int FailTotal => FailNetwork + FailEngine + FailKey + FailQuota;
     public bool IsEmpty => Success == 0 && FailTotal == 0 && FallbackUsed == 0;
@@ -34,11 +35,14 @@ public sealed record EngineStatsSummary(
 /// </summary>
 public sealed class EngineStatsRepository
 {
+    /// <summary>每引擎×日保留的耗时样本上限（超出丢最旧；FR-042 只算 P50，200 条足够稳）。</summary>
+    public const int MaxLatencySamples = 200;
+
     private readonly HistoryDatabase _db;
 
     public EngineStatsRepository(HistoryDatabase db) => _db = db;
 
-    public void Record(string engineId, EngineOutcome outcome, string? errorSummary = null)
+    public void Record(string engineId, EngineOutcome outcome, string? errorSummary = null, long? latencyMs = null)
     {
         if (!_db.IsAvailable) return;
 
@@ -70,10 +74,57 @@ public sealed class EngineStatsRepository
             command.Parameters.AddWithValue("$d", DateTime.Now.ToString("yyyy-MM-dd"));
             command.Parameters.AddWithValue("$err", outcome == EngineOutcome.Success ? "" : (errorSummary ?? ""));
             command.ExecuteNonQuery();
+
+            // FR-042：只有成功请求记耗时（失败等待时间不是引擎性能）；只存数字，不存任何文本
+            if (outcome == EngineOutcome.Success && latencyMs is >= 0)
+            {
+                AppendLatency(connection, engineId, latencyMs.Value);
+            }
         }
         catch (SqliteException)
         {
             // 统计失败绝不影响翻译主流程
+        }
+    }
+
+    /// <summary>把样本追加进 Latencies（逗号分隔），超过上限丢最旧。行必已存在（Record 先 UPSERT）。</summary>
+    private static void AppendLatency(Microsoft.Data.Sqlite.SqliteConnection connection, string engineId, long ms)
+    {
+        try
+        {
+            var day = DateTime.Now.ToString("yyyy-MM-dd");
+            string current;
+            using (var read = connection.CreateCommand())
+            {
+                read.CommandText = "SELECT Latencies FROM EngineStats WHERE EngineId = $e AND Day = $d;";
+                read.Parameters.AddWithValue("$e", engineId);
+                read.Parameters.AddWithValue("$d", day);
+                current = read.ExecuteScalar() as string ?? "";
+            }
+
+            var samples = current.Length == 0
+                ? new List<long>()
+                : current.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(long.Parse).ToList();
+            samples.Add(ms);
+            if (samples.Count > MaxLatencySamples)
+            {
+                samples.RemoveRange(0, samples.Count - MaxLatencySamples);
+            }
+
+            using var write = connection.CreateCommand();
+            write.CommandText = "UPDATE EngineStats SET Latencies = $l WHERE EngineId = $e AND Day = $d;";
+            write.Parameters.AddWithValue("$l", string.Join(',', samples));
+            write.Parameters.AddWithValue("$e", engineId);
+            write.Parameters.AddWithValue("$d", day);
+            write.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+            // 样本损坏/写入失败只影响 P50 显示，不影响计数
+        }
+        catch (FormatException)
+        {
+            // 手改配置文件的坏样本：放弃本次追加
         }
     }
 
@@ -93,6 +144,9 @@ public sealed class EngineStatsRepository
                 SELECT LastError FROM EngineStats
                 WHERE EngineId = $e AND Day >= $cutoff AND LastError <> ''
                 ORDER BY Day DESC LIMIT 1;
+
+                SELECT Latencies FROM EngineStats
+                WHERE EngineId = $e AND Day >= $cutoff AND Latencies <> '';
                 """;
             command.Parameters.AddWithValue("$e", engineId);
             command.Parameters.AddWithValue("$cutoff", cutoff);
@@ -107,7 +161,13 @@ public sealed class EngineStatsRepository
             string lastError = "";
             if (reader.NextResult() && reader.Read()) lastError = reader.GetString(0);
 
-            return new EngineStatsSummary(s, fn, fe, fk, fq, fb, lastError);
+            var samples = new List<long>();
+            if (reader.NextResult())
+            {
+                while (reader.Read()) ParseSamples(reader.GetString(0), samples);
+            }
+
+            return new EngineStatsSummary(s, fn, fe, fk, fq, fb, lastError, P50(samples));
         }
         catch (SqliteException)
         {
@@ -115,6 +175,22 @@ public sealed class EngineStatsRepository
         }
 
         static int ToInt(SqliteDataReader r, int i) => r.IsDBNull(i) ? 0 : (int)r.GetInt64(i);
+
+        static void ParseSamples(string csv, List<long> into)
+        {
+            foreach (var part in csv.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (long.TryParse(part, out var ms) && ms >= 0) into.Add(ms);
+            }
+        }
+
+        /// <summary>P50 = 升序样本的上中位（偶数取后一个）；无样本返回 null。</summary>
+        static double? P50(List<long> samples)
+        {
+            if (samples.Count == 0) return null;
+            samples.Sort();
+            return samples[samples.Count / 2];
+        }
     }
 
     /// <summary>删除超过保留期的旧行（看板只看 7 天，30 天是数据洁癖上限）。</summary>

@@ -2,13 +2,15 @@ namespace TranslationApp.Core.Translation;
 
 /// <summary>
 /// 翻译结果：译文 + 检测到的源语言（自动检测时回填用）
-/// + 术语表命中信息（P0 批 1 / spec §1.3，由 <see cref="GlossaryTranslator"/> 回填，默认无命中）。
+/// + 术语表命中信息（P0 批 1 / spec §1.3，由 <see cref="GlossaryTranslator"/> 回填，默认无命中）
+/// + 反向保护跳过的冲突词条（P0 批 3 / FR-041，Target 已在原文中，未替换）。
 /// </summary>
 public sealed record TranslationResult(
     string TranslatedText,
     string? DetectedSourceLanguage,
     int GlossaryHits = 0,
-    IReadOnlyList<GlossaryReplacement>? GlossaryApplied = null);
+    IReadOnlyList<GlossaryReplacement>? GlossaryApplied = null,
+    IReadOnlyList<GlossaryReplacement>? GlossaryConflicts = null);
 
 /// <summary>翻译错误分类（FR-006：不同错误给不同提示文案）。</summary>
 public enum TranslationErrorType

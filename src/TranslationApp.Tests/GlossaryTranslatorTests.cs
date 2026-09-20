@@ -22,7 +22,7 @@ public class GlossaryTranslatorTests
         }
     }
 
-    private sealed record Recorded(string EngineId, EngineOutcome Outcome, string? Error);
+    private sealed record Recorded(string EngineId, EngineOutcome Outcome, string? Error, long? LatencyMs);
 
     private static (GlossaryTranslator sut, List<Recorded> log) Build(
         FakeTranslator inner,
@@ -33,7 +33,7 @@ public class GlossaryTranslatorTests
         var sut = new GlossaryTranslator(
             inner,
             () => glossary ?? Array.Empty<GlossaryItem>(),
-            recordOutcome: (id, outcome, err) => log.Add(new Recorded(id, outcome, err)),
+            recordOutcome: (id, outcome, err, latency) => log.Add(new Recorded(id, outcome, err, latency)),
             privacyMode: () => privacy);
         return (sut, log);
     }

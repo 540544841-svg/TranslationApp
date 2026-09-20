@@ -88,10 +88,25 @@ public sealed class HistoryDatabase
                     FailQuota     INTEGER NOT NULL DEFAULT 0,
                     FallbackUsed  INTEGER NOT NULL DEFAULT 0,
                     LastError     TEXT    NOT NULL DEFAULT '',
+                    Latencies     TEXT    NOT NULL DEFAULT '', -- FR-042：成功耗时样本（ms，逗号分隔，≤200 条）
                     PRIMARY KEY (EngineId, Day)
                 );
                 """;
             command.ExecuteNonQuery();
+
+            // FR-042：批 1 旧库没有 Latencies 列——检测后补列（SQLite 无版本化迁移框架，按列探测即可）
+            using (var check = connection.CreateCommand())
+            {
+                check.CommandText =
+                    "SELECT COUNT(*) FROM pragma_table_info('EngineStats') WHERE name = 'Latencies';";
+                if (Convert.ToInt64(check.ExecuteScalar() ?? 0L) == 0)
+                {
+                    using var alter = connection.CreateCommand();
+                    alter.CommandText =
+                        "ALTER TABLE EngineStats ADD COLUMN Latencies TEXT NOT NULL DEFAULT '';";
+                    alter.ExecuteNonQuery();
+                }
+            }
 
             IsAvailable = true;
             UnavailableReason = null;

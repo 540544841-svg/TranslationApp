@@ -15,6 +15,7 @@ public sealed class MouseButtonHook : IDisposable
     private const int WhMouseLl = 14;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
+    private const int WmXButtonUp = 0x040C;
 
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -44,6 +45,9 @@ public sealed class MouseButtonHook : IDisposable
 
     /// <summary>左键抬起（物理坐标 + Environment.TickCount64 + 前台归属）。在钩子所在线程触发。</summary>
     public event Action<int, int, long, bool>? LeftButtonUp;
+
+    /// <summary>侧键抬起（FR-039）：button = 1（X1 后退）/ 2（X2 前进）。在钩子所在线程触发。</summary>
+    public event Action<int, bool>? XButtonUp;
 
     public MouseButtonHook() => _proc = Proc;
 
@@ -79,7 +83,7 @@ public sealed class MouseButtonHook : IDisposable
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
-            if (message is WmLButtonDown or WmLButtonUp)
+            if (message is WmLButtonDown or WmLButtonUp or WmXButtonUp)
             {
                 try
                 {
@@ -89,9 +93,18 @@ public sealed class MouseButtonHook : IDisposable
                     {
                         LeftButtonDown?.Invoke(data.Pt.X, data.Pt.Y, self);
                     }
-                    else
+                    else if (message == WmLButtonUp)
                     {
                         LeftButtonUp?.Invoke(data.Pt.X, data.Pt.Y, Environment.TickCount64, self);
+                    }
+                    else
+                    {
+                        // mouseData 高 16 位 = XBUTTON1(1) / XBUTTON2(2)
+                        var button = (int)(data.MouseData >> 16);
+                        if (button is 1 or 2)
+                        {
+                            XButtonUp?.Invoke(button, self);
+                        }
                     }
                 }
                 catch

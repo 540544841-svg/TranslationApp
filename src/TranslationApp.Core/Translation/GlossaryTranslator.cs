@@ -31,13 +31,13 @@ public sealed class GlossaryTranslator : ITranslator
 
     private readonly ITranslator _inner;
     private readonly Func<IReadOnlyList<GlossaryItem>> _glossary;
-    private readonly Action<string, EngineOutcome, string?>? _recordOutcome;
+    private readonly Action<string, EngineOutcome, string?, long?>? _recordOutcome;
     private readonly Func<bool> _privacyMode;
 
     public GlossaryTranslator(
         ITranslator inner,
         Func<IReadOnlyList<GlossaryItem>> glossary,
-        Action<string, EngineOutcome, string?>? recordOutcome = null,
+        Action<string, EngineOutcome, string?, long?>? recordOutcome = null,
         Func<bool>? privacyMode = null)
     {
         _inner = inner;
@@ -64,6 +64,7 @@ public sealed class GlossaryTranslator : ITranslator
         CancellationToken cancellationToken = default)
     {
         TranslationResult result;
+        var startedAt = Environment.TickCount64;
         try
         {
             result = await _inner.TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken);
@@ -74,31 +75,38 @@ public sealed class GlossaryTranslator : ITranslator
         }
         catch (TranslationException ex)
         {
-            Record(MapOutcome(ex.ErrorType), ex.Message);
+            Record(MapOutcome(ex.ErrorType), ex.Message, null);
             throw;
         }
         catch (Exception ex)
         {
-            Record(EngineOutcome.FailEngine, ex.Message);
+            Record(EngineOutcome.FailEngine, ex.Message, null);
             throw;
         }
 
-        var applied = ApplyGlossary(result);
-        Record(EngineOutcome.Success, null);
+        var elapsed = Environment.TickCount64 - startedAt;
+        var applied = ApplyGlossary(result, text);
+        Record(EngineOutcome.Success, null, elapsed);
         return applied;
     }
 
-    private TranslationResult ApplyGlossary(TranslationResult result)
+    /// <summary>术语替换（传入原文以启用 FR-041 反向保护：Target 已在原文中的词条跳过替换）。</summary>
+    private TranslationResult ApplyGlossary(TranslationResult result, string sourceText)
     {
         try
         {
             var items = _glossary();
             if (items.Count == 0) return result;
 
-            var g = GlossaryReplacer.Apply(result.TranslatedText, items);
-            return g.Hits > 0
-                ? result with { TranslatedText = g.Text, GlossaryHits = g.Hits, GlossaryApplied = g.Applied }
-                : result;
+            var g = GlossaryReplacer.Apply(result.TranslatedText, items, sourceText);
+            if (g.Hits == 0 && g.Conflicts.Count == 0) return result;
+            return result with
+            {
+                TranslatedText = g.Text,
+                GlossaryHits = g.Hits,
+                GlossaryApplied = g.Applied,
+                GlossaryConflicts = g.Conflicts,
+            };
         }
         catch
         {
@@ -106,13 +114,13 @@ public sealed class GlossaryTranslator : ITranslator
         }
     }
 
-    private void Record(EngineOutcome outcome, string? error)
+    private void Record(EngineOutcome outcome, string? error, long? latencyMs)
     {
         if (_recordOutcome is null || SuppressDepth.Value > 0) return;
         try
         {
             if (_privacyMode()) return;
-            _recordOutcome(_inner.Id, outcome, error);
+            _recordOutcome(_inner.Id, outcome, error, latencyMs);
         }
         catch
         {

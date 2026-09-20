@@ -313,4 +313,31 @@ public sealed class AppSettings
 
     /// <summary>场景档案循环切换热键（标准 → 阅读 → 隐私 → 自定义 → 标准）。</summary>
     public string HotkeySwitchProfile { get; set; } = "Alt+P";
+
+    // ==================== FR-038 双击修饰键划词（P0 批 3） ====================
+
+    /// <summary>
+    /// 双击修饰键触发划词翻译（默认关）：需要常驻低级键盘钩子，
+    /// 隐私模式开启时**绝不安装**（B5 红线）；开关本身即「一键全关」。
+    /// </summary>
+    public bool DoubleTapTranslateEnabled { get; set; }
+
+    /// <summary>双击的目标修饰键：alt（默认）/ ctrl / shift / win。</summary>
+    public string DoubleTapKey { get; set; } = "alt";
+
+    // ==================== FR-039 鼠标侧键映射（P0 批 3） ====================
+
+    /// <summary>X1（后退键）抬起 = 划词翻译（默认关）。与悬停取词共用观察钩子，隐私模式不安装。</summary>
+    public bool MouseSideButtonSelect { get; set; }
+
+    /// <summary>X2（前进键）抬起 = 截图翻译（默认关）。</summary>
+    public bool MouseSideButtonCapture { get; set; }
+
+    // ==================== FR-040 粘贴即译（P0 批 3） ====================
+
+    /// <summary>
+    /// 小窗输入框为空时 Ctrl+V 直接翻译剪贴板内容（含阅读清洗），默认开；
+    /// 关闭后 Ctrl+V 恢复普通粘贴。输入框非空时永远走普通粘贴。
+    /// </summary>
+    public bool PasteTranslateEnabled { get; set; } = true;
 }
