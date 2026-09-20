@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Serilog;
+using TranslationApp.Core.Anki;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Hotkey;
 using TranslationApp.Core.Layout;
@@ -44,6 +45,9 @@ public partial class SettingsViewModel : ObservableObject
     private readonly HttpClientProvider _httpProvider;
     private readonly OcrService _ocr;
     private readonly TranslationApp.Core.History.EngineStatsRepository _engineStats;
+    private readonly MouseButtonHook _mouseHook;
+    private readonly ProfileService _profiles;
+    private readonly AnkiConnectClient _anki;
     private bool _suppressAutoStartCallback;
     private bool _suppressPasswordCallback;
 
@@ -59,7 +63,10 @@ public partial class SettingsViewModel : ObservableObject
         ClipboardMonitor clipboardMonitor,
         ITtsService tts,
         OcrService ocr,
-        TranslationApp.Core.History.EngineStatsRepository engineStats)
+        TranslationApp.Core.History.EngineStatsRepository engineStats,
+        MouseButtonHook mouseHook,
+        ProfileService profiles,
+        AnkiConnectClient anki)
     {
         _settings = settings;
         _store = store;
@@ -73,6 +80,9 @@ public partial class SettingsViewModel : ObservableObject
         _tts = tts;
         _ocr = ocr;
         _engineStats = engineStats;
+        _mouseHook = mouseHook;
+        _profiles = profiles;
+        _anki = anki;
 
         _showStartBalloon = settings.ShowStartBalloon;
         _autoStartEnabled = autoStart.IsEnabled;
@@ -80,6 +90,7 @@ public partial class SettingsViewModel : ObservableObject
         _hotkeyInputText = settings.HotkeyInputTranslate;
         _hotkeySelectText = settings.HotkeySelectTranslate;
         _hotkeyCaptureText = settings.HotkeyCaptureTranslate;
+        _hotkeyProfileText = settings.HotkeySwitchProfile;
         _selectedTheme = NormalizeTheme(settings.Theme);
 
         // 「引擎」页（FR-024）先建卡片，再决定当前引擎是否可用（未配置则回退并提示）
@@ -92,6 +103,11 @@ public partial class SettingsViewModel : ObservableObject
         _privacyMode = settings.PrivacyMode;
         _cleanClipboardText = settings.CleanClipboardText;
         InitializeGlossaryPage();
+        // P0 批 2：悬停取词 / 术语全局开关 / Anki 直推 / 场景档案
+        _hoverSelectEnabled = settings.HoverSelectEnabled;
+        _glossaryEnabled = settings.GlossaryEnabled;
+        InitializeAnkiPage();
+        InitializeProfilePage();
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
@@ -179,6 +195,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _hotkeyCaptureText;
 
+    /// <summary>FR-037（批 2）：场景档案循环切换热键（默认 Alt+P）。</summary>
+    [ObservableProperty]
+    private string _hotkeyProfileText;
+
     [ObservableProperty]
     private bool _hotkeyInputInvalid;
 
@@ -187,6 +207,9 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hotkeyCaptureInvalid;
+
+    [ObservableProperty]
+    private bool _hotkeyProfileInvalid;
 
     [ObservableProperty]
     private string _hotkeyMessage = "";
@@ -339,12 +362,13 @@ public partial class SettingsViewModel : ObservableObject
 
     // ==================== 热键 ====================
 
-    /// <summary>三个可录制热键的槽位（FR-001/005/021）。</summary>
+    /// <summary>四个可录制热键的槽位（FR-001/005/021；Profile 为 FR-037）。</summary>
     private enum HotkeySlot
     {
         Input,
         Select,
         Capture,
+        Profile,
     }
 
     partial void OnHotkeyInputTextChanged(string value) => ApplyHotkey(HotkeySlot.Input, value);
@@ -353,15 +377,19 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnHotkeyCaptureTextChanged(string value) => ApplyHotkey(HotkeySlot.Capture, value);
 
+    partial void OnHotkeyProfileTextChanged(string value) => ApplyHotkey(HotkeySlot.Profile, value);
+
     [RelayCommand]
     private void ResetHotkeys()
     {
         ApplyHotkey(HotkeySlot.Input, HotkeyDefinition.DefaultInput.ToString(), force: true);
         ApplyHotkey(HotkeySlot.Select, HotkeyDefinition.DefaultSelect.ToString(), force: true);
         ApplyHotkey(HotkeySlot.Capture, HotkeyDefinition.DefaultCapture.ToString(), force: true);
+        ApplyHotkey(HotkeySlot.Profile, HotkeyDefinition.DefaultProfile.ToString(), force: true);
         HotkeyInputText = HotkeyDefinition.DefaultInput.ToString();
         HotkeySelectText = HotkeyDefinition.DefaultSelect.ToString();
         HotkeyCaptureText = HotkeyDefinition.DefaultCapture.ToString();
+        HotkeyProfileText = HotkeyDefinition.DefaultProfile.ToString();
     }
 
     private void ApplyHotkey(HotkeySlot slot, string value, bool force = false)
@@ -406,6 +434,9 @@ public partial class SettingsViewModel : ObservableObject
                     case HotkeySlot.Select:
                         s.HotkeySelectTranslate = value;
                         break;
+                    case HotkeySlot.Profile:
+                        s.HotkeySwitchProfile = value;
+                        break;
                     default:
                         s.HotkeyCaptureTranslate = value;
                         break;
@@ -431,6 +462,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         HotkeySlot.Input => "input",
         HotkeySlot.Select => "select",
+        HotkeySlot.Profile => "profile",
         _ => "capture",
     };
 
@@ -438,6 +470,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         HotkeySlot.Input => HotkeyDefinition.DefaultInput,
         HotkeySlot.Select => HotkeyDefinition.DefaultSelect,
+        HotkeySlot.Profile => HotkeyDefinition.DefaultProfile,
         _ => HotkeyDefinition.DefaultCapture,
     };
 
@@ -448,6 +481,7 @@ public partial class SettingsViewModel : ObservableObject
     {
         HotkeySlot.Input => _settings.HotkeyInputTranslate,
         HotkeySlot.Select => _settings.HotkeySelectTranslate,
+        HotkeySlot.Profile => _settings.HotkeySwitchProfile,
         _ => _settings.HotkeyCaptureTranslate,
     };
 
@@ -460,6 +494,9 @@ public partial class SettingsViewModel : ObservableObject
                 break;
             case HotkeySlot.Select:
                 HotkeySelectText = value;
+                break;
+            case HotkeySlot.Profile:
+                HotkeyProfileText = value;
                 break;
             default:
                 HotkeyCaptureText = value;
@@ -476,6 +513,9 @@ public partial class SettingsViewModel : ObservableObject
                 break;
             case HotkeySlot.Select:
                 HotkeySelectInvalid = invalid;
+                break;
+            case HotkeySlot.Profile:
+                HotkeyProfileInvalid = invalid;
                 break;
             default:
                 HotkeyCaptureInvalid = invalid;
@@ -678,11 +718,48 @@ public partial class SettingsViewModel : ObservableObject
 
     /// <summary>隐私模式（spec §2）：本地留痕全关；翻译请求本身仍会发送。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HoverLockedByPrivacy))]
     private bool _privacyMode;
 
     /// <summary>阅读清洗（spec §3）：划词/剪贴板文本合并硬换行，默认开。</summary>
     [ObservableProperty]
     private bool _cleanClipboardText;
+
+    /// <summary>
+    /// 悬停取词（FR-036 / spec §2.3）：默认关——它需要常驻低级鼠标钩子。
+    /// 隐私模式开启时开关可开但钩子**不装**，卡片用 <see cref="HoverLockedByPrivacy"/> 说明原因。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HoverLockedByPrivacy))]
+    private bool _hoverSelectEnabled;
+
+    /// <summary>术语表全局开关（FR-037 / spec §4）：关闭 = 词条保留但不参与替换。</summary>
+    [ObservableProperty]
+    private bool _glossaryEnabled;
+
+    /// <summary>悬停开关被隐私模式压住（UI 显示「钩子未启用」说明）。</summary>
+    public bool HoverLockedByPrivacy => PrivacyMode && HoverSelectEnabled;
+
+    partial void OnHoverSelectEnabledChanged(bool value)
+    {
+        Save(s => s.HoverSelectEnabled = value);
+        ApplyHoverHook();
+    }
+
+    partial void OnGlossaryEnabledChanged(bool value) => Save(s => s.GlossaryEnabled = value);
+
+    /// <summary>与 App.ApplyPrivacySideEffects 同一条门控：隐私开 → 绝不装钩子；否则按开关启停。</summary>
+    private void ApplyHoverHook()
+    {
+        if (HoverSelectEnabled && !_settings.PrivacyMode)
+        {
+            _mouseHook.Start();
+        }
+        else
+        {
+            _mouseHook.Stop();
+        }
+    }
 
     partial void OnPrivacyModeChanged(bool value)
     {
@@ -696,6 +773,8 @@ public partial class SettingsViewModel : ObservableObject
         {
             _clipboardMonitor.Start();
         }
+
+        ApplyHoverHook(); // 批 2：隐私模式联动鼠标钩子（B5 红线）
     }
 
     partial void OnCleanClipboardTextChanged(bool value) => Save(s => s.CleanClipboardText = value);

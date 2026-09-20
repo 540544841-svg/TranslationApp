@@ -139,6 +139,69 @@
                                        Style="{StaticResource Text.Caption}" Margin="0,8,0,0"/>
                         </StackPanel>
                     </Border>
+
+                    <!-- FR-036（P0 批 2 / spec §2.3）：悬停取词——默认关，隐私模式下钩子绝不安装 -->
+                    <TextBlock Text="悬停取词" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                <TextBlock Text="拖拽选择后浮出翻译标" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="选中文字后光标旁出现小图标，点击才翻译（与划词热键同一条取词链路）；需要常驻鼠标钩子，游戏 / 远程桌面场景可随时关闭本开关"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                <TextBlock Text="隐私模式开启中，鼠标钩子未启用" Foreground="{DynamicResource Brush.Warning}"
+                                           FontSize="{StaticResource FontSize.Small}" Margin="0,4,0,0"
+                                           Visibility="{Binding HoverLockedByPrivacy, Converter={StaticResource BoolToVisibility}}"/>
+                            </StackPanel>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      IsChecked="{Binding HoverSelectEnabled}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- FR-037（P0 批 2 / spec §3.4）：场景档案——内置阅读/隐私两档 + 自定义快照 -->
+                    <TextBlock Text="场景档案" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ProfileStatusText}" FontSize="{StaticResource FontSize.Body}"/>
+                            <TextBlock Text="把引擎、语言、清洗、术语、隐私与监听打包成一档：热键 Alt+P 或托盘「场景档案」一键循环切换"
+                                       Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,10"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="切到「阅读」" Style="{StaticResource Button.Outline}"
+                                        Command="{Binding ApplyProfileCommand}" CommandParameter="阅读"/>
+                                <Button Content="切到「隐私」" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding ApplyProfileCommand}" CommandParameter="隐私"/>
+                                <Button Content="回到「标准」" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding ApplyProfileCommand}" CommandParameter="标准"/>
+                            </StackPanel>
+                            <Border Style="{StaticResource Hairline}" Margin="0,12"/>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBox Width="180" VerticalContentAlignment="Center"
+                                         Text="{Binding NewProfileName, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="档案名：≤20 字，不能与现有档案重名，最多 10 个"/>
+                                <Button Content="把当前设置存为档案" Style="{StaticResource Button.Outline}"
+                                        Margin="8,0,0,0" Command="{Binding SaveCurrentAsProfileCommand}"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding ProfileRows}" Margin="0,10,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,3">
+                                            <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                       FontSize="{StaticResource FontSize.Small}"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Content="应用" Style="{StaticResource Button.Outline}" Padding="10,4"
+                                                        Command="{Binding DataContext.ApplyProfileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding Name}"/>
+                                                <Button Content="删除" Style="{StaticResource Button.Outline}" Padding="10,4"
+                                                        Margin="8,0,0,0"
+                                                        Command="{Binding DataContext.DeleteProfileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding Name}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </TabItem>
@@ -163,6 +226,13 @@
                     <TextBlock Text="冻结鼠标所在屏幕，拖拽框选区域后自动识别文字并翻译"
                                Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
                     <controls:HotkeyBox Text="{Binding HotkeyCaptureText}" IsInvalid="{Binding HotkeyCaptureInvalid}"
+                                        Width="260" HorizontalAlignment="Left"/>
+
+                    <!-- FR-037（P0 批 2）：场景档案循环切换热键 -->
+                    <TextBlock Text="场景档案切换" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <TextBlock Text="在 标准 → 阅读 → 隐私 → 自定义档案 之间循环切换，每次切换弹一次托盘提示"
+                               Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
+                    <controls:HotkeyBox Text="{Binding HotkeyProfileText}" IsInvalid="{Binding HotkeyProfileInvalid}"
                                         Width="260" HorizontalAlignment="Left"/>
 
                     <TextBlock Text="{Binding HotkeyMessage}" Foreground="{DynamicResource Brush.Error}"
@@ -703,6 +773,72 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- FR-035（P0 批 2 / spec §1.4）：Anki 直推卡片——只访问本机 29537，不经代理不上外网 -->
+                <Border Style="{StaticResource Card}" DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <StackPanel>
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                <TextBlock Text="Anki 直推" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="收藏生词时顺带出卡到桌面版 Anki（需开着 Anki 并安装 AnkiConnect 插件，端口 29537）；只访问本机，不经代理、不上外网。收藏是用户显式动作，隐私模式下仍可推送"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                      VerticalAlignment="Center" IsChecked="{Binding AnkiEnabled}"/>
+                        </Grid>
+
+                        <Border Style="{StaticResource Hairline}" Margin="0,10"/>
+
+                        <UniformGrid Columns="2">
+                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                <TextBlock Text="牌组" Width="64" VerticalAlignment="Center"
+                                           Style="{StaticResource Text.Caption}"/>
+                                <TextBox Width="150" VerticalContentAlignment="Center"
+                                         Text="{Binding AnkiDeck, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                         ToolTip="Anki 里的牌组名，需完全一致"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                <TextBlock Text="笔记模板" Width="64" VerticalAlignment="Center"
+                                           Style="{StaticResource Text.Caption}"/>
+                                <TextBox Width="150" VerticalContentAlignment="Center"
+                                         Text="{Binding AnkiModel, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                         ToolTip="如「基本」，需与 Anki 中模板名一致"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                <TextBlock Text="正面字段" Width="64" VerticalAlignment="Center"
+                                           Style="{StaticResource Text.Caption}"/>
+                                <TextBox Width="150" VerticalContentAlignment="Center"
+                                         Text="{Binding AnkiFrontField, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                         ToolTip="放原文的字段名（模板编辑界面可查）"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,4">
+                                <TextBlock Text="背面字段" Width="64" VerticalAlignment="Center"
+                                           Style="{StaticResource Text.Caption}"/>
+                                <TextBox Width="150" VerticalContentAlignment="Center"
+                                         Text="{Binding AnkiBackField, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                         ToolTip="放译文的字段名"/>
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <Grid Margin="0,10,0,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AnkiPushOnFavorite}"
+                                          VerticalAlignment="Center"/>
+                                <TextBlock Text="收藏时顺带推送" VerticalAlignment="Center" Margin="8,0,0,0"
+                                           FontSize="{StaticResource FontSize.Small}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="测试连接" Style="{StaticResource Button.Outline}"
+                                        Command="{Binding TestAnkiCommand}"/>
+                                <Button Content="全部直推" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding PushAllToAnkiCommand}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="{Binding AnkiStatusText}" Style="{StaticResource Text.Caption}"
+                                   TextWrapping="Wrap" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding VocabularyMessage}"
                            Style="{StaticResource Text.Caption}" Margin="2,10,0,0"/>
 
@@ -777,6 +913,17 @@
                 </Grid>
                 <TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Hint}" Margin="2,0,0,10" MaxWidth="520"
                            Text="译文生成后把「源词」统一替换为固定译法，对全部引擎生效（长词优先、英文按词边界匹配）；适合产品名与专有名词。最多 500 条，改动即时保存。"/>
+
+                <!-- FR-037（P0 批 2 / spec §4）：术语表全局开关——关闭时词条保留、替换直通 -->
+                <Grid DockPanel.Dock="Top" Margin="2,0,2,12">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="启用术语表" FontSize="{StaticResource FontSize.Body}"/>
+                        <TextBlock Text="关闭后词条保留但不参与替换（切换场景档案时会联动此开关）"
+                                   Style="{StaticResource Text.Caption}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                              VerticalAlignment="Center" IsChecked="{Binding GlossaryEnabled}"/>
+                </Grid>
 
                 <!-- 术语表 JSON 损坏（手改配置文件）时提示，保存一次即修复 -->
                 <Border Style="{StaticResource Banner.Warning}" DockPanel.Dock="Top" Margin="0,0,0,10"
