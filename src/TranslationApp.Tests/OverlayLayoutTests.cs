@@ -35,6 +35,11 @@ public sealed class OverlayLayoutTests
         new(0, [0], new OcrRect(left, top, left + width, top + height),
             new OcrRect(left, top, left + width, top + height), text);
 
+    /// <summary>带真实序号的块（FR-048 的墨色按 <see cref="OcrBlock.Index"/> 对齐，测试夹具不能全用 0 号）。</summary>
+    private static OcrBlock IndexedBlock(int index, double left, double top, double width, double height) =>
+        new(index, [index], new OcrRect(left, top, left + width, top + height),
+            new OcrRect(left, top, left + width, top + height), $"src{index}");
+
     private static BackgroundSample Flat(uint argb = 0xFFF0F0F0u, bool busy = false) =>
         new(true, (byte)(argb & 0xFF), (byte)((argb >> 8) & 0xFF), (byte)((argb >> 16) & 0xFF), 240, busy ? 40 : 1, busy);
 
@@ -401,5 +406,42 @@ public sealed class OverlayLayoutTests
         var placement = Assert.Single(plan.Blocks);
         Assert.True(placement.Wrap);                                       // 测量折行 → 渲染必须换行
         Assert.True(placement.FontSizePx >= OverlayLayout.MinFontPx(1.0));  // 且字号仍在下限之上
+    }
+
+    // ---------------- FR-048：文字墨色随排版透传 ----------------
+
+    [Fact]
+    public void 模式A_墨色采样逐项透传到覆盖块()
+    {
+        var blocks = new[] { IndexedBlock(0, 100, 100, 400, 40), IndexedBlock(1, 100, 160, 400, 40) };
+        var request = Request(blocks, ["译文一", "译文二"]) with
+        {
+            InkArgbs = new uint?[] { 0xFF2244AAu, null },
+        };
+
+        var plan = OverlayLayout.Build(request, Measure);
+
+        Assert.Equal(PinOverlayMode.InPlace, plan.Mode);
+        Assert.Equal(0xFF2244AAu, plan.Blocks[0].TextArgb);
+        Assert.Null(plan.Blocks[1].TextArgb); // 采样失败项 → null，界面按底色深浅兜底
+    }
+
+    [Fact]
+    public void 模式B_统一底板取出现最多的墨色_无合格采样则为null()
+    {
+        var blocks = new[] { Block(100, 100, 300, 20), Block(100, 140, 300, 20) };
+        var merged = new string('译', 400);
+
+        var plan = OverlayLayout.Build(Request(blocks, [null, null], merged: merged, segmentMismatch: true) with
+        {
+            InkArgbs = new uint?[] { 0xFF336699u, 0xFF336699u },
+        }, Measure);
+
+        Assert.Equal(PinOverlayMode.BlockOverlay, plan.Mode);
+        Assert.Equal(0xFF336699u, Assert.Single(plan.Blocks).TextArgb);
+
+        var fallback = OverlayLayout.Build(
+            Request(blocks, [null, null], merged: merged, segmentMismatch: true), Measure);
+        Assert.Null(Assert.Single(fallback.Blocks).TextArgb);
     }
 }

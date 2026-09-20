@@ -304,11 +304,14 @@ public sealed class ScreenCaptureTranslateFlow
         // 底色取样取的是**原裁剪图**（钉图用的就是它；缩小过的坐标已还原，两者同为原裁剪图像素）
         var samples = BackgroundSampler.SampleAll(pinPixels, imageRect.Width, imageRect.Height, blocks);
 
+        // FR-048：段框内部聚类采样文字墨色（识别线程一次算完，重试/强制翻译复用同一份，不增加交互延迟）
+        var inks = SampleInks(pinPixels, imageRect.Width, imageRect.Height, blocks, samples);
+
         // 强制翻译 = 把源语言置回**自动检测**后，对同一批块重新走「翻译 + 排版」（倾斜 / 竖排的降级不在此列）
         Func<Task<PinContent>>? forceTranslate = languageSkipped && blocks.Count > 0
             ? () => RetranslateAsync(
                 blocks, samples, dpiScale, status with { TranslationCode = null },
-                imageRect.Width, imageRect.Height, recognition.Text)
+                imageRect.Width, imageRect.Height, recognition.Text, inks)
             : null;
 
         var outcome = forced is null && blocks.Count > 0
@@ -326,7 +329,8 @@ public sealed class ScreenCaptureTranslateFlow
                 outcome.MergedText,
                 forced,
                 outcome.SegmentMismatch,
-                outcome.Failed),
+                outcome.Failed,
+                inks),
             MeasureText);
 
         var sourceText = recognition.Text;
@@ -337,7 +341,7 @@ public sealed class ScreenCaptureTranslateFlow
         // 翻译缺失（失败或部分失败）时才提供重试：点一次就重新翻译并刷新这张钉图（AC 12）
         var canRetry = forced is null && blocks.Count > 0 && !outcome.HasTranslation && IsTranslatable(status);
         Func<Task<PinContent>>? retry = canRetry
-            ? () => RetranslateAsync(blocks, samples, dpiScale, status, imageWidth, imageHeight, sourceText)
+            ? () => RetranslateAsync(blocks, samples, dpiScale, status, imageWidth, imageHeight, sourceText, inks)
             : null;
 
         // 「在小窗中打开」= 把识别文本带回主流程（可编辑、可再翻译、可入库），14.3.8
@@ -382,7 +386,8 @@ public sealed class ScreenCaptureTranslateFlow
         OcrLanguageStatus status,
         int imageWidth,
         int imageHeight,
-        string? sourceText)
+        string? sourceText,
+        IReadOnlyList<uint?>? inks = null)
     {
         var outcome = await TranslateBlocksAsync(blocks, status, CancellationToken.None);
         if (!outcome.HasTranslation)
@@ -398,9 +403,26 @@ public sealed class ScreenCaptureTranslateFlow
         var plan = OverlayLayout.Build(
             new OverlayRequest(
                 blocks, outcome.Texts, imageWidth, imageHeight, dpiScale, samples,
-                outcome.MergedText, null, outcome.SegmentMismatch, false),
+                outcome.MergedText, null, outcome.SegmentMismatch, false, inks),
             MeasureText);
         return ToContent(plan, sourceText, outcome);
+    }
+
+    /// <summary>
+    /// FR-048：逐块在段框内做颜色聚类取文字墨色（只算像素统计，不碰原文/译文内容，14.3.10 口径）。
+    /// 采样失败项为 null → 界面按底色深浅兜底黑/白，绝不因此改变排版。
+    /// </summary>
+    private static IReadOnlyList<uint?> SampleInks(
+        byte[] bgra, int width, int height, IReadOnlyList<OcrBlock> blocks, IReadOnlyList<BackgroundSample> samples)
+    {
+        var inks = new uint?[blocks.Count];
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            inks[i] = TextRenderStyleSampler.SampleInkArgb(
+                bgra, width, height, blocks[i].CoverRect.ToPixelRect(), samples[i].Argb);
+        }
+
+        return inks;
     }
 
     /// <summary>排版结果 → 钉图内容（覆盖块 / 面板 / 状态说明 / 可复制译文）。</summary>

@@ -1077,7 +1077,16 @@ public partial class PinWindow : Window
                 {
                     text.MaxHeight = Math.Max(1, height - (2 * padding));
                 }
-                text.SetResourceReference(TextBlock.ForegroundProperty, PinOverlayRules.TextColorToken(block.CoverArgb));
+                if (block.TextArgb is { } ink)
+                {
+                    // FR-048：采样到段框内文字墨色 → 译文跟随原文颜色（覆盖层底色取自图片，故不跟主题）
+                    text.Foreground = new SolidColorBrush(Color.FromArgb(
+                        (byte)(ink >> 24), (byte)(ink >> 16), (byte)(ink >> 8), (byte)ink));
+                }
+                else
+                {
+                    text.SetResourceReference(TextBlock.ForegroundProperty, PinOverlayRules.TextColorToken(block.CoverArgb));
+                }
                 text.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
                 Canvas.SetLeft(text, left + padding);

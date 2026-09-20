@@ -31,6 +31,7 @@ public delegate (double Width, double Height) TextMeasure(string text, double fo
 /// <param name="ImageHeight">裁剪图像素高。</param>
 /// <param name="DpiScale">钉图所在屏的缩放（字号下限按 DIP 折算，绝不能写死 9 px）。</param>
 /// <param name="Backgrounds">逐块底色取样（同序；缺失时按失败处理 → 兜底色令牌）。</param>
+/// <param name="InkArgbs">逐块文字墨色取样（FR-048，同序；null 项 = 采样失败 → 界面按底色深浅兜底黑/白）。</param>
 /// <param name="MergedTranslation">合并成一次请求时的整段译文（非空则整块排版直接用它）。</param>
 /// <param name="ForcedSidePanelReason">链路已判定的降级原因（倾斜 / 竖排 / 语言相同等）。</param>
 /// <param name="SegmentCountMismatch">合并请求切分出的段数与原文段数不一致（文档降级条件③）。</param>
@@ -45,7 +46,8 @@ public sealed record OverlayRequest(
     string? MergedTranslation = null,
     string? ForcedSidePanelReason = null,
     bool SegmentCountMismatch = false,
-    bool TranslationFailed = false);
+    bool TranslationFailed = false,
+    IReadOnlyList<uint?>? InkArgbs = null);
 
 /// <summary>排版结果：直接喂给 <see cref="PinContent"/>（Core 内不产生任何颜色常量）。</summary>
 /// <param name="Mode">实际采用（或降级后）的渲染模式。</param>
@@ -300,11 +302,12 @@ public static class OverlayLayout
         var upper = Math.Min(MaxFontHeightRatio * cover.Height, block.EstimatedFontPx * FontUpperGrowth);
         var expandLimit = Math.Min(ExpandRatioLimit * cover.Height, Math.Max(0, Clearance(block, blocks, request.ImageHeight)));
         var argb = BackgroundArgb(request.Backgrounds, block.Index);
+        var textArgb = InkArgb(request.InkArgbs, block.Index);
 
         // 第一轮：不扩展
         if (TryFit(text, cover.Height, cover.Width, upper, minFont, measure, out var font, out _, out var wrapped))
         {
-            return new PinOverlayBlock(cover.ToPixelRect(), text, argb, font, wrapped);
+            return new PinOverlayBlock(cover.ToPixelRect(), text, argb, font, wrapped, textArgb);
         }
 
         // 第二轮：向下扩展（扩展量按需要的实际高度取，仍受净空与上限约束）
@@ -313,7 +316,7 @@ public static class OverlayLayout
             && used > cover.Height)
         {
             var expanded = new OcrRect(cover.Left, cover.Top, cover.Right, cover.Bottom + (used - cover.Height));
-            return new PinOverlayBlock(expanded.ToPixelRect(), text, argb, font, wrapped);
+            return new PinOverlayBlock(expanded.ToPixelRect(), text, argb, font, wrapped, textArgb);
         }
 
         return null;
@@ -453,7 +456,8 @@ public static class OverlayLayout
             }
         }
 
-        var block = new PinOverlayBlock(panel.ToPixelRect(), text, argb, font, Wrap: true);
+        var block = new PinOverlayBlock(panel.ToPixelRect(), text, argb, font, Wrap: true,
+            TextArgb: DominantInk(request.InkArgbs));
         return new OverlayPlan(
             PinOverlayMode.BlockOverlay, [block], StatusMessage: border, TranslatedText: fullText);
     }
@@ -497,6 +501,30 @@ public static class OverlayLayout
     /// <summary>该块的覆盖色：优先取底色取样结果，缺失即 null（界面回退 <c>Brush.Overlay.CoverFallback</c>）。</summary>
     private static uint? BackgroundArgb(IReadOnlyList<BackgroundSample>? samples, int index) =>
         samples is not null && index >= 0 && index < samples.Count ? samples[index].Argb : null;
+
+    /// <summary>该块的文字墨色（FR-048）：越界或缺采样列表即 null（界面按底色深浅兜底黑/白）。</summary>
+    private static uint? InkArgb(IReadOnlyList<uint?>? inks, int index) =>
+        inks is not null && index >= 0 && index < inks.Count ? inks[index] : null;
+
+    /// <summary>模式 B 统一底板的墨色：取出现次数最多的采样值（多样本投票，与 <see cref="BackgroundSampler.DominantArgb"/> 同一思路）。</summary>
+    private static uint? DominantInk(IReadOnlyList<uint?>? inks)
+    {
+        if (inks is null || inks.Count == 0)
+        {
+            return null;
+        }
+
+        var counts = new Dictionary<uint, int>();
+        foreach (var ink in inks)
+        {
+            if (ink is { } value)
+            {
+                counts[value] = counts.TryGetValue(value, out var seen) ? seen + 1 : 1;
+            }
+        }
+
+        return counts.Count == 0 ? null : counts.MaxBy(pair => pair.Value).Key;
+    }
 
     private static IReadOnlyList<string?> ResolveTranslations(
         IReadOnlyList<OcrBlock> blocks, IReadOnlyList<string?>? translations)

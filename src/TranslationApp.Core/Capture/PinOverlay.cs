@@ -22,8 +22,10 @@ public enum PinTextLayer
 /// </summary>
 /// <param name="FontSizePx">内容字号（图像像素）；≤0 时由界面按块高推算。</param>
 /// <param name="Wrap">是否需要换行（模式 B 整块排版的多行译文；模式 A 由排版阶段保证单行放得下）。</param>
+/// <param name="TextArgb">FR-048 采样出的文字墨色（不透明 ARGB）；null = 界面按底色深浅取黑/白令牌兜底。</param>
 public readonly record struct PinOverlayBlock(
-    PixelRect Rect, string Text, uint? CoverArgb = null, double FontSizePx = 0, bool Wrap = false);
+    PixelRect Rect, string Text, uint? CoverArgb = null, double FontSizePx = 0, bool Wrap = false,
+    uint? TextArgb = null);
 
 /// <summary>
 /// 钉图的内容数据（批 4c 传入真实 OCR 段落与译文；**只传数据，不改窗口结构**）。
