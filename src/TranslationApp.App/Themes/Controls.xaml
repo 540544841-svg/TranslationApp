@@ -482,7 +482,7 @@
                 <ControlTemplate TargetType="ProgressBar">
                     <Border Background="{TemplateBinding Background}"
                             CornerRadius="2" ClipToBounds="True">
-                        <Border x:Name="Bar" Width="96" HorizontalAlignment="Left"
+                        <Border Width="96" HorizontalAlignment="Left"
                                 Background="{DynamicResource Brush.Signature.Streak}"
                                 CornerRadius="2" RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
@@ -491,34 +491,29 @@
                                     <TranslateTransform X="-120"/>
                                 </TransformGroup>
                             </Border.RenderTransform>
+                            <!--
+                              动画必须挂在被动画元素自己的 Triggers 上、且不写 TargetName：
+                              写在 ControlTemplate.Triggers 里时，窗口尺寸变化会重新广播 Loaded，
+                              此时 BeginStoryboard 拿到的 namescope 解析不到模板内的命名元素，
+                              抛「无法在 ControlTemplate 的名称范围内找到名称」（运行日志每次启动必现）。
+                              属性路径要穿过 TransformGroup，因为 Transform 是 Freezable。
+                            -->
+                            <Border.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.X)"
+                                                             From="-120" To="420" Duration="0:0:1.4">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <SineEase EasingMode="EaseInOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Border.Triggers>
                         </Border>
                     </Border>
-                                        <!--
-                      目标写「命名元素 + 变换子项路径」而不是给 TranslateTransform 起名字：
-                      Transform 是 Freezable，不进模板名字作用域，Storyboard.TargetName 找它
-                      会在窗口尺寸变化（Loaded 重新广播）时抛「找不到名称」（运行日志实测）。
-                    -->
-                    <ControlTemplate.Triggers>
-                        <!--
-                          动画挂在 Loaded 事件上：属性触发器（IsIndeterminate / Visibility）的
-                          EnterActions 都依赖「条件跳变」，在模板应用时条件已成立的场景不可靠；
-                          EventTrigger+Loaded 在元素进入可视树时必然触发一次，循环动画随即常驻
-                          （控件隐藏时跳过渲染，时钟开销可忽略），是最稳的「显示即流光」方案。
-                        -->
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard Name="Slide">
-                                <Storyboard RepeatBehavior="Forever">
-                                    <DoubleAnimation Storyboard.TargetName="Bar"
-                                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.X)"
-                                                     From="-120" To="420" Duration="0:0:1.4">
-                                        <DoubleAnimation.EasingFunction>
-                                            <SineEase EasingMode="EaseInOut"/>
-                                        </DoubleAnimation.EasingFunction>
-                                    </DoubleAnimation>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

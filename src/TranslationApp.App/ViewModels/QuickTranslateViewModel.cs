@@ -110,6 +110,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultPlaceholderVisible))]
+    [NotifyPropertyChangedFor(nameof(IsProgressVisible))]
     [NotifyCanExecuteChangedFor(nameof(ApplyStyleCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleShadowCommand))]
     private bool _isBusy;
