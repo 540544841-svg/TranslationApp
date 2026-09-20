@@ -19,6 +19,13 @@ public interface ITtsService
     /// <summary>朗读文本；若正在朗读则先停止（再次点击 = 停止）。</summary>
     void Speak(string text, string languageCode);
 
+    /// <summary>
+    /// 朗读一句并等它念完（FR-053 影子跟读：必须一句一念，才能在高亮上推进）。
+    /// 取消时立即停止并抛 <see cref="OperationCanceledException"/>；无语音包/引擎异常按「已念完」返回，
+    /// 跟读循环不该因为语音环境问题卡住。
+    /// </summary>
+    Task SpeakAndWaitAsync(string text, string languageCode, CancellationToken cancellationToken = default);
+
     /// <summary>立即停止朗读。</summary>
     void Stop();
 
@@ -30,6 +37,9 @@ public interface ITtsService
 [SupportedOSPlatform("windows")]
 public sealed class TtsService : ITtsService, IDisposable
 {
+    /// <summary>跟读时轮询「还在念吗」的间隔毫秒（只影响句边界判定精度，不影响听感）。</summary>
+    private const int SpeakPollMs = 60;
+
     private readonly SpeechSynthesizer _synthesizer = new();
     private readonly object _gate = new();
 
@@ -97,6 +107,19 @@ public sealed class TtsService : ITtsService, IDisposable
 
     public void Speak(string text, string languageCode)
     {
+        lock (_gate)
+        {
+            SpeakLocked(text, languageCode);
+        }
+    }
+
+    /// <summary>
+    /// 念完一句再返回（FR-053 影子跟读）。用轮询 <c>State</c> 而不是 SpeakCompleted 事件：
+    /// 取消时 SAPI 的 Skip/Complete 事件会晚到，事件里再配 TaskCompletionSource 会把下一句误判成「已念完」。
+    /// 轮询间隔 60ms，相对句间停顿（默认 600ms）可忽略。
+    /// </summary>
+    public async Task SpeakAndWaitAsync(string text, string languageCode, CancellationToken cancellationToken = default)
+    {
         if (string.IsNullOrWhiteSpace(text))
         {
             return;
@@ -104,17 +127,39 @@ public sealed class TtsService : ITtsService, IDisposable
 
         lock (_gate)
         {
-            // 再次点击 = 停止当前朗读（FR-016）
-            _synthesizer.SpeakAsyncCancelAll();
+            SpeakLocked(text, languageCode);
+        }
 
-            var voice = FindVoice(languageCode);
-            if (voice is not null)
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            bool speaking;
+            lock (_gate)
             {
-                _synthesizer.SelectVoice(voice);
+                speaking = _synthesizer.State == SynthesizerState.Speaking;
             }
 
-            _synthesizer.SpeakAsync(text);
+            if (!speaking)
+            {
+                return;
+            }
+
+            await Task.Delay(SpeakPollMs, cancellationToken);
         }
+    }
+
+    private void SpeakLocked(string text, string languageCode)
+    {
+        // 再次点击 = 停止当前朗读（FR-016）
+        _synthesizer.SpeakAsyncCancelAll();
+
+        var voice = FindVoice(languageCode);
+        if (voice is not null)
+        {
+            _synthesizer.SelectVoice(voice);
+        }
+
+        _synthesizer.SpeakAsync(text);
     }
 
     public void Stop()

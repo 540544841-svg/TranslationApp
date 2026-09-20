@@ -124,6 +124,9 @@ public partial class SettingsViewModel : ObservableObject
         _pasteTranslateEnabled = settings.PasteTranslateEnabled;
         _tmReuseEnabled = settings.TmReuseEnabled;
         _llmContextEnabled = settings.LlmContextEnabled;
+        _dailyReviewEnabled = settings.DailyReviewEnabled;
+        _shadowReadingEnabled = settings.ShadowReadingEnabled;
+        _shadowPauseMs = settings.ShadowPauseMs;
         // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
         InitializeApiPage();
         // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
@@ -805,6 +808,33 @@ public partial class SettingsViewModel : ObservableObject
     private bool _llmContextEnabled;
 
     partial void OnLlmContextEnabledChanged(bool value) => Save(s => s.LlmContextEnabled = value);
+
+    /// <summary>每日复习 5 词（FR-052，默认关）：纯轮转提醒，不统计熟悉度。</summary>
+    [ObservableProperty]
+    private bool _dailyReviewEnabled;
+
+    partial void OnDailyReviewEnabledChanged(bool value) => Save(s => s.DailyReviewEnabled = value);
+
+    /// <summary>影子跟读入口（FR-053，默认关）：开启后译文区出现「跟读」按钮。</summary>
+    [ObservableProperty]
+    private bool _shadowReadingEnabled;
+
+    partial void OnShadowReadingEnabledChanged(bool value) => Save(s => s.ShadowReadingEnabled = value);
+
+    /// <summary>跟读句间停顿毫秒（夹在 200~3000，避免填 0 变成连读、填超大值像卡死）。</summary>
+    [ObservableProperty]
+    private int _shadowPauseMs;
+
+    partial void OnShadowPauseMsChanged(int value)
+    {
+        var clamped = Math.Clamp(value, 200, 3000);
+        Save(s => s.ShadowPauseMs = clamped);
+        if (clamped != value)
+        {
+            // 用户填了区间外的值：回写夹取结果，输入框与设置保持一致（否则显示与生效值两样）
+            ShadowPauseMs = clamped;
+        }
+    }
 
     /// <summary>目标修饰键下拉项。</summary>
     public IReadOnlyList<ThemeOption> DoubleTapKeyOptions { get; } =

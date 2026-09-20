@@ -378,4 +378,24 @@ public sealed class AppSettings
     /// 与小窗「换说法」三按钮同步，「写作」档案钉住 formal。
     /// </summary>
     public string TranslationStyle { get; set; } = "none";
+
+    // ==================== 批 5 5b：每日复习 / 影子跟读 ====================
+
+    /// <summary>
+    /// 生词本每日复习（FR-052，默认关）：开启后每天首次呼出小窗给一条复习词（一天 5 条，纯轮转）。
+    /// 刻意不做熟悉度/遗忘曲线——那是 B4 复习闭环的正题，需要新表与新交互。
+    /// </summary>
+    public bool DailyReviewEnabled { get; set; }
+
+    /// <summary>当天复习进度的日期键（yyyy-MM-dd，本机日期）；换天自动归零。</summary>
+    public string DailyReviewDate { get; set; } = "";
+
+    /// <summary>今天已看到第几条（0 起）；等于当日题数即「今天已完成」。</summary>
+    public int DailyReviewIndex { get; set; }
+
+    /// <summary>影子跟读入口（FR-053，默认关）：开启后译文区出现「跟读」按钮，逐句朗读并高亮。</summary>
+    public bool ShadowReadingEnabled { get; set; }
+
+    /// <summary>跟读时句间停顿毫秒（留时间给用户跟着念一句）。</summary>
+    public int ShadowPauseMs { get; set; } = 600;
 }

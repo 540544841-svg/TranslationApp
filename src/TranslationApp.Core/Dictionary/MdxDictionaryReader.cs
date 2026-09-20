@@ -6,7 +6,11 @@ using Microsoft.Data.Sqlite;
 namespace TranslationApp.Core.Dictionary;
 
 /// <summary>词典查询命中（词头 + 已清洗为纯文本的释义）。</summary>
-public sealed record DictionaryQueryHit(string Word, string Definition);
+/// <summary>
+/// 一次词典命中。<paramref name="SourceName"/> = 命中的那份词典的显示名
+/// （FR-055：多词典时用户要看得见是哪本给的，不然「按列表顺序取首个命中」不可解释）。
+/// </summary>
+public sealed record DictionaryQueryHit(string Word, string Definition, string? SourceName = null);
 
 /// <summary>
 /// MDX v3（后端为 SQLite）离线词典只读读取器（FR-049 最小可行）。

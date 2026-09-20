@@ -99,11 +99,21 @@ public sealed class DictionaryManager : IDisposable
             var hit = reader.Query(word);
             if (hit is not null)
             {
-                return hit;
+                // FR-055：把命中的词典名带回给界面（顺序即优先级，用户能靠排序控制）
+                return hit with { SourceName = SourceLabel(reader) };
             }
         }
 
         return null;
+    }
+
+    /// <summary>词典卡上显示的名字：优先用 mdx 元数据里的词典名，拿不到就用文件名。</summary>
+    private string SourceLabel(MdxDictionaryReader reader)
+    {
+        var name = reader.DisplayName?.Trim();
+        return string.IsNullOrEmpty(name) || name == "-"
+            ? Path.GetFileNameWithoutExtension(reader.FilePath)
+            : name;
     }
 
     /// <summary>

@@ -778,6 +778,7 @@ public partial class QuickWindow : Window
         var chrome = MeasureElementDip(LanguageRow, contentWidthDip)
                      + MeasureElementDip(TitleRow, contentWidthDip)
                      + MeasureElementDip(StyleRow, contentWidthDip)
+                     + MeasureElementDip(ReviewCard, contentWidthDip)
                      + MeasureElementDip(StatusPanel, contentWidthDip)
                      + SurfaceBorder.Padding.Top + SurfaceBorder.Padding.Bottom
                      + SurfaceBorder.Margin.Top + SurfaceBorder.Margin.Bottom;
@@ -814,6 +815,12 @@ public partial class QuickWindow : Window
         MeasureShadow.Padding = ResultBox.Padding; // 与真实结果区同一可用宽度（内边距一致）
         MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
         var resultHeight = MeasureShadow.DesiredSize.Height;
+
+        // FR-053：跟读模式每句独立成行且带行距，按句数补回这部分高度（否则会裁掉最后一句）
+        if (_vm.IsShadowMode)
+        {
+            resultHeight += _vm.ShadowLines.Count * 8;
+        }
 
         return chrome + inputHeight + resultHeight + MeasureDictionaryCardHeightDip(contentWidthDip);
     }
@@ -952,6 +959,9 @@ public partial class QuickWindow : Window
         // FR-020 AC 4：关窗即取消在途对比请求，不留后台任务
         _vm.CancelComparison();
 
+        // FR-053：跟读同理——窗口都隐藏了，语音不能还在念下一句
+        _vm.CancelShadowReading();
+
         // FR-026：**隐藏时不写回任何尺寸**——缩放手势只影响本次窗口，
         // 下次呼出仍从设置里的默认宽高与当前内容重新计算（对比模式的临时增高也因此不会被持久化）。
         Hide();
@@ -988,7 +998,14 @@ public partial class QuickWindow : Window
             case nameof(QuickTranslateViewModel.IsDictionaryExpanded):
             // FR-051：换说法行只在 AI 引擎下出现，出现即多占一行
             case nameof(QuickTranslateViewModel.SupportsStyle):
+            // FR-052：复习行出现/消失同样占一行
+            case nameof(QuickTranslateViewModel.ReviewText):
                 ScheduleAdaptiveRecompute();
+                return;
+
+            // FR-053：跟读模式切换改变结果区排版（整块 ⇄ 逐句），按译文返回同档短防抖重算
+            case nameof(QuickTranslateViewModel.IsShadowMode):
+                ScheduleAdaptiveRecompute(ResultDebounceMs);
                 return;
 
             case nameof(QuickTranslateViewModel.ResultText):

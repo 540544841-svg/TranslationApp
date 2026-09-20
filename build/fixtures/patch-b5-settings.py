@@ -28,6 +28,16 @@ data.update({
     "TargetLanguage": "zh-CN",
 })
 
+# Batch 5b runs the same patch with the review line and shadow reading switched on.
+if os.environ.get("B5_BATCH5B") == "1":
+    data.update({
+        "DailyReviewEnabled": True,
+        "DailyReviewDate": "",
+        "DailyReviewIndex": 0,
+        "ShadowReadingEnabled": True,
+        "ShadowPauseMs": 600,
+    })
+
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(data, handle, ensure_ascii=False, indent=2)
 

@@ -11,6 +11,7 @@ using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
 using TranslationApp.Core.SystemIntegration;
 using TranslationApp.Core.Translation;
+using TranslationApp.Core.Vocabulary;
 
 namespace TranslationApp.ViewModels;
 
@@ -93,6 +94,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SpeakResultCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleFavoriteCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyResultCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleShadowCommand))]
     private string _resultText = "";
 
     [ObservableProperty]
@@ -106,6 +108,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsResultPlaceholderVisible))]
     [NotifyCanExecuteChangedFor(nameof(ApplyStyleCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleShadowCommand))]
     private bool _isBusy;
 
     [ObservableProperty]
@@ -132,6 +135,14 @@ public partial class QuickTranslateViewModel : ObservableObject
     [ObservableProperty]
     private string _dictionaryWord = "";
 
+    /// <summary>命中的那份词典名（FR-055：多词典时「谁给的释义」必须可见）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DictionaryHeader))]
+    private string _dictionarySource = "";
+
+    /// <summary>词典卡标题：装了多本时要说清是哪本给的（FR-055）。</summary>
+    public string DictionaryHeader => DictionarySource.Length == 0 ? "词典" : $"词典 · {DictionarySource}";
+
     /// <summary>词典释义是否展开全文（卡片默认截断，点一下看全）。</summary>
     [ObservableProperty]
     private bool _isDictionaryExpanded;
@@ -149,6 +160,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         {
             DictionaryDefinition = "";
             DictionaryWord = "";
+            DictionarySource = "";
             return;
         }
 
@@ -168,12 +180,14 @@ public partial class QuickTranslateViewModel : ObservableObject
             {
                 DictionaryDefinition = "";
                 DictionaryWord = "";
+                DictionarySource = "";
                 IsDictionaryExpanded = false;
                 return;
             }
 
             DictionaryWord = string.Equals(hit.Word, source, StringComparison.OrdinalIgnoreCase) ? "" : hit.Word;
             DictionaryDefinition = hit.Definition;
+            DictionarySource = hit.SourceName ?? "";
             IsDictionaryExpanded = false;
         }
         catch (Exception ex)
@@ -281,9 +295,16 @@ public partial class QuickTranslateViewModel : ObservableObject
         // 批 5：换说法能力取决于当前引擎（档案切换可能刚换掉引擎），风格按钮随会话现算
         RefreshStyleSupport();
 
+        // FR-053：呼出新会话时停掉上一轮的跟读（逐句列表随会话作废）
+        StopShadow();
+
+        // FR-052：每天首次呼出小窗时给一条复习词（开关关 → 立刻返回，不做任何 IO）
+        _ = RefreshDailyReviewAsync();
+
         // FR-049：词典卡随会话清空（在途查询靠输入比对判过期，不会把上一句的释义留下）
         DictionaryDefinition = "";
         DictionaryWord = "";
+        DictionarySource = "";
         IsDictionaryExpanded = false;
 
         // FR-020 AC 4：再次打开小窗不残留上次对比结果，并取消可能仍在途的请求
@@ -592,8 +613,8 @@ public partial class QuickTranslateViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
     private bool _isAlignView;
 
-    /// <summary>整块译文区是否显示（对照打开时隐藏）。</summary>
-    public bool IsBlockViewVisible => !IsAlignView;
+    /// <summary>整块译文区是否显示（对照 / 跟读打开时隐藏——同一区域三种竖排互斥）。</summary>
+    public bool IsBlockViewVisible => !IsAlignView && !IsShadowMode;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ReTranslateMachineCommand))]
@@ -669,6 +690,9 @@ public partial class QuickTranslateViewModel : ObservableObject
     {
         SupportsStyle = TranslatorCatalog.SupportsDirectives(_catalog.Resolve(_settings.Engine));
         ActiveStyleKey = TranslationStyles.Parse(_settings.TranslationStyle).ToSettingKey();
+        // 跟读入口看的是设置里的开关（用户可能刚在设置页改过），每次呼出现算
+        OnPropertyChanged(nameof(IsShadowButtonVisible));
+        ToggleShadowCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -760,6 +784,210 @@ public partial class QuickTranslateViewModel : ObservableObject
     }
 
     private bool CanApplyStyle() => SupportsStyle && HasResult && !IsBusy;
+
+    // ==================== 批 5 5b：影子跟读（FR-053）/ 每日复习（FR-052） ====================
+
+    /// <summary>跟读的一行。<see cref="IsCurrent"/> 决定高亮——用可通知对象而不是重建整表，避免每句刷新布局。</summary>
+    public sealed partial class ShadowLineView : ObservableObject
+    {
+        public required string Text { get; init; }
+
+        [ObservableProperty]
+        private bool _isCurrent;
+    }
+
+    public ObservableCollection<ShadowLineView> ShadowLines { get; } = [];
+
+    /// <summary>跟读模式（译文按句竖排）：与整块、对照视图互斥。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
+    private bool _isShadowMode;
+
+    /// <summary>正在跟读中（按钮文案 = 停止）。</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ToggleShadowCommand))]
+    private bool _isShadowRunning;
+
+    /// <summary>当前念到第几句（-1 = 未在跟读）。</summary>
+    [ObservableProperty]
+    private int _shadowIndex = -1;
+
+    private CancellationTokenSource? _shadowCts;
+
+    /// <summary>今日复习行文案（「apple → 苹果」）；空 = 不显示。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsReviewVisible))]
+    [NotifyCanExecuteChangedFor(nameof(NextReviewWordCommand))]
+    private string _reviewText = "";
+
+    /// <summary>复习进度「2/5」。</summary>
+    [ObservableProperty]
+    private string _reviewProgress = "";
+
+    public bool IsReviewVisible => ReviewText.Length > 0;
+
+    private IReadOnlyList<VocabularyEntry> _reviewWords = [];
+    private IReadOnlyList<int> _reviewIndices = [];
+
+    private bool CanToggleShadow() => _settings.ShadowReadingEnabled && CanSpeak && HasResult;
+
+    /// <summary>「跟读」按钮是否出现（FR-053：默认关，在「设置 → 高级 → 朗读」里开）。</summary>
+    public bool IsShadowButtonVisible => _settings.ShadowReadingEnabled && CanSpeak;
+
+    /// <summary>
+    /// 跟读（FR-053）：译文按句竖排，SAPI 逐句念完一句再念下一句，句间停顿留给用户跟着念。
+    /// 再点一次 / 关窗 / 呼出新会话 = 停止。只用系统语音，不联网、不外发任何文本。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanToggleShadow))]
+    private async Task ToggleShadowAsync()
+    {
+        if (_shadowCts is not null)
+        {
+            StopShadow();
+            return;
+        }
+
+        var sentences = SentenceSplitter.Split(ResultText);
+        if (sentences.Count == 0)
+        {
+            return;
+        }
+
+        var views = sentences.Select(s => new ShadowLineView { Text = s }).ToArray();
+        foreach (var view in views)
+        {
+            ShadowLines.Add(view);
+        }
+
+        IsShadowMode = true;
+        IsShadowRunning = true;
+        // 只记句数，不记内容（需求 6 日志脱敏）
+        Log.Debug("影子跟读开始：{Count} 句，停顿 {Pause}ms", views.Length, Math.Max(0, _settings.ShadowPauseMs));
+        _shadowCts = new CancellationTokenSource();
+        var token = _shadowCts.Token;
+        var pauseMs = Math.Max(0, _settings.ShadowPauseMs);
+        try
+        {
+            for (var i = 0; i < views.Length; i++)
+            {
+                views[i].IsCurrent = true;
+                ShadowIndex = i;
+                await _tts.SpeakAndWaitAsync(views[i].Text, TargetLanguage, token);
+                if (pauseMs > 0)
+                {
+                    await Task.Delay(pauseMs, token);
+                }
+
+                views[i].IsCurrent = false;
+            }
+
+            StatusText = "跟读结束";
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户点了停止或换了会话：正常收尾，不算错误
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "跟读中断（语音环境问题不影响其它功能）");
+        }
+        finally
+        {
+            foreach (var view in views)
+            {
+                view.IsCurrent = false;
+            }
+
+            _shadowCts?.Dispose();
+            _shadowCts = null;
+            IsShadowRunning = false;
+            IsShadowMode = false;
+            ShadowIndex = -1;
+            ShadowLines.Clear();
+        }
+    }
+
+    /// <summary>停止跟读：取消循环并立刻静音（SAPI 的取消是异步的，先 Stop 才不会念完当前句）。</summary>
+    private void StopShadow()
+    {
+        _shadowCts?.Cancel();
+        _tts.Stop();
+    }
+
+    /// <summary>窗口隐藏（Esc / 点外部 / 关窗）即停：语音不该在看不见的窗口里继续念。</summary>
+    public void CancelShadowReading() => StopShadow();
+
+    /// <summary>
+    /// 刷新今日复习行（FR-052）：开关关 / 没收藏 / 今天已看完 → 不显示。
+    /// 取词放后台（生词本可能上千条），但复习行不是译文链路的一部分，晚几十毫秒无感。
+    /// </summary>
+    private async Task RefreshDailyReviewAsync()
+    {
+        if (!_settings.DailyReviewEnabled)
+        {
+            _reviewIndices = [];
+            ReviewText = "";
+            ReviewProgress = "";
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var key = today.ToString("yyyy-MM-dd");
+        if (!string.Equals(_settings.DailyReviewDate, key, StringComparison.Ordinal))
+        {
+            _settings.DailyReviewDate = key;
+            _settings.DailyReviewIndex = 0;
+            _store.Save(_settings);
+        }
+
+        try
+        {
+            _reviewWords = await Task.Run(_vocabulary.List);
+            _reviewIndices = DailyReviewSelector.Pick(today, _reviewWords.Count);
+            ShowReviewWord();
+        }
+        catch (Exception ex)
+        {
+            // 复习是提醒，不是功能主线：库读不出来就当没有，绝不影响小窗
+            Log.Debug(ex, "每日复习取词失败（忽略）");
+        }
+    }
+
+    private void ShowReviewWord()
+    {
+        var position = _settings.DailyReviewIndex;
+        if (_reviewIndices.Count == 0 || position >= _reviewIndices.Count)
+        {
+            ReviewText = "";
+            ReviewProgress = "";
+            return;
+        }
+
+        var word = _reviewWords[_reviewIndices[position]];
+        ReviewText = $"{word.SourceText} → {word.TranslatedText}";
+        ReviewProgress = $"{position + 1}/{_reviewIndices.Count}";
+    }
+
+    private bool CanNextReviewWord() => IsReviewVisible;
+
+    [RelayCommand(CanExecute = nameof(CanNextReviewWord))]
+    private void NextReviewWord()
+    {
+        _settings.DailyReviewIndex++;
+        _store.Save(_settings);
+        Log.Debug("每日复习：切到第 {Position} 条", _settings.DailyReviewIndex + 1);
+        ShowReviewWord();
+    }
+
+    /// <summary>「今天到这」：把今天的进度推到底，明天自然回到第 1 条。</summary>
+    [RelayCommand]
+    private void FinishReviewToday()
+    {
+        _settings.DailyReviewIndex = _reviewIndices.Count;
+        _store.Save(_settings);
+        Log.Debug("每日复习：今天到此结束（共 {Count} 条）", _reviewIndices.Count);
+        ShowReviewWord();
+    }
 
     private bool CanSpeakSource() => CanSpeak && !string.IsNullOrWhiteSpace(InputText);
 

@@ -283,6 +283,35 @@
                         <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
                                    FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
                     </Button>
+                    <!-- FR-053：影子跟读（再点一次即停止）；默认关，「设置 → 高级 → 朗读」里开 -->
+                    <Button Height="24" Padding="8,0" Margin="2,0"
+                            Command="{Binding ToggleShadowCommand}"
+                            Visibility="{Binding IsShadowButtonVisible, Converter={StaticResource BoolToVis}}"
+                            ToolTip="逐句朗读译文并高亮当前句，跟着念一遍；再点一次停止">
+                        <Button.Content>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="跟读"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsShadowRunning}" Value="True">
+                                                <Setter Property="Text" Value="停止"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button.Content>
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsShadowRunning}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Content="复制译文" Style="{StaticResource Button.Tonal}"
                             Padding="8,0" Height="24"
                             Command="{Binding CopyResultCommand}"
@@ -303,8 +332,31 @@
                 </StackPanel>
             </Grid>
 
+            <!-- ===== 复习行（FR-052）+ 词典卡（FR-049）：同一行区域，谁有内容谁出现 ===== -->
+            <StackPanel Grid.Row="3">
+            <Border x:Name="ReviewCard" Style="{StaticResource Card}"
+                    Margin="0,4,0,0" Padding="10,6"
+                    Visibility="{Binding IsReviewVisible, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,150,0">
+                        <TextBlock Text="今日复习" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding ReviewProgress}" Style="{StaticResource Text.Caption}"
+                                   Margin="6,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Brush.Primary}"/>
+                        <TextBlock Text="{Binding ReviewText}" FontSize="{StaticResource FontSize.Small}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Content="下一个" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
+                                Command="{Binding NextReviewWordCommand}"/>
+                        <Button Content="今天到这" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
+                                Margin="6,0,0,0" Command="{Binding FinishReviewTodayCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
             <!-- ============ 词典卡（FR-049：划词/输入为单词且本地词典命中时出现） ============ -->
-            <Border x:Name="DictionaryCard" Grid.Row="3" Style="{StaticResource Card}"
+            <Border x:Name="DictionaryCard" Style="{StaticResource Card}"
                     Margin="0,4,0,0" Padding="10,8"
                     MouseLeftButtonUp="OnDictionaryCardClick"
                     Cursor="Hand"
@@ -312,7 +364,7 @@
                 <StackPanel>
                     <Grid>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="词典" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding DictionaryHeader}" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding DictionaryWord}" Style="{StaticResource Text.Caption}"
                                        Margin="6,0,0,0" VerticalAlignment="Center"
                                        Foreground="{DynamicResource Brush.Primary}"/>
@@ -345,6 +397,7 @@
                     </TextBlock>
                 </StackPanel>
             </Border>
+            </StackPanel>
 
             <!-- ============ 译文内容 / 对比分栏 ============ -->
             <Grid x:Name="ResultArea" Grid.Row="4">
@@ -377,6 +430,10 @@
                                 <DataTrigger Binding="{Binding IsAlignView}" Value="True">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                 </DataTrigger>
+                                <!-- FR-053：跟读模式下也让位给逐句列表 -->
+                                <DataTrigger Binding="{Binding IsShadowMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </TextBox.Style>
@@ -395,6 +452,42 @@
                                     <TextBlock Text="{Binding Translated}" TextWrapping="Wrap" Margin="0,2,0,0"
                                                FontSize="{StaticResource FontSize.Content}"/>
                                 </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- FR-053：影子跟读（逐句竖排，当前句左侧强调条 + 前景提亮） -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Visibility="{Binding IsShadowMode, Converter={StaticResource BoolToVis}}">
+                    <ItemsControl ItemsSource="{Binding ShadowLines}" Margin="2,0,8,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderThickness="3,0,0,0" BorderBrush="Transparent" Padding="7,2,0,2" Margin="0,0,0,6">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Primary}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                               FontSize="{StaticResource FontSize.Content}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

@@ -3,7 +3,7 @@
 | 项目 | TranslationApp（速译） |
 |---|---|
 | 日期 | 2026-09-20 |
-| 状态 | 实现中 |
+| 状态 | 已实现（5a = FR-050/051/054，5b = FR-052/053/055，2026-09-21；实现偏差见 §11） |
 | 来源 | `docs/功能升级建议-竞品调研-v1.md` P1 #8（LLM 语境化）+ `docs/改进建议-v2-功能与使用方式.md` B2-2 / B2-4 / B4-1 / B3-1「写作」档 / A2-1 词典层合并评估 |
 | 编号 | FR-050 AI 语境化翻译 · FR-051 一键换说法 · FR-052 生词本每日 5 词 · FR-053 影子跟读 · FR-054「写作」场景档案 · FR-055 多词典合并策略（A2-1 评估结论） |
 | 排期 | 5a = FR-050 + FR-051 + FR-054（同一条 Prompt 链，必须一起落地）；5b = FR-052 + FR-053 + FR-055 |
@@ -160,3 +160,41 @@ FR-049 已实现「按列表顺序取首个命中」，够用且可预期（用�
 - 每日复习不做熟悉度/遗忘曲线（那是 B4 复习闭环的正题，需要新表与新交互，单独立项）。
 - 影子跟读不做原文跟读、不做变速与单句循环。
 - 多词典不做词条 merge（见 §6）。
+
+## 11. 实现记录（与设计的偏差 + 顺带修掉的两处，2026-09-21）
+
+- **语境来源**按 §1.3 落地为 `HistoryRepository.ContextSource(targetLanguage, currentSource, maxAgeMinutes=30)`：
+  SQL 只取同目标语言、时间窗内最近 5 条，再在内存里跳过「与当前输入同句」的记录——
+  「同一句译了两遍」时最近一条就是本句，拿它当语境毫无意义。
+- **`ITranslator` 一行没动**：指令走可选接口 `IPromptDirectiveTranslator`，
+  `OfficialTranslatorBase` 增加一个**默认忽略指令**的 `RequestChunkAsync` 重载，
+  于是六家引擎零改动、只有 AI 引擎覆写它。分块长文时语境逐块共用（语境是"上一段"而不是"前一块"）。
+- **能力判定必须拆装饰层**：`GlossaryTranslator` 恒转发指令，所以
+  `translator is IPromptDirectiveTranslator` 对 Bing 也成立——判定统一走
+  `TranslatorCatalog.SupportsDirectives()`（内部先 `Unwrap`）。这是实现时踩到的第一个坑。
+- **换说法不写历史**：`ApplySuccess` 加了 `recordHistory` / `autoSpeak` 两个开关，
+  重请求走 `recordHistory: false`——同句多译进历史会污染 FR-045 的 TM 候选池。
+- **本地 HTTP API 也吃风格**（设计里没写）：`settings.TranslationStyle` 是全局设置，
+  脚本调用若拿到另一种口吻的译文，用户会以为设置没生效。**语境刻意不带**：API 是无状态单句请求。
+- **每日复习的进度落在设置 JSON 里**（`DailyReviewDate` + `DailyReviewIndex`），
+  没有新表、没有 `ALTER TABLE`；选题是纯函数 `DailyReviewSelector`（天数×5 取模环形取），
+  同一天稳定、跨天自然轮转。复习行做成小窗里的一行卡片（带「下一个」「今天到这」），
+  不是设计里说的"状态行"——状态行会被译文状态覆盖，放不下两个按钮。
+- **影子跟读的句循环放在 VM** 而不是单独的 `ShadowReadingRunner`：
+  它要改的就是 VM 的三个可观察属性，多一个服务只会把 `Dispatcher` 传来传去。
+  `TtsService.SpeakAndWaitAsync` 用**轮询 `State`**（60ms）而不是 `SpeakCompleted` 事件：
+  取消时 SAPI 的 Skip/Complete 会晚到，事件配 TCS 会把下一句误判成"已念完"。
+- **顺带修 1**：设置页「场景档案」的三个按钮是硬编码的，内置档从两档加到三档后
+  「写作」不会自己冒出来——改成按 `AllProfiles()` 生成（`BuiltinProfileRows`），加一档不会再漏一档。
+- **顺带修 2**：进度条流光的 `Storyboard.TargetName` 指向 `TranslateTransform`——
+  Freezable 不进模板名字作用域，窗口尺寸变化（Loaded 重新广播）时抛
+  `InvalidOperationException`（运行日志实测 2 次）。改成「命名元素 + `(TransformGroup.Children)[1]` 路径」。
+- **顺带修 3**：「高级 → 截图翻译」里「截图结果处理方式」的说明文字与右侧 210 宽下拉重叠
+  （批 4 验收时就发现了，一直没改）——左列补上 230 的右外边距。
+- **验收边界（如实记录）**：FR-050/051 用本机 OpenAI 兼容桩服务做了端到端验证，
+  桩服务的请求日志逐条证明「第一次无语境 / 第二次带上一段原文 / 点更正式后追加风格要求」；
+  FR-052/053 的复习行、进度推进、逐句列表与当前句高亮都有截图。**没有**验证到的是
+  「跟读进行中再点一次停止按钮」——同一坐标首次点击有效、运行中再点 harness 的 SendInput
+  没送达（换说法按钮同位置可点，怀疑是窗口刚增高后的命中问题）；停止路径改由
+  `Esc → HideWindow → CancelShadowReading` 验证（重新呼出后回到整块视图、列表已清空）。
+- 回归门禁实际基线 **1194 全绿**（5a 新增 36 项、5b 新增 19 项）。

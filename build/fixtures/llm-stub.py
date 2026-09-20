@@ -29,9 +29,12 @@ class Handler(BaseHTTPRequestHandler):
                 "system": messages.get("system"),
                 "user": messages.get("user"),
             }, ensure_ascii=False) + "\n")
+        # three sentences on purpose: batch 5b checks that shadow reading splits the
+        # translation into per-sentence lines and highlights them one by one
+        reply = f"桩译文{counter}。这是第二句内容。最后是第三句！"
         body = json.dumps({
             "id": f"stub-{counter}",
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": f"桩译文{counter}"}}],
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}}],
             "usage": {"total_tokens": 1},
         }).encode("utf-8")
         self.send_response(200)
