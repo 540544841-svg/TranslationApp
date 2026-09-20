@@ -48,6 +48,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly MouseButtonHook _mouseHook;
     private readonly KeyboardButtonHook _keyboardHook;
     private readonly ProfileService _profiles;
+    private readonly TranslationApp.Services.LocalApiGateway _localApiGateway;
     private readonly AnkiConnectClient _anki;
     private bool _suppressAutoStartCallback;
     private bool _suppressPasswordCallback;
@@ -68,6 +69,7 @@ public partial class SettingsViewModel : ObservableObject
         MouseButtonHook mouseHook,
         KeyboardButtonHook keyboardHook,
         ProfileService profiles,
+        TranslationApp.Services.LocalApiGateway localApiGateway,
         AnkiConnectClient anki)
     {
         _settings = settings;
@@ -85,6 +87,7 @@ public partial class SettingsViewModel : ObservableObject
         _mouseHook = mouseHook;
         _keyboardHook = keyboardHook;
         _profiles = profiles;
+        _localApiGateway = localApiGateway;
         _anki = anki;
 
         _showStartBalloon = settings.ShowStartBalloon;
@@ -118,6 +121,8 @@ public partial class SettingsViewModel : ObservableObject
         _mouseSideButtonCapture = settings.MouseSideButtonCapture;
         _pasteTranslateEnabled = settings.PasteTranslateEnabled;
         _tmReuseEnabled = settings.TmReuseEnabled;
+        // P0 批 4：本地 HTTP API（状态行需反映监听实况，构造时刷一次）
+        InitializeApiPage();
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
@@ -867,6 +872,9 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         ApplyHookGates(); // 批 2/3：隐私模式联动两个全局钩子（B5 红线）
+        // 批 4：本地 API 与钩子同纪律——隐私开即停监听，关则按设置恢复
+        _localApiGateway.Apply(_settings.LocalApiEnabled && !value);
+        UpdateLocalApiStatus();
     }
 
     partial void OnCleanClipboardTextChanged(bool value) => Save(s => s.CleanClipboardText = value);

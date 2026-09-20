@@ -134,7 +134,12 @@ public partial class SettingsViewModel
         OnPropertyChanged(nameof(PasteTranslateEnabled));
         _tmReuseEnabled = _settings.TmReuseEnabled;
         OnPropertyChanged(nameof(TmReuseEnabled));
+        _localApiEnabled = _settings.LocalApiEnabled;
+        OnPropertyChanged(nameof(LocalApiEnabled));
+        _localApiPort = _settings.LocalApiPort;
+        OnPropertyChanged(nameof(LocalApiPort));
 #pragma warning restore MVVMTK0034
+        UpdateLocalApiStatus();
     }
 
     private void RefreshProfileUi()

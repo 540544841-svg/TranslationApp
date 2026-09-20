@@ -77,6 +77,7 @@ public partial class App : Application
             InitHoverSelect();
             InitDoubleTap();
             InitPasteTranslate();
+            InitLocalApi();
             InitScreenCapture();
             InitEngineFallback();
             WarmUpEngine();
@@ -105,6 +106,7 @@ public partial class App : Application
         _services?.GetService<ClipboardMonitor>()?.Dispose();
         _services?.GetService<MouseButtonHook>()?.Dispose(); // FR-036/039：卸载鼠标钩子
         _services?.GetService<KeyboardButtonHook>()?.Dispose(); // FR-038：卸载键盘钩子
+        _services?.GetService<TranslationApp.Services.LocalApiGateway>()?.Stop(); // FR-046：关监听
         _services?.GetService<ITtsService>()?.Stop();
         _trayIcon?.Dispose();
         _services?.Dispose();
@@ -265,6 +267,11 @@ public partial class App : Application
         services.AddSingleton<HoverBadgeWindow>();
         // FR-037：场景档案服务（对 AppSettings 单例做稀疏覆盖；落盘仍由 ISettingsStore 负责）
         services.AddSingleton(sp => new ProfileService(sp.GetRequiredService<AppSettings>()));
+        // FR-046：本地 HTTP API 网关（设置 ↔ HttpListener 生命周期胶水；门控见 ApplyPrivacySideEffects）
+        services.AddSingleton(sp => new LocalApiGateway(
+            sp.GetRequiredService<AppSettings>(),
+            sp.GetRequiredService<ISettingsStore>(),
+            sp.GetRequiredService<TranslatorCatalog>()));
         services.AddSingleton<AutoStart>();
         // FR-021 截图翻译：OCR 能力探测（Windows.Media.Ocr）+ 截屏/遮罩/识别流程编排。
         // FR-030（14.9.2）：识别按 OcrLocalEngine 分发 windows/paddle 双引擎；paddle 降级一次性气泡走同一回调
@@ -511,6 +518,15 @@ public partial class App : Application
         "win" => 0x5B,
         _ => 0x12,
     };
+
+    /// <summary>FR-046（P0 批 4）：启动时按设置拉起本地 API（若启用且非隐私模式）。后续变更走设置 VM 同一 Apply。</summary>
+    private void InitLocalApi()
+    {
+        var services = _services!;
+        var settings = services.GetRequiredService<AppSettings>();
+        services.GetRequiredService<TranslationApp.Services.LocalApiGateway>()
+            .Apply(settings.LocalApiEnabled && !settings.PrivacyMode);
+    }
 
     /// <summary>
     /// FR-040（批 3 / spec §3）：粘贴即译。小窗输入框为空时 Ctrl+V 由 QuickWindow 拦下并带着
@@ -782,6 +798,10 @@ public partial class App : Application
                 keyboardHook?.Stop();
             }
         }
+
+        // FR-046（P0 批 4）：本地 HTTP API 与钩子同纪律——隐私模式开启时绝不监听
+        services.GetService<TranslationApp.Services.LocalApiGateway>()
+            ?.Apply(!on && settings.LocalApiEnabled);
     }
 
     /// <summary>鼠标观察钩子的安装条件：悬停取词或任一侧键映射开着就需要。</summary>

@@ -1085,7 +1085,66 @@
         <TabItem Header="高级" Tag="&#xE713;">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,24">
                 <StackPanel>
-                    <TextBlock Text="自动化" Style="{StaticResource Text.SectionTitle}"/>
+                    <!-- FR-046（P0 批 4 / spec §4）：本地 HTTP API——仅回环 + token，隐私模式不监听 -->
+                    <TextBlock Text="本地 HTTP API" Style="{StaticResource Text.SectionTitle}"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,140,0">
+                                    <TextBlock Text="启用本机翻译接口" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="供脚本 / 浏览器扩展 / AutoHotkey 调用：POST http://127.0.0.1:端口/api/translate，请求头 X-Auth 填下方 token；只监听回环地址，不经代理、不对外网开放；隐私模式开启时不监听"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding LocalApiEnabled}"/>
+                            </Grid>
+
+                            <Border Style="{StaticResource Hairline}" Margin="0,10"/>
+
+                            <Grid>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="端口" Width="56" VerticalAlignment="Center"
+                                               Style="{StaticResource Text.Caption}"/>
+                                    <TextBox Width="90" VerticalContentAlignment="Center"
+                                             Text="{Binding LocalApiPort, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="1024~65535"/>
+                                    <TextBlock Text="Token" Margin="18,0,8,0" VerticalAlignment="Center"
+                                               Style="{StaticResource Text.Caption}"/>
+                                    <TextBlock Text="{Binding LocalApiTokenMasked}" VerticalAlignment="Center"
+                                               FontSize="{StaticResource FontSize.Small}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <Button Content="复制 token" Style="{StaticResource Button.Outline}"
+                                            Command="{Binding CopyLocalApiTokenCommand}"/>
+                                    <Button Content="重新生成" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                            Command="{Binding RegenerateLocalApiTokenCommand}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="{Binding LocalApiStatusText}" Style="{StaticResource Text.Caption}"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- FR-047（P0 批 4 / spec §5）：批量识别（仅图片） -->
+                    <TextBlock Text="批量识别" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,150,0">
+                                <TextBlock Text="多张图片一次识别，导出 Markdown" FontSize="{StaticResource FontSize.Body}"/>
+                                <TextBlock Text="逐张走现有 OCR 引擎（与截图翻译同一链路），单张失败不中断；仅支持图片，PDF 请先转成图片"
+                                           Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding BatchOcrStatusText}" Style="{StaticResource Text.Caption}"
+                                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <Button Content="选择图片…" Style="{StaticResource Button.Outline}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Command="{Binding StartBatchOcrCommand}"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="自动化" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <Border Style="{StaticResource Card}" Margin="0,10,0,0">
                         <StackPanel>
                             <Grid>
