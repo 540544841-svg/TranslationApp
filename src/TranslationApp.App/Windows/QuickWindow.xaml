@@ -204,15 +204,22 @@
                 </Button>
             </Grid>
 
-            <!-- ============ 译文标题行 ============ -->
+            <!-- ============ 译文标题行 ============
+                 两列布局：「译文」占固定列，按钮组占剩余列右对齐。
+                 以前两者叠在同一格，按钮一多就从右边压到「译文」两个字上（实测截图重叠）。 -->
             <Grid x:Name="TitleRow" Grid.Row="2" Margin="2,12,0,4">
-                <TextBlock Text="译文" Style="{StaticResource Text.Caption}"
-                           VerticalAlignment="Center" HorizontalAlignment="Left"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="译文" Style="{StaticResource Text.Caption}"
+                           VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                     <!-- FR-045：TM 回填后一键改用机器重译 -->
-                    <Button Content="重新机器翻译" Style="{StaticResource Button.Tonal}"
+                    <Button Content="重新翻译" Style="{StaticResource Button.Tonal}"
                             Padding="8,0" Height="24" Margin="0,0,4,0"
                             Command="{Binding ReTranslateMachineCommand}"
+                            ToolTip="不用记忆库，交给机器重译一遍"
                             Visibility="{Binding IsTmHit, Converter={StaticResource BoolToVis}}"/>
                     <!-- FR-043：≥3 段且段数对齐时出现「对照」开关（激活态主色底）；对比期间隐藏，避免与多栏叠字 -->
                     <Button Content="对照" Padding="8,0" Height="24" Margin="0,0,4,0"
@@ -312,9 +319,10 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="复制译文" Style="{StaticResource Button.Tonal}"
+                    <Button Content="复制" Style="{StaticResource Button.Tonal}"
                             Padding="8,0" Height="24"
                             Command="{Binding CopyResultCommand}"
+                            ToolTip="复制译文（右侧 ⌄ 可改复制原文 / 原文+译文）"
                             Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
                     <!-- FR-044：复制策略菜单（译文 / 原文 / 原文+译文），点击弹菜单 -->
                     <Button x:Name="CopyMenuButton" Style="{StaticResource IconButton}" Width="22" Height="24"

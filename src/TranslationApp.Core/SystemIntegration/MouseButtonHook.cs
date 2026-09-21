@@ -15,6 +15,7 @@ public sealed class MouseButtonHook : IDisposable
     private const int WhMouseLl = 14;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
+    private const int WmXButtonDown = 0x040B;
     private const int WmXButtonUp = 0x040C;
 
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -48,6 +49,14 @@ public sealed class MouseButtonHook : IDisposable
 
     /// <summary>侧键抬起（FR-039）：button = 1（X1 后退）/ 2（X2 前进）。在钩子所在线程触发。</summary>
     public event Action<int, bool>? XButtonUp;
+
+    /// <summary>
+    /// 第一次看到任何侧键消息时触发一次（诊断：区分「系统根本没送到钩子」与「送到了但没动作」）。
+    /// 只报消息号，不报坐标。
+    /// </summary>
+    public event Action<int>? SideButtonMessageObserved;
+
+    private bool _sideButtonMessageObserved;
 
     public MouseButtonHook() => _proc = Proc;
 
@@ -87,7 +96,7 @@ public sealed class MouseButtonHook : IDisposable
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
-            if (message is WmLButtonDown or WmLButtonUp or WmXButtonUp)
+            if (message is WmLButtonDown or WmLButtonUp or WmXButtonDown or WmXButtonUp)
             {
                 try
                 {
@@ -103,11 +112,20 @@ public sealed class MouseButtonHook : IDisposable
                     }
                     else
                     {
-                        // mouseData 高 16 位 = XBUTTON1(1) / XBUTTON2(2)
-                        var button = (int)(data.MouseData >> 16);
-                        if (button is 1 or 2)
+                        if (!_sideButtonMessageObserved)
                         {
-                            XButtonUp?.Invoke(button, self);
+                            _sideButtonMessageObserved = true;
+                            SideButtonMessageObserved?.Invoke(message);
+                        }
+
+                        if (message == WmXButtonUp)
+                        {
+                            // mouseData 高 16 位 = XBUTTON1(1) / XBUTTON2(2)
+                            var button = (int)(data.MouseData >> 16);
+                            if (button is 1 or 2)
+                            {
+                                XButtonUp?.Invoke(button, self);
+                            }
                         }
                     }
                 }

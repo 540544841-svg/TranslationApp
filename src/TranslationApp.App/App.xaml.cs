@@ -500,6 +500,9 @@ public partial class App : Application
 
         // FR-039（批 3）：侧键抬起 = 划词(X1)/截图(X2)。前台是本程序时忽略；
         // 钩子只观察不拦截——侧键的浏览器前进/后退照常发生，卡片文案如实写明。
+        hook.SideButtonMessageObserved += code =>
+            Log.Information("鼠标钩子收到侧键消息（原始消息 0x{Code:X4}）", code);
+
         hook.XButtonUp += (button, self) =>
         {
             if (!_mouseSideEventLogged)

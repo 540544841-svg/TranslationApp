@@ -726,7 +726,10 @@
 
                         <!-- 内容区 -->
                         <Border Grid.Column="1" Background="{DynamicResource Brush.Window}">
-                            <ContentPresenter ContentSource="SelectedContent"/>
+                            <!-- 必须叫 PART_SelectedContentHost：TabControl.OnApplyTemplate 按这个名字认领内容宿主，
+                                 缺了它整块内容不在 TabControl 的焦点/自动化作用域里——表现为「输入框点进去敲不进字」，
+                                 且 UIA 控件视图里只剩导航项、看不到任何内容控件（实测）。 -->
+                            <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent"/>
                         </Border>
                     </Grid>
                 </ControlTemplate>
