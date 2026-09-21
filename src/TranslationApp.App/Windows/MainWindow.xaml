@@ -1177,6 +1177,7 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBox Grid.Column="0" Height="{StaticResource Height.Control}"
+                                                         Padding="8,0"
                                                          VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
                                                          Text="{Binding Source, UpdateSourceTrigger=PropertyChanged, Delay=400}"
                                                          ToolTip="译文里出现的源词"/>
@@ -1184,6 +1185,7 @@
                                                            VerticalAlignment="Center"
                                                            Foreground="{DynamicResource Brush.TextSecondary}"/>
                                                 <TextBox Grid.Column="2" Height="{StaticResource Height.Control}"
+                                                         Padding="8,0"
                                                          VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
                                                          Text="{Binding Target, UpdateSourceTrigger=PropertyChanged, Delay=400}"
                                                          ToolTip="期望的固定译法"/>

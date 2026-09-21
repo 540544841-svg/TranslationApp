@@ -94,6 +94,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasResult))]
     [NotifyPropertyChangedFor(nameof(IsResultPlaceholderVisible))]
     [NotifyPropertyChangedFor(nameof(IsSingleResultVisible))]
+    [NotifyPropertyChangedFor(nameof(IsReTranslateVisible))]
     [NotifyCanExecuteChangedFor(nameof(SpeakResultCommand))]
     [NotifyCanExecuteChangedFor(nameof(ToggleFavoriteCommand))]
     [NotifyCanExecuteChangedFor(nameof(CopyResultCommand))]
@@ -390,6 +391,9 @@ public partial class QuickTranslateViewModel : ObservableObject
         IsTmHit = false;
         IsAlignView = false;
         AlignPairs.Clear();
+        // 跳过标记是普通字段，值没变时不会自己发通知；换会话必须显式让按钮重新计时可见性
+        OnPropertyChanged(nameof(IsReTranslateVisible));
+        ReTranslateMachineCommand.NotifyCanExecuteChanged();
 
         // 批 5：换说法能力取决于当前引擎（档案切换可能刚换掉引擎），风格按钮随会话现算
         RefreshStyleSupport();
@@ -691,10 +695,16 @@ public partial class QuickTranslateViewModel : ObservableObject
     {
         _tmSkipThisSession = true;
         IsTmHit = false;
+        // 按钮不因为点过一次就消失：本会话内它一直是「机器重译」的开关入口
+        OnPropertyChanged(nameof(IsReTranslateVisible));
+        ReTranslateMachineCommand.NotifyCanExecuteChanged();
         await TranslateAsync();
     }
 
-    private bool CanReTranslateMachine() => IsTmHit;
+    private bool CanReTranslateMachine() => IsReTranslateVisible;
+
+    /// <summary>「重新翻译」是否出现：本次结果来自记忆库，或本会话已改走机器翻译（点了还在，不玩消失）。</summary>
+    public bool IsReTranslateVisible => HasResult && (IsTmHit || _tmSkipThisSession);
 
     /// <summary>一段原文 + 对应译文（FR-043 对照视图行）。</summary>
     public sealed record ParagraphPairView(string Source, string Translated);
@@ -710,7 +720,6 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>当前是否显示对照视图（默认关，整块译文）。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
-    [NotifyPropertyChangedFor(nameof(IsShadowButtonVisible))]
     private bool _isAlignView;
 
     /// <summary>整块译文区是否显示（对照 / 跟读打开时隐藏——同一区域三种竖排互斥）。</summary>
@@ -718,6 +727,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ReTranslateMachineCommand))]
+    [NotifyPropertyChangedFor(nameof(IsReTranslateVisible))]
     private bool _isTmHit;
 
     private void UpdateAlignment(string source, string translated)
@@ -737,7 +747,24 @@ public partial class QuickTranslateViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(HasAlignment))]
-    private void ToggleAlignView() => IsAlignView = !IsAlignView;
+    /// <summary>
+    /// 打开段落对照：与「多引擎对比」「跟读」共用译文区同一格，三者只能有一个在显示。
+    /// 入口始终可点（不做成"消失"），点了就是把别的让位掉。
+    /// </summary>
+    private void ToggleAlignView()
+    {
+        if (!IsAlignView)
+        {
+            if (IsComparing)
+            {
+                ExitCompare();
+            }
+
+            StopShadow();
+        }
+
+        IsAlignView = !IsAlignView;
+    }
 
     /// <summary>FR-044：只复制原文。</summary>
     [RelayCommand(CanExecute = nameof(HasResultText))]
@@ -901,7 +928,6 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>跟读模式（译文按句竖排）：与整块、对照视图互斥。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
-    [NotifyPropertyChangedFor(nameof(IsAlignButtonVisible))]
     private bool _isShadowMode;
 
     /// <summary>正在跟读中（按钮文案 = 停止）。</summary>
@@ -932,8 +958,8 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     private bool CanToggleShadow() => _settings.ShadowReadingEnabled && CanSpeak && HasResult;
 
-    /// <summary>「跟读」按钮是否出现（FR-053：默认关，在「设置 → 高级 → 朗读」里开）；对照打开时让位。</summary>
-    public bool IsShadowButtonVisible => _settings.ShadowReadingEnabled && CanSpeak && !IsAlignView;
+    /// <summary>「跟读」按钮是否出现（FR-053：默认关，在「设置 → 高级 → 朗读」里开）。</summary>
+    public bool IsShadowButtonVisible => _settings.ShadowReadingEnabled && CanSpeak;
 
     /// <summary>
     /// 跟读（FR-053）：译文按句竖排，SAPI 逐句念完一句再念下一句，句间停顿留给用户跟着念。
@@ -1273,7 +1299,6 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>是否处于对比模式。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsAlignButtonVisible))]
     private bool _isComparing;
 
     /// <summary>对比栏数（布局由它自动决定，用户无需手选）。</summary>
@@ -1292,12 +1317,6 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>单栏译文视图（对比模式下隐藏，由分栏结果区接管）。</summary>
     public bool IsSingleResultVisible => HasResult && !IsComparing;
-
-    /// <summary>
-    /// 「对照」（逐段原文/译文）按钮是否出现。译文区同一格叠着三种竖排（整块 / 段落对照 /
-    /// 跟读），再加多引擎对比栏——谁都可能压在谁上面，所以入口按「别人没开」给。
-    /// </summary>
-    public bool IsAlignButtonVisible => HasAlignment && !IsComparing && !IsShadowMode;
 
     /// <summary>是否有对比栏在途。</summary>
     public bool IsCompareBusy => CompareItems.Any(item => item.IsBusy);

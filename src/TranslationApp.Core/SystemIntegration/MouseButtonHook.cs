@@ -51,12 +51,14 @@ public sealed class MouseButtonHook : IDisposable
     public event Action<int, bool>? XButtonUp;
 
     /// <summary>
-    /// 第一次看到任何侧键消息时触发一次（诊断：区分「系统根本没送到钩子」与「送到了但没动作」）。
-    /// 只报消息号，不报坐标。
+    /// 诊断用：本进程见过的鼠标消息码，每种只报一次、最多 12 种（只报消息码，不报坐标）。
+    /// 用户报「侧键全无反应」而左键事件正常，需要这个来判断侧键到底有没有以 WM_XBUTTON* 的形式
+    /// 送到低级钩子——有些鼠标驱动把侧键改写成键盘组合键，那样钩子永远等不到 0x040B/0x040C。
     /// </summary>
-    public event Action<int>? SideButtonMessageObserved;
+    public event Action<int>? MouseMessageCodeObserved;
 
-    private bool _sideButtonMessageObserved;
+    private readonly HashSet<int> _observedCodes = [];
+    private const int ObservedCodeCap = 12;
 
     public MouseButtonHook() => _proc = Proc;
 
@@ -96,6 +98,11 @@ public sealed class MouseButtonHook : IDisposable
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
+            if (_observedCodes.Add(message) && _observedCodes.Count <= ObservedCodeCap)
+            {
+                MouseMessageCodeObserved?.Invoke(message);
+            }
+
             if (message is WmLButtonDown or WmLButtonUp or WmXButtonDown or WmXButtonUp)
             {
                 try
@@ -110,22 +117,13 @@ public sealed class MouseButtonHook : IDisposable
                     {
                         LeftButtonUp?.Invoke(data.Pt.X, data.Pt.Y, Environment.TickCount64, self);
                     }
-                    else
+                    else if (message == WmXButtonUp)
                     {
-                        if (!_sideButtonMessageObserved)
+                        // mouseData 高 16 位 = XBUTTON1(1) / XBUTTON2(2)
+                        var button = (int)(data.MouseData >> 16);
+                        if (button is 1 or 2)
                         {
-                            _sideButtonMessageObserved = true;
-                            SideButtonMessageObserved?.Invoke(message);
-                        }
-
-                        if (message == WmXButtonUp)
-                        {
-                            // mouseData 高 16 位 = XBUTTON1(1) / XBUTTON2(2)
-                            var button = (int)(data.MouseData >> 16);
-                            if (button is 1 or 2)
-                            {
-                                XButtonUp?.Invoke(button, self);
-                            }
+                            XButtonUp?.Invoke(button, self);
                         }
                     }
                 }

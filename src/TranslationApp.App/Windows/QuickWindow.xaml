@@ -220,11 +220,12 @@
                             Padding="8,0" Height="24" Margin="0,0,4,0"
                             Command="{Binding ReTranslateMachineCommand}"
                             ToolTip="不用记忆库，交给机器重译一遍"
-                            Visibility="{Binding IsTmHit, Converter={StaticResource BoolToVis}}"/>
-                    <!-- FR-043：≥3 段且段数对齐时出现「对照」开关（激活态主色底）；对比期间隐藏，避免与多栏叠字 -->
+                            Visibility="{Binding IsReTranslateVisible, Converter={StaticResource BoolToVis}}"/>
+                    <!-- FR-043：≥3 段且段数对齐时出现「对照」开关（激活态主色底）。
+                         入口不因为开了对比/跟读就消失——点它就是把另一模式让位掉。 -->
                     <Button Content="对照" Padding="8,0" Height="24" Margin="0,0,4,0"
                             Command="{Binding ToggleAlignViewCommand}"
-                            Visibility="{Binding IsAlignButtonVisible, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding HasAlignment, Converter={StaticResource BoolToVis}}">
                         <Button.Style>
                             <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
                                 <Style.Triggers>

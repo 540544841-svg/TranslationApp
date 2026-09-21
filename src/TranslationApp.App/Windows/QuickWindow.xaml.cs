@@ -80,6 +80,13 @@ public partial class QuickWindow : Window
     /// <summary>物理像素摆放进行中：期间 OnDpiChanged / SizeChanged 一律让路，避免冲掉本次摆放。</summary>
     private bool _repositioning;
 
+    /// <summary>
+    /// 本次呼出的定位锚点（物理坐标，= 呼出那一刻的鼠标位置）。之后任何尺寸变化（对照/对比增高、
+    /// 自适应、动画收尾）都以它重算矩形；不缓存的话每次都会拿"当前光标"重新锚定，
+    /// 用户点一下按钮窗口就跟着鼠标跳走（实测反馈）。换一次呼出才重置。
+    /// </summary>
+    private NativeMethods.POINT? _placementAnchor;
+
     /// <summary>已安排过一次 DispatcherPriority.Loaded 重摆放（防重入，参照遮罩窗口的 _dpiHopPending）。</summary>
     private bool _dpiHopPending;
 
@@ -288,6 +295,7 @@ public partial class QuickWindow : Window
         // ① 首次物理摆放完成前不回写意图尺寸（见 _firstPlacementDone）；
         // ② 尺寸屏蔽窗口从这里开始计时（applyAdaptiveSize 因「尺寸无变化」提前返回时，
         //    它是唯一能盖住 Show 期那次 SizeChanged 的守卫）。
+        _placementAnchor = null; // 新的一次呼出：重新按当前鼠标位置锚定一次，之后本次会话内不再变
         _firstPlacementDone = false;
         _adaptiveGuardUntil = Environment.TickCount64 + AdaptiveGuardMs;
 
@@ -478,10 +486,21 @@ public partial class QuickWindow : Window
         work = default;
         dpi = 96;
 
-        // 步骤 1：GetPhysicalCursorPos，失败回退 GetCursorPos（PerMonitorV2 下两者同为物理坐标）
-        if (!NativeMethods.GetPhysicalCursorPos(ref cursor) && !NativeMethods.GetCursorPos(ref cursor))
+        // 锚点在本次呼出内是固定的（见 _placementAnchor 注释）：只有新的一次呼出才重新读鼠标位置，
+        // 否则内容一变高就按"当前光标"重新锚定，用户点按钮时窗口会自己跳走。
+        if (_placementAnchor is { } anchor)
         {
-            return false;
+            cursor = anchor;
+        }
+        else
+        {
+            // 步骤 1：GetPhysicalCursorPos，失败回退 GetCursorPos（PerMonitorV2 下两者同为物理坐标）
+            if (!NativeMethods.GetPhysicalCursorPos(ref cursor) && !NativeMethods.GetCursorPos(ref cursor))
+            {
+                return false;
+            }
+
+            _placementAnchor = cursor;
         }
 
         // 步骤 2：MONITOR_DEFAULTTONEAREST：鼠标落在屏间缝隙时也能取到最近屏

@@ -237,7 +237,11 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource Radius.Field}">
+                        <!-- PART_ContentHost 必须跟随 VerticalContentAlignment：调用方一旦给了固定 Height，
+                             不居中的话文字按视口顶部排布，视口比行高还矮时直接被裁掉（术语表行实测：
+                             Height 30 − Padding 8×2 − 边框 2 = 12px 视口，12 号字要 16px，字在控件里但看不见）。 -->
                         <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                       VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"/>
                     </Border>
                     <ControlTemplate.Triggers>

@@ -37,12 +37,8 @@ public partial class App : Application
     private HoverTriggerLogic? _hoverLogic;
     private ModifierKeyDoubleTapDetector? _doubleTap;
 
-    /// <summary>钩子是否已记过「收到首个事件」日志（各记一次，避免每次输入写日志）。</summary>
+    /// <summary>键盘钩子是否已记过「收到首个事件」日志（只记一次，避免每次按键写日志）。</summary>
     private bool _keyboardHookEventLogged;
-
-    private bool _mouseHookEventLogged;
-
-    private bool _mouseSideEventLogged;
     private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -473,12 +469,6 @@ public partial class App : Application
         };
         hook.LeftButtonUp += (x, y, _, self) =>
         {
-            if (!_mouseHookEventLogged)
-            {
-                _mouseHookEventLogged = true;
-                Log.Information("鼠标钩子已收到首个事件");
-            }
-
             if (_hoverLogic.OnMouseUp(x, y, self))
             {
                 Dispatcher.BeginInvoke(() => badge.ShowAt(x, y));
@@ -500,18 +490,12 @@ public partial class App : Application
 
         // FR-039（批 3）：侧键抬起 = 划词(X1)/截图(X2)。前台是本程序时忽略；
         // 钩子只观察不拦截——侧键的浏览器前进/后退照常发生，卡片文案如实写明。
-        hook.SideButtonMessageObserved += code =>
-            Log.Information("鼠标钩子收到侧键消息（原始消息 0x{Code:X4}）", code);
+        hook.MouseMessageCodeObserved += code =>
+            Log.Information("鼠标钩子收到消息 0x{Code:X4}{Side}",
+                code, code is 0x040A or 0x040B or 0x040C ? "（侧键）" : string.Empty);
 
         hook.XButtonUp += (button, self) =>
         {
-            if (!_mouseSideEventLogged)
-            {
-                // 只记「收到过第一个侧键事件」这一个事实，不记坐标
-                _mouseSideEventLogged = true;
-                Log.Information("鼠标钩子已收到首个侧键事件");
-            }
-
             if (self)
             {
                 return;
