@@ -36,6 +36,13 @@ public partial class App : Application
     private HotkeyManager? _hotkeyManager;
     private HoverTriggerLogic? _hoverLogic;
     private ModifierKeyDoubleTapDetector? _doubleTap;
+
+    /// <summary>钩子是否已记过「收到首个事件」日志（各记一次，避免每次输入写日志）。</summary>
+    private bool _keyboardHookEventLogged;
+
+    private bool _mouseHookEventLogged;
+
+    private bool _mouseSideEventLogged;
     private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -466,6 +473,12 @@ public partial class App : Application
         };
         hook.LeftButtonUp += (x, y, _, self) =>
         {
+            if (!_mouseHookEventLogged)
+            {
+                _mouseHookEventLogged = true;
+                Log.Information("鼠标钩子已收到首个事件");
+            }
+
             if (_hoverLogic.OnMouseUp(x, y, self))
             {
                 Dispatcher.BeginInvoke(() => badge.ShowAt(x, y));
@@ -475,13 +488,27 @@ public partial class App : Application
         if (MouseHookNeeded(settings) && !settings.PrivacyMode)
         {
             hook.Start();
-            Log.Information("鼠标观察钩子已安装（悬停取词 / 侧键映射任一开启）");
+            if (hook.IsActive)
+            {
+                Log.Information("鼠标观察钩子已安装（悬停取词 / 侧键映射任一开启）");
+            }
+            else
+            {
+                Log.Warning("鼠标观察钩子安装失败：侧键与悬停取词不可用（Win32 {Error}）", hook.LastStartError);
+            }
         }
 
         // FR-039（批 3）：侧键抬起 = 划词(X1)/截图(X2)。前台是本程序时忽略；
         // 钩子只观察不拦截——侧键的浏览器前进/后退照常发生，卡片文案如实写明。
         hook.XButtonUp += (button, self) =>
         {
+            if (!_mouseSideEventLogged)
+            {
+                // 只记「收到过第一个侧键事件」这一个事实，不记坐标
+                _mouseSideEventLogged = true;
+                Log.Information("鼠标钩子已收到首个侧键事件");
+            }
+
             if (self)
             {
                 return;
@@ -513,16 +540,56 @@ public partial class App : Application
         _doubleTap = new ModifierKeyDoubleTapDetector(
             () => Environment.TickCount64,
             () => DoubleTapVirtualKey(settings.DoubleTapKey),
-            () => Dispatcher.BeginInvoke(() => _ = TranslateSelectionAsync()));
+            () =>
+            {
+                Log.Information("双击修饰键命中，触发划词翻译");
+                Dispatcher.BeginInvoke(() => _ = TranslateSelectionAsync());
+            });
 
-        hook.KeyDown += (vk, self) => _doubleTap.OnKeyDown(vk, self);
-        hook.KeyUp += (vk, _) => _doubleTap.OnKeyUp(vk);
+        hook.KeyDown += (vk, self) =>
+        {
+            if (!_keyboardHookEventLogged)
+            {
+                // 只记「收到过第一个按键事件」，绝不记键码/内容（键盘钩子落任何键值都是隐私事故）
+                _keyboardHookEventLogged = true;
+                Log.Information("键盘钩子已收到首个按键事件（双击判定开始工作）");
+            }
+
+            TraceDoubleTapEdge(settings, vk, self, "按下");
+            _doubleTap.OnKeyDown(vk, self);
+        };
+        hook.KeyUp += (vk, self) =>
+        {
+            TraceDoubleTapEdge(settings, vk, self, "抬起");
+            _doubleTap.OnKeyUp(vk);
+        };
 
         if (settings.DoubleTapTranslateEnabled && !settings.PrivacyMode)
         {
             hook.Start();
-            Log.Information("双击修饰键划词已启用（键盘钩子安装，目标键 {Key}）", settings.DoubleTapKey);
+            if (hook.IsActive)
+            {
+                Log.Information("双击修饰键划词已启用（键盘钩子安装，目标键 {Key}）", settings.DoubleTapKey);
+            }
+            else
+            {
+                Log.Warning("键盘钩子安装失败：双击修饰键划词不可用（Win32 {Error}）", hook.LastStartError);
+            }
         }
+    }
+
+    /// <summary>
+    /// 双击判定的诊断轨迹（只在 --verbose 下可见）：仅记目标修饰键的边沿与前台归属，
+    /// 不记任何其他键码、更不记文本——判定卡在哪一步必须能看见，但按键内容绝不进日志。
+    /// </summary>
+    private void TraceDoubleTapEdge(AppSettings settings, int vk, bool self, string edge)
+    {
+        if (!_verboseStartup || vk != DoubleTapVirtualKey(settings.DoubleTapKey))
+        {
+            return;
+        }
+
+        Log.Debug("双击判定：目标键 {Edge}（前台是本程序={Self}）", edge, self);
     }
 
     /// <summary>双击目标键名 → 虚拟键码（未知值按 alt，与设置下拉可选集一致）。</summary>

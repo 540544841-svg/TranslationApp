@@ -1043,7 +1043,15 @@ public partial class SettingsViewModel : ObservableObject
         {
             _keyboardHook.Stop();
         }
+
+        // 这条日志是唯一的可观测点：开关在设置页改动时不写日志，就无法区分「没装」与「装了但收不到事件」
+        Log.Information("全局钩子门控：键盘 {Keyboard}，鼠标 {Mouse}",
+            HookState(_keyboardHook.IsActive, _keyboardHook.LastStartError),
+            HookState(_mouseHook.IsActive, _mouseHook.LastStartError));
     }
+
+    private static string HookState(bool active, int error) => active ? "已安装"
+        : error == 0 ? "已停用" : $"安装失败(Win32 {error})";
 
     partial void OnPrivacyModeChanged(bool value)
     {

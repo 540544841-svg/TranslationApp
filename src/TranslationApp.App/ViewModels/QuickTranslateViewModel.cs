@@ -710,6 +710,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>当前是否显示对照视图（默认关，整块译文）。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
+    [NotifyPropertyChangedFor(nameof(IsShadowButtonVisible))]
     private bool _isAlignView;
 
     /// <summary>整块译文区是否显示（对照 / 跟读打开时隐藏——同一区域三种竖排互斥）。</summary>
@@ -900,6 +901,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>跟读模式（译文按句竖排）：与整块、对照视图互斥。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsBlockViewVisible))]
+    [NotifyPropertyChangedFor(nameof(IsAlignButtonVisible))]
     private bool _isShadowMode;
 
     /// <summary>正在跟读中（按钮文案 = 停止）。</summary>
@@ -930,8 +932,8 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     private bool CanToggleShadow() => _settings.ShadowReadingEnabled && CanSpeak && HasResult;
 
-    /// <summary>「跟读」按钮是否出现（FR-053：默认关，在「设置 → 高级 → 朗读」里开）。</summary>
-    public bool IsShadowButtonVisible => _settings.ShadowReadingEnabled && CanSpeak;
+    /// <summary>「跟读」按钮是否出现（FR-053：默认关，在「设置 → 高级 → 朗读」里开）；对照打开时让位。</summary>
+    public bool IsShadowButtonVisible => _settings.ShadowReadingEnabled && CanSpeak && !IsAlignView;
 
     /// <summary>
     /// 跟读（FR-053）：译文按句竖排，SAPI 逐句念完一句再念下一句，句间停顿留给用户跟着念。
@@ -958,6 +960,7 @@ public partial class QuickTranslateViewModel : ObservableObject
             ShadowLines.Add(view);
         }
 
+        IsAlignView = false; // 逐句列表与段落对照共用一格，开跟读前先让对照让位
         IsShadowMode = true;
         IsShadowRunning = true;
         // 只记句数，不记内容（需求 6 日志脱敏）
@@ -1270,6 +1273,7 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>是否处于对比模式。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAlignButtonVisible))]
     private bool _isComparing;
 
     /// <summary>对比栏数（布局由它自动决定，用户无需手选）。</summary>
@@ -1288,6 +1292,12 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>单栏译文视图（对比模式下隐藏，由分栏结果区接管）。</summary>
     public bool IsSingleResultVisible => HasResult && !IsComparing;
+
+    /// <summary>
+    /// 「对照」（逐段原文/译文）按钮是否出现。译文区同一格叠着三种竖排（整块 / 段落对照 /
+    /// 跟读），再加多引擎对比栏——谁都可能压在谁上面，所以入口按「别人没开」给。
+    /// </summary>
+    public bool IsAlignButtonVisible => HasAlignment && !IsComparing && !IsShadowMode;
 
     /// <summary>是否有对比栏在途。</summary>
     public bool IsCompareBusy => CompareItems.Any(item => item.IsBusy);
@@ -1344,6 +1354,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         ErrorText = "";
         StatusText = "";
         _tts.Stop(); // 对比结果分栏展示，先停掉上一次朗读
+        IsAlignView = false; // 段落对照与对比栏共用一格：进对比必须先让位，否则两套文字叠在一起
 
         CompareItems.Clear();
         var vertical = engines.Count > EngineComparison.MinEngines; // 2 栏横排，≥3 栏纵排

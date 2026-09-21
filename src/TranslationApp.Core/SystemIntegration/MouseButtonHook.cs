@@ -54,7 +54,10 @@ public sealed class MouseButtonHook : IDisposable
     /// <summary>钩子当前是否已安装。</summary>
     public bool IsActive => _hook != IntPtr.Zero;
 
-    /// <summary>安装钩子（幂等；安装失败只保持 IsActive=false，不抛异常）。</summary>
+    /// <summary>最近一次 Start 的失败原因（0 = 成功或未尝试）。上层据此记日志。</summary>
+    public int LastStartError { get; private set; }
+
+    /// <summary>安装钩子（幂等；安装失败只保持 IsActive=false，不抛异常，错误码见 <see cref="LastStartError"/>）。</summary>
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -64,6 +67,7 @@ public sealed class MouseButtonHook : IDisposable
         }
 
         _hook = SetWindowsHookExW(WhMouseLl, _proc, GetModuleHandleW(null), 0);
+        LastStartError = _hook == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0;
     }
 
     /// <summary>卸载钩子（幂等）——「一键全关」红线的落点。</summary>

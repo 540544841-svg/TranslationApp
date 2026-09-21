@@ -40,6 +40,9 @@ public sealed class TtsService : ITtsService, IDisposable
     /// <summary>跟读时轮询「还在念吗」的间隔毫秒（只影响句边界判定精度，不影响听感）。</summary>
     private const int SpeakPollMs = 60;
 
+    /// <summary>等一句朗读「开始」的上限：语音冷启动/首次选语音包比后续慢，给 1.5s，超了就不再干等。</summary>
+    private const int SpeakStartWaitMs = 1500;
+
     private readonly SpeechSynthesizer _synthesizer = new();
     private readonly object _gate = new();
 
@@ -116,7 +119,6 @@ public sealed class TtsService : ITtsService, IDisposable
     /// <summary>
     /// 念完一句再返回（FR-053 影子跟读）。用轮询 <c>State</c> 而不是 SpeakCompleted 事件：
     /// 取消时 SAPI 的 Skip/Complete 事件会晚到，事件里再配 TaskCompletionSource 会把下一句误判成「已念完」。
-    /// 轮询间隔 60ms，相对句间停顿（默认 600ms）可忽略。
     /// </summary>
     public async Task SpeakAndWaitAsync(string text, string languageCode, CancellationToken cancellationToken = default)
     {
@@ -130,21 +132,50 @@ public sealed class TtsService : ITtsService, IDisposable
             SpeakLocked(text, languageCode);
         }
 
-        while (true)
+        await WaitSpeechCycleAsync(
+            () => { lock (_gate) { return _synthesizer.State == SynthesizerState.Speaking; } },
+            ms => Task.Delay(ms, cancellationToken),
+            () => cancellationToken.IsCancellationRequested,
+            SpeakPollMs,
+            SpeakStartWaitMs);
+    }
+
+    /// <summary>
+    /// 一句朗读的等待节奏：先等它**真的开始念**，再等它停下。
+    /// SpeakAsync 只是把文本入队，State 要等 SAPI 的异步 worker 取走任务才变成 Speaking；
+    /// 只看「当前不在念」会在入队的那一瞬间就返回，跟读于是抢在语音前面一路跳句（实测症状）。
+    /// 开始阶段有上限（<paramref name="startWaitMs"/>）：语音包缺失或被别的朗读抢占时绝不无限等。
+    /// </summary>
+    internal static async Task WaitSpeechCycleAsync(
+        Func<bool> isSpeaking,
+        Func<int, Task> delayAsync,
+        Func<bool> isCancelled,
+        int pollMs,
+        int startWaitMs)
+    {
+        for (var waited = 0; ; waited += pollMs)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            bool speaking;
-            lock (_gate)
+            if (isSpeaking())
             {
-                speaking = _synthesizer.State == SynthesizerState.Speaking;
+                break;
             }
 
-            if (!speaking)
+            if (isCancelled() || waited >= startWaitMs)
             {
                 return;
             }
 
-            await Task.Delay(SpeakPollMs, cancellationToken);
+            await delayAsync(pollMs);
+        }
+
+        while (isSpeaking())
+        {
+            if (isCancelled())
+            {
+                return;
+            }
+
+            await delayAsync(pollMs);
         }
     }
 

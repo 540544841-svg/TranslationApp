@@ -44,6 +44,9 @@ public sealed class KeyboardButtonHook : IDisposable
 
     public bool IsActive => _hook != IntPtr.Zero;
 
+    /// <summary>最近一次 Start 的失败原因（0 = 成功或未尝试）。上层据此记日志。</summary>
+    public int LastStartError { get; private set; }
+
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -53,6 +56,7 @@ public sealed class KeyboardButtonHook : IDisposable
         }
 
         _hook = SetWindowsHookExW(WhKeyboardLl, _proc, GetModuleHandleW(null), 0);
+        LastStartError = _hook == IntPtr.Zero ? Marshal.GetLastWin32Error() : 0;
     }
 
     public void Stop()
@@ -80,16 +84,17 @@ public sealed class KeyboardButtonHook : IDisposable
                     var isDown = message is WmKeyDown or WmSysKeyDown;
                     // flags bit30 = 按下前键态：按下消息带该位 = auto-repeat，滤掉（抬起消息恒带该位，不适用）
                     var isRepeat = isDown && (data.Flags & 0x40000000) != 0;
+                    var vk = NormalizeModifierKey((int)data.VirtualKey);
                     if (isDown)
                     {
                         if (!isRepeat)
                         {
-                            KeyDown?.Invoke((int)data.VirtualKey, self);
+                            KeyDown?.Invoke(vk, self);
                         }
                     }
                     else
                     {
-                        KeyUp?.Invoke((int)data.VirtualKey, self);
+                        KeyUp?.Invoke(vk, self);
                     }
                 }
                 catch
@@ -101,6 +106,20 @@ public sealed class KeyboardButtonHook : IDisposable
 
         return CallNextHookEx(_hook, nCode, wParam, lParam);
     }
+
+    /// <summary>
+    /// 修饰键归一化：低级键盘钩子给出的是**带左右归属**的键码（左 Alt = VK_LMENU 0xA4，
+    /// 右 Ctrl = VK_RCONTROL 0xA3 …），而设置里可选的目标键只有 alt/ctrl/shift/win 四个抽象档。
+    /// 不归一化则「双击 Alt」永远比不中 0x12——实测首个事件 vk=164(0xA4) 即此因。
+    /// </summary>
+    public static int NormalizeModifierKey(int virtualKey) => virtualKey switch
+    {
+        0xA0 or 0xA1 => 0x10, // VK_LSHIFT / VK_RSHIFT  -> VK_SHIFT
+        0xA2 or 0xA3 => 0x11, // VK_LCONTROL / VK_RCONTROL -> VK_CONTROL
+        0xA4 or 0xA5 => 0x12, // VK_LMENU / VK_RMENU   -> VK_MENU
+        0x5C => 0x5B,         // VK_RWIN -> VK_LWIN
+        _ => virtualKey,
+    };
 
     private static bool IsOwnProcessForeground()
     {
