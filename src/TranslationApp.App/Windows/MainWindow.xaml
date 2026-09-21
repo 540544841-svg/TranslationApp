@@ -1135,8 +1135,8 @@
                     <Button Content="添加词条" Style="{StaticResource Button.Outline}" HorizontalAlignment="Right"
                             Command="{Binding AddGlossaryCommand}"/>
                 </Grid>
-                <TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Hint}" Margin="2,0,0,10" MaxWidth="520"
-                           Text="译文生成后把「源词」统一替换为固定译法，对全部引擎生效（长词优先、英文按词边界匹配）；适合产品名与专有名词。最多 500 条，改动即时保存。"/>
+                <TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Hint}" Margin="2,0,0,10" MaxWidth="560"
+                           Text="译文生成后，把译文里出现的「源词」整串换成「译法」，对全部引擎生效（长词优先、英文按词边界匹配）。源词填的是译文里那个词：想让所有「应用」显示成「手机」，源词就填「应用」而不是「app」——引擎译文里本来就没有 app 时，填 app 不会有任何变化。典型用法是钉住产品名与专有名词（Ozon、SKU、品牌名不被乱译）。最多 500 条，改动即时保存。"/>
 
                 <!-- FR-037（P0 批 2 / spec §4）：术语表全局开关——关闭时词条保留、替换直通 -->
                 <Grid DockPanel.Dock="Top" Margin="2,0,2,12">
