@@ -85,6 +85,15 @@ public class Batch6cCoreTests
         Assert.Equal(0, delays);
     }
 
+    [Fact]
+    public void MouseButtonHook_XButtonMessageCodes_MatchWin32()
+    {
+        // 用户日志实测：真侧键按下/抬起送进低级钩子的是 0x020B / 0x020C。
+        // 代码里曾写成 0x040B / 0x040C（WM_APP 私有区间，不是鼠标消息），过滤永不命中 → 侧键整体失效。
+        Assert.Equal(0x020B, MouseButtonHook.WmXButtonDown);
+        Assert.Equal(0x020C, MouseButtonHook.WmXButtonUp);
+    }
+
     [Theory]
     [InlineData(0xA4, 0x12)] // VK_LMENU  -> VK_MENU   （实测左 Alt 双击上报的就是 0xA4）
     [InlineData(0xA5, 0x12)] // VK_RMENU  -> VK_MENU

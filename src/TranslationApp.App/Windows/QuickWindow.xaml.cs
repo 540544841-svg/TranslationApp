@@ -1268,6 +1268,13 @@ public partial class QuickWindow : Window
             return;
         }
 
+        // Shift+Enter = 换行：多段原文才可能触发「对照」逐段视图（FR-043），
+        // 输入框此前 AcceptsReturn=False 时那段文字根本进不来，对照永远不可达。
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0)
+        {
+            return;
+        }
+
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
         {
             _vm.SwapCommand.Execute(null); // Ctrl+Enter 交换语言（FR-004）

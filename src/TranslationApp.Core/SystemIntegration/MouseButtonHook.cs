@@ -15,8 +15,15 @@ public sealed class MouseButtonHook : IDisposable
     private const int WhMouseLl = 14;
     private const int WmLButtonDown = 0x0201;
     private const int WmLButtonUp = 0x0202;
-    private const int WmXButtonDown = 0x040B;
-    private const int WmXButtonUp = 0x040C;
+
+    /// <summary>
+    /// WM_XBUTTONDOWN / WM_XBUTTONUP 的真值是 0x020B / 0x020C（用户日志实测：侧键按下抬起
+    /// 送进钩子的正是这两个）。此前写成 0x040B / 0x040C —— 那落在 WM_APP 私有区间，
+    /// 根本不是鼠标消息，于是消息过滤永不命中、侧键功能整体失效。
+    /// </summary>
+    internal const int WmXButtonDown = 0x020B;
+
+    internal const int WmXButtonUp = 0x020C;
 
     private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 

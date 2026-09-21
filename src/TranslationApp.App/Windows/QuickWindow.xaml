@@ -174,13 +174,13 @@
             <Grid Grid.Row="1">
                 <TextBox x:Name="InputBox" MinHeight="76" MaxHeight="140"
                          Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                         AcceptsReturn="False" TextWrapping="Wrap"
+                         AcceptsReturn="True" TextWrapping="Wrap"
                          MaxLength="{x:Static vm:QuickTranslateViewModel.MaxInputLength}"
                          VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
                          Padding="10,8,36,8"
-                         KeyDown="OnInputKeyDown"/>
+                         PreviewKeyDown="OnInputKeyDown"/>
                 <!-- 空状态占位（语言人格：「输入文字，按 Enter 翻译」，动词句说清下一步） -->
-                <TextBlock Text="输入文字，按 Enter 翻译" IsHitTestVisible="False"
+                <TextBlock Text="输入文字，按 Enter 翻译（Shift+Enter 换行）" IsHitTestVisible="False"
                            HorizontalAlignment="Left" VerticalAlignment="Top"
                            Margin="12,9,36,0" FontSize="{StaticResource FontSize.Content}"
                            Foreground="{DynamicResource Brush.TextDisabled}">

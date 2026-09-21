@@ -703,8 +703,11 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     private bool CanReTranslateMachine() => IsReTranslateVisible;
 
-    /// <summary>「重新翻译」是否出现：本次结果来自记忆库，或本会话已改走机器翻译（点了还在，不玩消失）。</summary>
-    public bool IsReTranslateVisible => HasResult && (IsTmHit || _tmSkipThisSession);
+    /// <summary>
+    /// 「重新翻译」是否出现：只要有译文就在。此前它绑 IsTmHit（只有命中记忆库那一刻才露一次，
+    /// 点完即消失），用户反馈"按钮点一次就没了 / 根本看不到"——重译是通用诉求，不该是 TM 专属彩蛋。
+    /// </summary>
+    public bool IsReTranslateVisible => HasResult;
 
     /// <summary>一段原文 + 对应译文（FR-043 对照视图行）。</summary>
     public sealed record ParagraphPairView(string Source, string Translated);

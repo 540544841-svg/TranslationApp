@@ -492,7 +492,7 @@ public partial class App : Application
         // 钩子只观察不拦截——侧键的浏览器前进/后退照常发生，卡片文案如实写明。
         hook.MouseMessageCodeObserved += code =>
             Log.Information("鼠标钩子收到消息 0x{Code:X4}{Side}",
-                code, code is 0x040A or 0x040B or 0x040C ? "（侧键）" : string.Empty);
+                code, code is 0x020B or 0x020C ? "（侧键）" : string.Empty);
 
         hook.XButtonUp += (button, self) =>
         {
