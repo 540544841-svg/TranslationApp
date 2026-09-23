@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net.Http;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -8,6 +10,7 @@ using H.NotifyIcon.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using TranslationApp.Core.Anki;
+using TranslationApp.Core.Backup;
 using TranslationApp.Core.Capture;
 using TranslationApp.Core.Dictionary;
 using TranslationApp.Core.History;
@@ -16,6 +19,8 @@ using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
 using TranslationApp.Core.SystemIntegration;
 using TranslationApp.Core.Translation;
+using TranslationApp.Core.Updates;
+using TranslationApp.Interop;
 using TranslationApp.Services;
 using TranslationApp.Theming;
 using TranslationApp.ViewModels;
@@ -39,6 +44,7 @@ public partial class App : Application
 
     /// <summary>键盘钩子是否已记过「收到首个事件」日志（只记一次，避免每次按键写日志）。</summary>
     private bool _keyboardHookEventLogged;
+    private bool _replacementInProgress;
     private bool _verboseStartup;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -68,10 +74,14 @@ public partial class App : Application
         var settings = _services!.GetRequiredService<AppSettings>();
         ThemeManager.Apply(SettingsViewModel.ToAppTheme(settings.Theme));
 
+        var trayReady = false;
         try
         {
-            InitTray();
-            ShowStartBalloonIfEnabled();
+            trayReady = TryInitTray();
+            if (trayReady)
+            {
+                ShowStartBalloonIfEnabled();
+            }
             // FR-059：首次运行弹一次上手卡（延后一拍，不与启动气泡挤在同一帧）
             if (!settings.OnboardingShown)
             {
@@ -81,7 +91,7 @@ public partial class App : Application
             if (_verboseStartup && settings.PrivacyMode)
             {
                 // spec §2.2：用户明确要了 --verbose 但隐私模式压住了日志，必须说明而不是静默失效
-                _trayIcon!.ShowNotification("速译", "隐私模式开启中，--verbose 日志不落盘", NotificationIcon.Info);
+                ShowTrayNotification("速译", "隐私模式开启中，--verbose 日志不落盘", NotificationIcon.Info);
             }
             RegisterHotkeysFromSettings();
             InitClipboardMonitor(settings);
@@ -91,22 +101,26 @@ public partial class App : Application
             InitLocalApi();
             InitScreenCapture();
             InitEngineFallback();
+            if (settings.UpdateAutoCheck && !string.IsNullOrWhiteSpace(settings.UpdateManifestUrl))
+            {
+                _ = CheckForUpdatesSilentlyAsync(settings);
+            }
             WarmUpEngine();
         }
         catch (Exception ex)
         {
-            Log.Fatal(ex, "托盘/热键初始化失败，应用退出");
+            Log.Fatal(ex, "核心功能初始化失败，应用退出");
             Shutdown(1);
             return;
         }
 
-        // 命令行参数（FR-012）：--settings 直接打开设置窗口；--minimized 为默认行为
-        if (e.Args.Contains("--settings"))
+        // --settings 显式打开设置；托盘创建失败时也必须给用户一个可见入口。
+        if (e.Args.Contains("--settings") || !trayReady)
         {
             ShowSettings();
         }
 
-        Log.Information("速译启动完成（托盘常驻，PID {Pid}）", Environment.ProcessId);
+        Log.Information("速译启动完成（{Mode}，PID {Pid}）", trayReady ? "托盘常驻" : "设置窗口模式", Environment.ProcessId);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -127,7 +141,31 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>初始化滚动文件日志；--verbose 时输出 Debug 级（排障用）。隐私模式下完全不落盘（P0 批 1 / spec §2.2）。</summary>
+    /// <summary>启动后静默检查一次签名更新；失败只记日志，不打扰用户。</summary>
+    private async Task CheckForUpdatesSilentlyAsync(AppSettings settings)
+    {
+        try
+        {
+            var version = Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0, 0, 0);
+            var current = new ReleaseVersion(version.Major, version.Minor, version.Build, Math.Max(0, version.Revision));
+            var services = _services;
+            if (services is null) return;
+
+            var result = await services.GetRequiredService<UpdateService>()
+                .CheckAsync(settings.UpdateManifestUrl, current);
+            settings.LastUpdateCheckUtc = DateTimeOffset.UtcNow.ToString("O");
+            services.GetRequiredService<ISettingsStore>().Save(settings);
+            if (result.HasUpdate)
+            {
+                _trayIcon?.ShowNotification("速译 · 更新可用", result.Message, NotificationIcon.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "后台检查更新失败");
+        }
+    }
+
     private static void InitLogging(bool verbose)
     {
         if (PrivacyPeek())
@@ -136,9 +174,7 @@ public partial class App : Application
             return;
         }
 
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TranslationApp", "logs");
+        var logDir = AppPaths.LogsDirectory;
         Directory.CreateDirectory(logDir);
 
         Log.Logger = new LoggerConfiguration()
@@ -198,9 +234,7 @@ public partial class App : Application
         var settings = store.Load();
 
         // 历史/生词本数据库（FR-014/015）：初始化失败只降级该功能，不影响翻译主流程
-        var databasePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TranslationApp", "history.db");
+        var databasePath = AppPaths.HistoryDatabaseFile;
         var database = new HistoryDatabase(databasePath);
         database.Initialize();
         if (!database.IsAvailable)
@@ -260,11 +294,20 @@ public partial class App : Application
 
         // 划词取词器：取词期间需抑制剪贴板监听，否则本程序还原剪贴板会再次触发翻译（FR-017）
         services.AddSingleton<ClipboardMonitor>();
+        services.AddSingleton<IClipboardSnapshotProvider, WpfClipboardSnapshotProvider>();
+        services.AddSingleton<InPlaceTranslationService>();
+        services.AddSingleton(sp => new SelectionReplacementService(
+            sp.GetRequiredService<IClipboardSnapshotProvider>(),
+            sp.GetRequiredService<ClipboardMonitor>().Suppress));
         services.AddSingleton<ITextCapturer>(sp => new ClipboardCapturer(
             message => Log.Debug("{CaptureLog}", message),
-            suppressFor: sp.GetRequiredService<ClipboardMonitor>().Suppress));
+            suppressFor: sp.GetRequiredService<ClipboardMonitor>().Suppress,
+            snapshotProvider: sp.GetRequiredService<IClipboardSnapshotProvider>()));
 
         services.AddSingleton(database);
+        services.AddSingleton(sp => new BackupService(AppPaths.DataDirectory, database));
+        var updateHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        services.AddSingleton(new UpdateService(() => updateHttpClient));
         services.AddSingleton<IHistoryRepository>(_ => new HistoryRepository(database));
         services.AddSingleton<IVocabularyRepository>(_ => new VocabularyRepository(database));
         // FR-035：Anki 直推客户端——专用 HttpClient 强制不经代理（127.0.0.1 被系统代理转发会假失败）
@@ -272,9 +315,7 @@ public partial class App : Application
         // FR-049：mdx 离线词典（%AppData%\TranslationApp\dicts）。构造不扫描磁盘，首次查词/列示才解析，
         // 词典开关关闭时连解析都不做；只用本地文件，不产生任何网络请求。
         services.AddSingleton(sp => new DictionaryManager(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "TranslationApp", "dicts"),
+            AppPaths.DictionariesDirectory,
             enabledProvider: () => sp.GetRequiredService<AppSettings>().DictionariesEnabled));
         services.AddSingleton<ITtsService, TtsService>();
         services.AddSingleton<HotkeyManager>();
@@ -296,6 +337,8 @@ public partial class App : Application
         services.AddSingleton(sp => new OcrService(
             sp.GetRequiredService<AppSettings>(),
             (title, message) => _trayIcon?.ShowNotification(title, message, NotificationIcon.Warning)));
+        // Doctor：集中诊断热键、OCR、代理、数据库与更新通道；只在设置页命令触发。
+        services.AddSingleton<DoctorService>();
         // FR-027 钉图：张数/像素上限判定与窗口登记（气泡回调在调用时读 _trayIcon，故注册顺序无关）
         services.AddSingleton(sp => new PinWindowManager(
             sp.GetRequiredService<AppSettings>(),
@@ -372,9 +415,19 @@ public partial class App : Application
             failures.Add(profileDefinition.ToString());
         }
 
+        if (settings.ReplaceSelectionEnabled && !string.IsNullOrWhiteSpace(settings.HotkeyReplaceTranslate))
+        {
+            var replaceDefinition = HotkeyDefinition.ParseOrDefault(
+                settings.HotkeyReplaceTranslate, new HotkeyDefinition(HotkeyModifiers.Alt, 0x52));
+            if (!_hotkeyManager.TryRegister("replace", replaceDefinition))
+            {
+                failures.Add(replaceDefinition.ToString());
+            }
+        }
+
         if (failures.Count > 0)
         {
-            _trayIcon!.ShowNotification(
+            ShowTrayNotification(
                 "速译 - 热键注册失败",
                 $"以下热键可能被其他程序占用：{string.Join("、", failures)}。请在设置中修改。",
                 NotificationIcon.Warning);
@@ -393,6 +446,10 @@ public partial class App : Application
         else if (e.Name == "select")
         {
             _ = TranslateSelectionAsync();
+        }
+        else if (e.Name == "replace")
+        {
+            _ = TranslateAndReplaceSelectionAsync();
         }
         else if (e.Name == "capture")
         {
@@ -419,7 +476,7 @@ public partial class App : Application
         profiles.Apply(name);
         services.GetRequiredService<ISettingsStore>().Save(settings);
         ApplyPrivacySideEffects(services, settings.PrivacyMode);
-        _trayIcon!.ShowNotification("速译", $"已切换场景档案：{profiles.DisplayName}", NotificationIcon.Info);
+        ShowTrayNotification("速译", $"已切换场景档案：{profiles.DisplayName}", NotificationIcon.Info);
         Log.Information("场景档案切换：{Profile}（偏离标记 {Deviation}）", profiles.DisplayName, profiles.IsDeviation());
     }
 
@@ -633,7 +690,7 @@ public partial class App : Application
         }
 
         Log.Warning("系统未安装 OCR 语言包，截图翻译不可用（热键仍注册，按下后提示安装指引）");
-        _trayIcon!.ShowNotification(
+        ShowTrayNotification(
             "速译 - 截图翻译不可用", OcrLanguages.MissingPackMessage, NotificationIcon.Warning);
     }
 
@@ -699,6 +756,75 @@ public partial class App : Application
         }
     }
 
+    /// <summary>取词、翻译并直接粘贴回原选区；任何一步失败都降级到普通小窗。</summary>
+    private async Task TranslateAndReplaceSelectionAsync()
+    {
+        if (_replacementInProgress)
+        {
+            return;
+        }
+
+        var targetWindow = NativeMethods.GetForegroundWindow();
+        _replacementInProgress = true;
+        try
+        {
+            var captured = await _services!.GetRequiredService<ITextCapturer>().CaptureSelectedTextAsync();
+            if (string.IsNullOrWhiteSpace(captured))
+            {
+                _trayIcon?.ShowNotification("速译", "未取到选中文本，无法原位替换", NotificationIcon.Warning);
+                return;
+            }
+
+            var text = PrepareCapturedText(captured, out _);
+            var settings = _services!.GetRequiredService<AppSettings>();
+            var translation = await _services!.GetRequiredService<InPlaceTranslationService>().TranslateAsync(
+                text, settings.SourceLanguage, settings.TargetLanguage);
+            var replacement = await _services!.GetRequiredService<SelectionReplacementService>().ReplaceAsync(
+                targetWindow, translation.Text);
+            if (!replacement.Success)
+            {
+                _trayIcon?.ShowNotification("速译", replacement.Message, NotificationIcon.Warning);
+                _services!.GetRequiredService<QuickWindow>().ShowForSelection(text);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "翻译并替换选区失败");
+            _trayIcon?.ShowNotification("速译", "翻译并替换失败，已取消本次操作", NotificationIcon.Warning);
+        }
+        finally
+        {
+            _replacementInProgress = false;
+        }
+    }
+
+    /// <summary>
+    /// 托盘创建允许失败：清理半成品对象并让应用降级为可见的设置窗口模式，
+    /// 避免 Shell 托盘瞬时故障把进程变成既无窗口也无托盘的不可操作状态。
+    /// </summary>
+    private bool TryInitTray()
+    {
+        try
+        {
+            InitTray();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "托盘图标创建失败，改用设置窗口模式继续启动");
+            try
+            {
+                _trayIcon?.Dispose();
+            }
+            catch (Exception cleanupEx)
+            {
+                Log.Warning(cleanupEx, "清理失败的托盘对象时出错");
+            }
+            _trayIcon = null;
+            return false;
+        }
+    }
+
     private void InitTray()
     {
         _trayIcon = new TaskbarIcon
@@ -715,6 +841,8 @@ public partial class App : Application
         selectItem.Click += (_, _) => _ = TranslateSelectionAsync();
 
         // FR-021：截图翻译（与热键同一入口，热键被占用时仍可从托盘触发）
+        var replaceItem = new MenuItem { Header = "翻译并替换选中文本" };
+        replaceItem.Click += (_, _) => _ = TranslateAndReplaceSelectionAsync();
         var captureItem = new MenuItem { Header = "截图翻译" };
         captureItem.Click += (_, _) => _ = _services!.GetRequiredService<ScreenCaptureTranslateFlow>().StartAsync();
 
@@ -744,7 +872,7 @@ public partial class App : Application
             appSettings.PrivacyMode = on;
             _services!.GetRequiredService<ISettingsStore>().Save(appSettings);
             ApplyPrivacySideEffects(_services!, on);
-            _trayIcon!.ShowNotification("速译",
+            ShowTrayNotification("速译",
                 on ? "隐私模式已开启：不再写入历史与日志" : "隐私模式已关闭",
                 NotificationIcon.Info);
         };
@@ -756,6 +884,7 @@ public partial class App : Application
         menu.Items.Add(inputItem);
         menu.Items.Add(selectItem);
         menu.Items.Add(captureItem);
+        menu.Items.Add(replaceItem);
         menu.Items.Add(closePinsItem);
         menu.Items.Add(profileMenu);
         menu.Items.Add(settingsItem);
@@ -766,6 +895,7 @@ public partial class App : Application
         {
             closePinsItem.IsEnabled = _services?.GetService<PinWindowManager>()?.HasPins == true;
             privacyItem.IsChecked = appSettings.PrivacyMode; // 设置页可能改过，展开时同步
+            replaceItem.IsEnabled = appSettings.ReplaceSelectionEnabled;
         };
         _trayIcon.ContextMenu = menu;
 
@@ -775,12 +905,23 @@ public partial class App : Application
         _trayIcon.ForceCreate(); // 代码构建（不在 XAML 可视树中）需显式创建
     }
 
+    private void ShowTrayNotification(string title, string message, NotificationIcon icon)
+    {
+        if (_trayIcon is null)
+        {
+            Log.Debug("托盘不可用，通知未显示：{Title} - {Message}", title, message);
+            return;
+        }
+
+        _trayIcon.ShowNotification(title, message, icon);
+    }
+
     private void ShowStartBalloonIfEnabled()
     {
         var settings = _services!.GetRequiredService<AppSettings>();
         if (settings.ShowStartBalloon)
         {
-            _trayIcon!.ShowNotification("速译", BuildStartBalloonText(settings), NotificationIcon.Info);
+            ShowTrayNotification("速译", BuildStartBalloonText(settings), NotificationIcon.Info);
         }
     }
 
@@ -947,9 +1088,25 @@ public partial class App : Application
             timer.Stop();
             settings.OnboardingShown = true;
             store.Save(settings);
+            var services = _services;
+            if (services is null)
+            {
+                return;
+            }
             try
             {
-                new OnboardingWindow(settings).Show();
+                var guide = new FirstRunGuideWindow(
+                    settings,
+                    store,
+                    services.GetRequiredService<HotkeyManager>(),
+                    services.GetRequiredService<TranslatorCatalog>(),
+                    services.GetRequiredService<OcrService>());
+                guide.OpenDoctorRequested += (_, _) => Dispatcher.BeginInvoke(() =>
+                {
+                    ShowSettings();
+                    services.GetRequiredService<MainWindow>().NavigateToSection("诊断");
+                });
+                guide.Show();
             }
             catch (Exception ex)
             {

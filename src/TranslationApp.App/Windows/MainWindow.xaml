@@ -28,6 +28,10 @@
                                    TextTrimming="CharacterEllipsis"
                                    FontSize="{StaticResource FontSize.Small}"
                                    Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <TextBlock Text="{Binding QualityBadge}" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Brush.PrimaryText}"
+                                   FontSize="{StaticResource FontSize.Small}"
+                                   Visibility="{Binding HasQualityBadge, Converter={StaticResource BoolToVisibility}}"/>
                         <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}">
                             <Run Text="{Binding CreatedAtDisplay, Mode=OneWay}"/>
                             <Run Text=" · "/>
@@ -39,6 +43,34 @@
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="编辑译文 / 校对状态"
+                                Command="{Binding DataContext.EditHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Edit}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="切换已校对"
+                                Command="{Binding DataContext.ToggleHistoryReviewedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Check}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="切换禁止 TM 复用"
+                                Command="{Binding DataContext.ToggleHistoryRejectedCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Close}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="26" Height="26"
+                                ToolTip="加入术语表"
+                                Command="{Binding DataContext.AddHistoryToGlossaryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <TextBlock Text="{StaticResource Icon.Add}" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Button>
                         <Button Style="{StaticResource IconButton}" Width="26" Height="26"
                                 ToolTip="复制原文与译文"
                                 Command="{Binding DataContext.CopyHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -320,33 +352,274 @@
         </TabItem>
 
         <!-- ==================== 热键 ==================== -->
+        <!-- ==================== 更新与数据 ==================== -->
+        <TabItem Header="更新与数据" Tag="&#xE777;">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,24">
+                <StackPanel>
+                    <TextBlock Text="签名更新" Style="{StaticResource Text.SectionTitle}"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="更新清单地址" FontSize="{StaticResource FontSize.Body}"/>
+                            <TextBlock Text="必须是 HTTPS；清单由内置公钥验签，安装包还会做 SHA-256 与大小校验"
+                                       Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,6"/>
+                            <TextBox Text="{Binding UpdateManifestUrl, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                     ToolTip="例如 https://example.com/TranslationApp/latest.json"/>
+                            <Border Style="{StaticResource Hairline}" Margin="0,10"/>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="启动后自动检查" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="只检查并在托盘提示，不自动下载或安装"
+                                               Style="{StaticResource Text.Caption}" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center" IsChecked="{Binding UpdateAutoCheck}"/>
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button Content="检查更新" Style="{StaticResource Button.Outline}"
+                                        Command="{Binding CheckUpdateCommand}"/>
+                                <Button Content="下载并安装" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding DownloadAndInstallUpdateCommand}"
+                                        IsEnabled="{Binding UpdateAvailable}"/>
+                            </StackPanel>
+                            <ProgressBar Height="3" Margin="0,10,0,0" Maximum="1" Value="{Binding UpdateProgress}"
+                                         Visibility="{Binding UpdateBusy, Converter={StaticResource BoolToVisibility}}"/>
+                            <TextBlock Text="{Binding UpdateMessage}" Style="{StaticResource Text.Caption}"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="备份与便携模式" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,150,0">
+                                    <TextBlock Text="便携模式" FontSize="{StaticResource FontSize.Body}"/>
+                                    <TextBlock Text="在 EXE 同目录放置 portable.flag，设置、历史、词典与日志随程序目录一起迁移"
+                                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                          VerticalAlignment="Center" IsChecked="{Binding PortableMode}"/>
+                            </Grid>
+                            <Border Style="{StaticResource Hairline}" Margin="0,10"/>
+                            <TextBlock Text="备份包只包含 settings.json 与一致性 history.db 快照；每个文件都有 SHA-256，恢复失败会自动回滚"
+                                       Style="{StaticResource Text.Hint}" TextWrapping="Wrap"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="导出备份" Style="{StaticResource Button.Outline}"
+                                        Command="{Binding CreateBackupCommand}"/>
+                                <Button Content="恢复备份" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding RestoreBackupCommand}"/>
+                                <Button Content="打开数据目录" Style="{StaticResource Button.Link}" Margin="12,0,0,0"
+                                        Command="{Binding OpenDataFolderCommand}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding BackupMessage}" Style="{StaticResource Text.Caption}"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- Doctor：热键、OCR、代理、本地写入与更新通道的集中诊断 -->
+        <TabItem Header="诊断" Tag="&#xE9D9;">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,24">
+                <StackPanel>
+                    <TextBlock Text="Doctor 诊断中心" Style="{StaticResource Text.SectionTitle}"/>
+                    <TextBlock Text="集中检查全局热键、Windows/Paddle OCR、代理、数据库与更新通道；联网检查仅在点击后执行"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource Button.Primary}" Command="{Binding RunDoctorCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{StaticResource Icon.Refresh}" FontFamily="{StaticResource Font.Icon}"
+                                                   FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock Text="开始诊断" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding ExportDoctorReportCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{StaticResource Icon.Export}" FontFamily="{StaticResource Font.Icon}"
+                                                   FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock Text="导出报告" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                        Command="{Binding CopyDoctorReportCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{StaticResource Icon.Copy}" FontFamily="{StaticResource Font.Icon}"
+                                                   FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock Text="复制报告" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <ProgressBar Height="3" Margin="0,12,0,0" IsIndeterminate="True"
+                                         Visibility="{Binding DoctorBusy, Converter={StaticResource BoolToVisibility}}"/>
+                            <TextBlock Text="{Binding DoctorMessage}" Style="{StaticResource Text.Caption}"
+                                       TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <TextBlock Text="{Binding DoctorSummary}" Style="{StaticResource Text.Hint}"
+                                       Margin="0,4,0,0"/>
+                            <TextBlock Text="尚未运行：点击“开始诊断”查看逐项结果。"
+                                       Margin="0,4,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Hint}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DoctorHasRun}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding DoctorResults}" Margin="0,14,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource Card}" Padding="14,12" Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding StatusGlyph}"
+                                                   FontFamily="{StaticResource Font.Icon}" FontSize="15"
+                                                   VerticalAlignment="Top">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Passed">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Success}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Warning">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Failed">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Error}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <StackPanel Grid.Column="1" Margin="8,0,10,0">
+                                            <TextBlock Text="{Binding Title}" FontSize="{StaticResource FontSize.Small}"
+                                                       FontWeight="{StaticResource Weight.Medium}"/>
+                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Text.Hint}"
+                                                       Margin="0,3,0,0"/>
+                                            <TextBlock Text="{Binding Recommendation}" Style="{StaticResource Text.Hint}"
+                                                       Margin="0,5,0,0" Foreground="{DynamicResource Brush.Warning}"
+                                                       Visibility="{Binding HasRecommendation, Converter={StaticResource BoolToVisibility}}"/>
+                                            <Button Style="{StaticResource Button.Outline}" Margin="0,8,0,0"
+                                                    HorizontalAlignment="Left" Content="{Binding ActionLabel}"
+                                                    Command="{Binding DataContext.ExecuteDoctorActionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding ActionKey}"
+                                                    Visibility="{Binding HasAction, Converter={StaticResource BoolToVisibility}}"/>
+                                            </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding StatusText}"
+                                                   VerticalAlignment="Top">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Passed">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Success}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Warning">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Failed">
+                                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Error}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
         <TabItem Header="热键" Tag="&#xE765;">
             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,24">
                 <StackPanel>
                     <TextBlock Text="输入翻译" Style="{StaticResource Text.SectionTitle}"/>
                     <TextBlock Text="按下热键后在鼠标处弹出小窗，可直接输入文字翻译"
                                Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
-                    <controls:HotkeyBox Text="{Binding HotkeyInputText}" IsInvalid="{Binding HotkeyInputInvalid}"
-                                        Width="260" HorizontalAlignment="Left"/>
+                    <StackPanel Orientation="Horizontal">
+                        <controls:HotkeyBox x:Name="InputHotkeyEditor" Text="{Binding HotkeyInputText}" IsInvalid="{Binding HotkeyInputInvalid}"
+                                            Status="{Binding HotkeyInputStatus}" Width="260"/>
+                        <Button x:Name="ResetInputHotkeyButton" Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Command="{Binding ResetHotkeyCommand}" CommandParameter="Input"/>
+                    </StackPanel>
 
                     <TextBlock Text="划词翻译" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <TextBlock Text="先在任意应用中选中文字，再按热键自动取词并翻译"
                                Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
-                    <controls:HotkeyBox Text="{Binding HotkeySelectText}" IsInvalid="{Binding HotkeySelectInvalid}"
-                                        Width="260" HorizontalAlignment="Left"/>
+                    <StackPanel Orientation="Horizontal">
+                        <controls:HotkeyBox x:Name="SelectHotkeyEditor" Text="{Binding HotkeySelectText}" IsInvalid="{Binding HotkeySelectInvalid}"
+                                            Status="{Binding HotkeySelectStatus}" Width="260"/>
+                        <Button x:Name="ResetSelectHotkeyButton" Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Command="{Binding ResetHotkeyCommand}" CommandParameter="Select"/>
+                    </StackPanel>
 
                     <TextBlock Text="截图翻译" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <TextBlock Text="冻结鼠标所在屏幕，拖拽框选区域后自动识别文字并翻译"
                                Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
-                    <controls:HotkeyBox Text="{Binding HotkeyCaptureText}" IsInvalid="{Binding HotkeyCaptureInvalid}"
-                                        Width="260" HorizontalAlignment="Left"/>
+                    <StackPanel Orientation="Horizontal">
+                        <controls:HotkeyBox x:Name="CaptureHotkeyEditor" Text="{Binding HotkeyCaptureText}" IsInvalid="{Binding HotkeyCaptureInvalid}"
+                                            Status="{Binding HotkeyCaptureStatus}" Width="260"/>
+                        <Button x:Name="ResetCaptureHotkeyButton" Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Command="{Binding ResetHotkeyCommand}" CommandParameter="Capture"/>
+                    </StackPanel>
 
                     <!-- FR-037（P0 批 2）：场景档案循环切换热键 -->
                     <TextBlock Text="场景档案切换" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
                     <TextBlock Text="在 标准 → 阅读 → 隐私 → 自定义档案 之间循环切换，每次切换弹一次托盘提示"
                                Style="{StaticResource Text.Caption}" Margin="0,4,0,8"/>
-                    <controls:HotkeyBox Text="{Binding HotkeyProfileText}" IsInvalid="{Binding HotkeyProfileInvalid}"
-                                        Width="260" HorizontalAlignment="Left"/>
+                    <StackPanel Orientation="Horizontal">
+                        <controls:HotkeyBox x:Name="ProfileHotkeyEditor" Text="{Binding HotkeyProfileText}" IsInvalid="{Binding HotkeyProfileInvalid}"
+                                            Status="{Binding HotkeyProfileStatus}" Width="260"/>
+                        <Button x:Name="ResetProfileHotkeyButton" Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Command="{Binding ResetHotkeyCommand}" CommandParameter="Profile"/>
+                    </StackPanel>
+
+                    <!-- 翻译并原位替换：默认关；热键可提前配置，开启后才占用系统注册 -->
+                    <TextBlock Text="翻译并替换" Style="{StaticResource Text.SectionTitle}" Margin="0,22,0,0"/>
+                    <TextBlock Text="选中文字后按热键，译文直接覆盖原选区；在原应用按 Ctrl+Z 可撤销"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,4,0,8"/>
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"
+                                  IsChecked="{Binding ReplaceSelectionEnabled}" ToolTip="默认关闭，避免误替换"/>
+                        <controls:HotkeyBox x:Name="ReplaceHotkeyEditor" Text="{Binding HotkeyReplaceText}" IsInvalid="{Binding HotkeyReplaceInvalid}"
+                                            Status="{Binding HotkeyReplaceStatus}" Width="260" Margin="12,0,0,0"/>
+                        <Button x:Name="ResetReplaceHotkeyButton" Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Command="{Binding ResetHotkeyCommand}" CommandParameter="Replace"/>
+                    </StackPanel>
+
+                    <Grid Margin="0,10,0,0" IsEnabled="{Binding ReplaceSelectionEnabled}">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="直接替换" FontSize="{StaticResource FontSize.Body}"/>
+                            <TextBlock Text="翻译完成后立即覆盖原选区，不显示确认或结果弹窗"
+                                       Style="{StaticResource Text.Caption}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,10,0,0" IsEnabled="{Binding ReplaceSelectionEnabled}">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="替换后写入翻译历史" FontSize="{StaticResource FontSize.Body}"/>
+                            <TextBlock Text="关闭后仍显示本次结果，但不进入历史与 TM；隐私模式始终不写入"
+                                       Style="{StaticResource Text.Caption}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                  VerticalAlignment="Center" IsChecked="{Binding ReplaceWritesHistory}"/>
+                    </Grid>
 
                     <TextBlock Text="{Binding HotkeyMessage}" Foreground="{DynamicResource Brush.Error}"
                                FontSize="{StaticResource FontSize.Small}" TextWrapping="Wrap" Margin="2,10,0,0"/>
@@ -360,7 +633,7 @@
                                        FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"
                                        VerticalAlignment="Top" Margin="0,1,8,0"/>
                             <TextBlock Style="{StaticResource Text.Hint}" MaxWidth="420"
-                                       Text="点击录键框后直接按下组合键即可修改（支持 Ctrl / Alt / Shift / Win 加字母、数字或 F1~F12）。若热键已被其他程序占用会标红并保留原热键。"/>
+                                       Text="点击录键框后直接按下组合键即可修改（支持 Ctrl / Alt / Shift / Win 加字母、数字或 F1~F12）。替换热键即使功能关闭也可提前配置；被占用时会标红并保留原热键。"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -802,7 +1075,7 @@
                                                 <Border Style="{StaticResource Hairline}"/>
                                                 <TextBlock Text="自定义 Prompt" FontSize="{StaticResource FontSize.Body}"/>
                                                 <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                           Text="留空使用内置 Prompt（只输出译文）；可用 {source} / {target} / {text} 占位符，留空即恢复默认"/>
+                                                           Text="留空使用内置 Prompt（只输出译文）；可用 {source} / {target} / {context} / {style} 占位符，正文自动作为用户消息发送"/>
                                                 <TextBox MinHeight="84" MaxHeight="150" Margin="0,8,0,0"
                                                          AcceptsReturn="True" TextWrapping="Wrap"
                                                          VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top"
@@ -1132,11 +1405,17 @@
             <DockPanel Margin="24,20,24,20">
                 <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
                     <TextBlock Text="翻译术语表" Style="{StaticResource Text.SectionTitle}" VerticalAlignment="Center"/>
-                    <Button Content="添加词条" Style="{StaticResource Button.Outline}" HorizontalAlignment="Right"
-                            Command="{Binding AddGlossaryCommand}"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="导入" Style="{StaticResource Button.Outline}"
+                                Command="{Binding ImportGlossaryCommand}"/>
+                        <Button Content="导出" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                Command="{Binding ExportGlossaryCommand}"/>
+                        <Button Content="添加词条" Style="{StaticResource Button.Outline}" Margin="8,0,0,0"
+                                Command="{Binding AddGlossaryCommand}"/>
+                    </StackPanel>
                 </Grid>
                 <TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Hint}" Margin="2,0,0,10" MaxWidth="560"
-                           Text="译文生成后，把译文里出现的「源词」整串换成「译法」，对全部引擎生效（长词优先、英文按词边界匹配）。源词填的是译文里那个词：想让所有「应用」显示成「手机」，源词就填「应用」而不是「app」——引擎译文里本来就没有 app 时，填 app 不会有任何变化。典型用法是钉住产品名与专有名词（Ozon、SKU、品牌名不被乱译）。最多 500 条，改动即时保存。"/>
+                           Text="译文生成后按「源词」替换为固定「译法」，对所有引擎生效。可限定语言对、选择整词 / 包含 / 区分大小写 / 正则匹配；最多 500 条，改动即时保存。源词应填写译文里实际出现的词。"/>
 
                 <!-- FR-037（P0 批 2 / spec §4）：术语表全局开关——关闭时词条保留、替换直通 -->
                 <Grid DockPanel.Dock="Top" Margin="2,0,2,12">
@@ -1169,37 +1448,77 @@
                                         <Border Padding="14,8" BorderBrush="{DynamicResource Brush.Border}"
                                                 BorderThickness="0,0,0,1">
                                             <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox Grid.Column="0" Height="{StaticResource Height.Control}"
-                                                         Padding="8,0"
-                                                         VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
-                                                         Text="{Binding Source, UpdateSourceTrigger=PropertyChanged, Delay=400}"
-                                                         ToolTip="译文里出现的源词"/>
-                                                <TextBlock Grid.Column="1" Text="→" Margin="10,0"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{DynamicResource Brush.TextSecondary}"/>
-                                                <TextBox Grid.Column="2" Height="{StaticResource Height.Control}"
-                                                         Padding="8,0"
-                                                         VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
-                                                         Text="{Binding Target, UpdateSourceTrigger=PropertyChanged, Delay=400}"
-                                                         ToolTip="期望的固定译法"/>
-                                                <CheckBox Grid.Column="3" Style="{StaticResource ToggleSwitch}"
-                                                          Margin="14,0,0,0" VerticalAlignment="Center"
-                                                          ToolTip="停用但保留词条"
-                                                          IsChecked="{Binding Enabled}"/>
-                                                <Button Grid.Column="4" Style="{StaticResource IconButton}" Width="26" Height="26"
-                                                        Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="删除词条"
-                                                        Command="{Binding DataContext.DeleteGlossaryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}">
-                                                    <TextBlock Text="{StaticResource Icon.Delete}" FontFamily="{StaticResource Font.Icon}"
-                                                               FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
-                                                </Button>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <Grid Grid.Row="0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Height="{StaticResource Height.Control}"
+                                                             Padding="8,0"
+                                                             VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
+                                                             Text="{Binding Source, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                                             ToolTip="译文里出现的源词"/>
+                                                    <TextBlock Grid.Column="1" Text="→" Margin="10,0"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                    <TextBox Grid.Column="2" Height="{StaticResource Height.Control}"
+                                                             Padding="8,0"
+                                                             VerticalContentAlignment="Center" FontSize="{StaticResource FontSize.Small}"
+                                                             Text="{Binding Target, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                                             ToolTip="期望的固定译法"/>
+                                                    <CheckBox Grid.Column="3" Style="{StaticResource ToggleSwitch}"
+                                                              Margin="14,0,0,0" VerticalAlignment="Center"
+                                                              ToolTip="停用但保留词条"
+                                                              IsChecked="{Binding Enabled}"/>
+                                                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Width="26" Height="26"
+                                                            Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="删除词条"
+                                                            Command="{Binding DataContext.DeleteGlossaryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}">
+                                                        <TextBlock Text="{StaticResource Icon.Delete}" FontFamily="{StaticResource Font.Icon}"
+                                                                   FontSize="12" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                    </Button>
+                                                </Grid>
+
+                                                <Grid Grid.Row="1" Margin="0,6,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="132"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="132"/>
+                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ComboBox Grid.Column="0" Height="{StaticResource Height.Control}"
+                                                              ItemsSource="{Binding DataContext.GlossarySourceLanguageOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              DisplayMemberPath="Display" SelectedValuePath="Code"
+                                                              SelectedValue="{Binding SourceLanguage, Mode=TwoWay}"
+                                                              ToolTip="源语言作用范围"/>
+                                                    <TextBlock Grid.Column="1" Text="→" Margin="8,0"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                    <ComboBox Grid.Column="2" Height="{StaticResource Height.Control}"
+                                                              ItemsSource="{Binding DataContext.GlossaryTargetLanguageOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              DisplayMemberPath="Display" SelectedValuePath="Code"
+                                                              SelectedValue="{Binding TargetLanguage, Mode=TwoWay}"
+                                                              ToolTip="目标语言作用范围"/>
+                                                    <ComboBox Grid.Column="3" Height="{StaticResource Height.Control}" Margin="8,0,0,0"
+                                                              ItemsSource="{Binding DataContext.GlossaryMatchOptions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              DisplayMemberPath="Display" SelectedValuePath="Value"
+                                                              SelectedValue="{Binding MatchMode, Mode=TwoWay}"
+                                                              ToolTip="匹配方式"/>
+                                                    <TextBox Grid.Column="4" Height="{StaticResource Height.Control}" Margin="8,0,0,0"
+                                                             Padding="8,0" VerticalContentAlignment="Center"
+                                                             FontSize="{StaticResource FontSize.Small}"
+                                                             Text="{Binding Note, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                                             ToolTip="备注，不参与匹配"/>
+                                                </Grid>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>

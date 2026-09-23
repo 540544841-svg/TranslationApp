@@ -17,6 +17,10 @@ Windows 桌面划词 / 输入翻译工具：常驻系统托盘，全局热键呼
 │   └── TranslationApp.Tests/    # xUnit 单元测试
 ├── build/
 │   ├── publish.ps1              # 一键发布单文件 EXE
+│   ├── new-update-signing-key.ps1 # 生成离线更新签名密钥
+│   ├── make-update-manifest.ps1 # 签名并生成 latest.json
+│   ├── verify-ux-v3.ps1         # 真机验收：首次引导、Doctor、替换与撤销（artifacts/ux-v3/）
+│   ├── ux-replace-target.ps1    # 替换验收使用的隔离外部文本窗口
 │   ├── verify-ui.ps1            # 界面验收：浅/深主题 × 各状态截图（artifacts/ui/）
 │   ├── verify-tray.ps1          # 托盘验收脚本（启动/单实例/优雅退出）
 │   ├── probe-engines.ps1        # 官方引擎端点可达性实测（Azure / DeepL，无需 Key）
@@ -29,9 +33,12 @@ Windows 桌面划词 / 输入翻译工具：常驻系统托盘，全局热键呼
 
 ```powershell
 dotnet build                              # 编译
-dotnet test                               # 单元测试（975 项，离线确定性）
+dotnet test                               # 单元测试（1298 项，离线确定性）
 publish\TranslationApp.exe --verbose      # 启动并输出 Debug 级日志（排障）
 powershell -ExecutionPolicy Bypass -File build\publish.ps1     # 发布单 EXE → publish\TranslationApp.exe
+pwsh -File build\new-update-signing-key.ps1 -PrivateKeyPath D:\secure\translationapp-release-private.pem
+pwsh -File build\make-update-manifest.ps1 -ExePath publish\TranslationApp.exe -PrivateKeyPath D:\secure\translationapp-release-private.pem -Version 1.3.0 -DownloadUrl https://example.com/TranslationApp.exe
+pwsh -File build\verify-ux-v3.ps1                              # 真机验收：引导 / Doctor / 替换撤销
 powershell -ExecutionPolicy Bypass -File build\verify-ui.ps1   # 界面验收：浅/深两色 × 各状态截图 → artifacts\ui\
 powershell -ExecutionPolicy Bypass -File build\probe-engines.ps1  # 官方引擎端点可达性实测
 powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/单实例/优雅退出验收
@@ -59,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/�
 - **控件全套重写模板**：按钮、输入框、只读结果区、下拉、复选框、开关、**斜切流光进度条**、
   细滚动条、工具提示、卡片，均含默认/悬停/按下/聚焦/禁用状态。
 - **设置窗口为左侧导航式**（对齐 Windows 11 设置 / macOS 系统设置），侧栏带品牌区
-  （速译 + 斜切光带 + 副标题），导航顺序 **通用 → 热键 → 翻译 → 引擎 → 历史 → 生词本 → 高级**，
+  （速译 + 斜切光带 + 副标题），导航顺序 **通用 → 更新与数据 → 诊断 → 热键 → 翻译 → 引擎 → 历史 → 生词本 → 术语表 → 高级**，
   选中项 = 琥珀容器底 + 文字级琥珀 + 左侧斜切指示条；设置项以卡片 + 发丝线分组，
   「引擎」页承载官方引擎 Key 管理（卡片 + 配置徽标 + 测试连接 + 密码框显示/隐藏）。
 - **空状态齐备**：历史「暂无翻译记录」、生词本「点 ☆ 即可加入」、小窗输入占位「输入文字，按 Enter 翻译」。
@@ -83,6 +90,9 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 | 设置 | `%AppData%\TranslationApp\settings.json`（代理密码与各引擎 API Key 均为 DPAPI 密文） |
 | 历史 / 生词本 | `%AppData%\TranslationApp\history.db`（SQLite，WAL 模式） |
 | 日志 | `%AppData%\TranslationApp\logs\`（按天滚动，保留 7 天） |
+
+开启「设置 → 更新与数据 → 便携模式」后，上述数据改写到 EXE 同目录的 `data\` 下；也可在 EXE
+同目录手动放置 `portable.flag`。备份包只包含 `settings.json` 与一致性 `history.db` 快照，恢复前会校验清单与 SHA-256。
 
 ### 让 Google 引擎可用（需要代理，且只开代理还不够）
 
@@ -127,6 +137,7 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 |---|---|
 | `Alt+D` | 在鼠标处呼出翻译小窗（输入翻译）；再按一次或 Esc 收起 |
 | `Alt+S` | 划词翻译：自动取当前选中文本并翻译（阶段 2 实现，见「当前状态」） |
+| `Alt+R` | 翻译并原位替换当前选区（默认关闭，可在热键页启用） |
 | `Alt+O` | 截图翻译：框选后默认**把选区图片钉在屏幕上原位显示译文**（阶段 5，见下） |
 | `Ctrl+Enter` | 小窗内交换源/目标语言 |
 | 托盘双击 | 打开设置 |
@@ -136,6 +147,22 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 
 小窗失去焦点会自动隐藏（200ms 延时），隐藏时会把键盘焦点交还给你原来的应用；
 点「图钉」可按需求固定常显。热键、目标语言、引擎均可在设置中修改，改动即时生效。
+
+### 首次使用引导
+
+首次启动会在 1.2 秒后打开三步引导：选择引擎 → 录入并确认真实核心热键 → 运行能力自检。热键框与设置页共用同一录制控件，录入后即时显示可用、重复或被系统占用；每项都可单独恢复默认。自检覆盖引擎、热键注册和 Windows OCR 语言包；失败时可以重新检查、稍后测试，或直接进入 **设置 → 诊断** 查看修复入口。引导只显示一次，之后可从 **设置 → 通用 → 再看一次** 重新打开。
+
+### 翻译并原位替换
+
+在任意应用中选中文字后按 `Alt+R`，程序会复用当前引擎、术语表和 TM 完成翻译，并把译文直接覆盖原选区。默认关闭；启用入口在 **设置 → 热键**。替换过程不显示确认窗或结果窗，避免焦点和选区被弹窗破坏。
+
+替换采用一次粘贴操作，直接进入目标应用自己的 `Ctrl+Z` 撤销栈；程序会保存并恢复原剪贴板。若目标应用不支持复制、粘贴或撤销，请改用普通划词翻译后手动粘贴。隐私模式下不读取 TM，也不写翻译历史；是否写历史由 **设置 → 热键 → 替换后写入翻译历史** 控制。
+
+### Doctor 诊断中心
+
+**设置 → 诊断** 可集中检查全局热键占用、Windows/Paddle OCR、代理连通性、SQLite 快速完整性、数据目录可写性、更新清单验签与 EXE 替换权限。代理和更新通道检查会在点击“开始诊断”后联网，其余检查只读本地状态或创建短暂探针文件。结果可复制或导出为脱敏 TXT 报告，不包含 API Key、原文、译文或 Token。
+
+热键、OCR、代理和更新问题会给出“打开对应设置”的入口；数据库或目录问题可直接打开数据目录，未知警告可重新诊断。
 
 ### 钉图窗口（阶段 5，FR-027）
 
@@ -179,7 +206,7 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 ### 界面
 
 - [x] **界面设计系统**：语义化设计令牌 + 深浅双主题（跟随系统/浅色/深色）+ 全套控件重写模板；
-      设置窗口为左侧导航式（通用 / 热键 / 翻译 / **引擎** / 历史 / 生词本 / 高级）；详见 `docs/UI设计规范-v2.0.md`
+      设置窗口为左侧导航式（通用 / 更新与数据 / 诊断 / 热键 / 翻译 / **引擎** / 历史 / 生词本 / 术语表 / 高级）；详见 `docs/UI设计规范-v2.0.md`
 
 ### 翻译核心
 
@@ -410,9 +437,9 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
       先匹配者胜、学习置顶覆盖同名、上限 20 条）；命中时**只改本次会话**的语言——直接写 backing field
       绕开 setter，避免"切个浏览器就把默认语言偷偷改了"；用户在某应用里手动改语言即被记住。
       进程名取自小窗的前一个前台窗口，只在本机比较与存 settings.json，**不读窗口标题、不写日志、不出网**
-- [x] **FR-059 首次运行 30 秒上手卡**（v2 B3-3）：独立一次性小窗，三个键帽（文案取设置里的**真实热键**）
-      +「现在就试：选中一段文字按划词热键」+「知道了」；`Esc` 可关；标记在弹之前就落盘
-      （直接结束进程也不该下次再弹），设置页「通用」留了「再看一次」
+- [x] **FR-059 首次运行三步引导**：独立一次性窗口，依次选择引擎、录入真实核心热键并运行能力自检；
+      自检失败可重新检查、稍后测试或跳转 Doctor；标记在弹之前就落盘（直接结束进程也不会下次再弹），
+      设置页「通用」留了「再看一次」
 
 批 6 已知边界：AI 词典不做例句/图片词条，模型给什么就显示什么（超 6 条截断）；历史分组不做项目命名与标签；
 按应用记忆不做窗口标题级匹配（标题会变，也更贴近"读取用户在看什么"）。
@@ -439,9 +466,3 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
   （与 %TEMP% 自解包同性质，不属于外置分发文件）。
 - 钉图相关的观感项（覆盖底色扩边系数、`busy` 阈值、缩放步进手感、工具条淡出时长与残留透明度）
   为**需实测确认**项：当前取需求文档给出的默认值，实测不满意时可调设置项或按文档备选方案调整。
-
-未实现：
-
-- [ ] FR-024 的 AI（LLM）引擎卡片（阶段 4 后续批次）
-- [ ] FR-023 便携模式 / 自动更新（P2 待定）
-

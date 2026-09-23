@@ -75,6 +75,8 @@
     <sys:String x:Key="Icon.Book">&#xE8F1;</sys:String>
     <sys:String x:Key="Icon.Advanced">&#xE713;</sys:String>
     <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.Edit">&#xE70F;</sys:String>
+    <sys:String x:Key="Icon.Add">&#xE710;</sys:String>
     <sys:String x:Key="Icon.Search">&#xE721;</sys:String>
     <sys:String x:Key="Icon.Export">&#xEDE1;</sys:String>
     <sys:String x:Key="Icon.Clipboard">&#xE77F;</sys:String>

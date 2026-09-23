@@ -146,6 +146,7 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource Brush.SurfaceMuted}"/>
                             <Setter Property="Foreground" Value="{DynamicResource Brush.TextDisabled}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -176,6 +177,7 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -643,12 +645,12 @@
         <Setter Property="FontFamily" Value="{StaticResource Font.App}"/>
         <Setter Property="FontSize" Value="{StaticResource FontSize.Small}"/>
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
-        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
                     <Border x:Name="Root" Height="{StaticResource Height.Large}" Margin="8,2"
-                            CornerRadius="{StaticResource Radius.Control}" Background="Transparent">
+                            CornerRadius="{StaticResource Radius.Control}" Background="Transparent"
+                            Cursor="Hand">
                         <Grid Margin="10,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -986,4 +988,8 @@
     <Style TargetType="CheckBox" BasedOn="{StaticResource CheckBox.Modern}"/>
     <Style TargetType="ProgressBar" BasedOn="{StaticResource Progress.Indeterminate}"/>
     <Style TargetType="ScrollBar" BasedOn="{StaticResource ScrollBar.Thin}"/>
+    <!-- 窗口默认必须是箭头：手型只属于启用中的可点击控件。 -->
+    <Style TargetType="Window">
+        <Setter Property="Cursor" Value="Arrow"/>
+    </Style>
 </ResourceDictionary>

@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Serilog;
 using TranslationApp.Core.Anki;
+using TranslationApp.Core.Backup;
 using TranslationApp.Core.History;
 using TranslationApp.Core.Hotkey;
 using TranslationApp.Core.Layout;
@@ -14,6 +16,7 @@ using TranslationApp.Core.Settings;
 using TranslationApp.Core.Speech;
 using TranslationApp.Core.SystemIntegration;
 using TranslationApp.Core.Translation;
+using TranslationApp.Core.Updates;
 using TranslationApp.Services;
 using TranslationApp.Theming;
 // 别名：本类会生成同名属性 OcrOutputMode，直接用类型名会被属性遮蔽（FR-027）
@@ -50,8 +53,12 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ProfileService _profiles;
     private readonly TranslationApp.Services.LocalApiGateway _localApiGateway;
     private readonly AnkiConnectClient _anki;
+    private readonly BackupService _backup;
+    private readonly UpdateService _updates;
+    private readonly TranslationApp.Services.DoctorService _doctor;
     private bool _suppressAutoStartCallback;
     private bool _suppressPasswordCallback;
+    private long _historyRefreshVersion;
 
     public SettingsViewModel(
         AppSettings settings,
@@ -71,6 +78,9 @@ public partial class SettingsViewModel : ObservableObject
         ProfileService profiles,
         TranslationApp.Services.LocalApiGateway localApiGateway,
         AnkiConnectClient anki,
+        BackupService backup,
+        UpdateService updates,
+        TranslationApp.Services.DoctorService doctor,
         TranslationApp.Core.Dictionary.DictionaryManager? dictionaries = null)
     {
         _settings = settings;
@@ -90,6 +100,9 @@ public partial class SettingsViewModel : ObservableObject
         _profiles = profiles;
         _localApiGateway = localApiGateway;
         _anki = anki;
+        _backup = backup;
+        _updates = updates;
+        _doctor = doctor;
         _dictionaries = dictionaries;
 
         _showStartBalloon = settings.ShowStartBalloon;
@@ -99,6 +112,12 @@ public partial class SettingsViewModel : ObservableObject
         _hotkeySelectText = settings.HotkeySelectTranslate;
         _hotkeyCaptureText = settings.HotkeyCaptureTranslate;
         _hotkeyProfileText = settings.HotkeySwitchProfile;
+        _hotkeyReplaceText = settings.HotkeyReplaceTranslate;
+        _updateManifestUrl = settings.UpdateManifestUrl;
+        _updateAutoCheck = settings.UpdateAutoCheck;
+        _portableMode = AppPaths.IsPortable;
+        _replaceSelectionEnabled = settings.ReplaceSelectionEnabled;
+        _replaceWritesHistory = settings.ReplaceWritesHistory;
         _selectedTheme = NormalizeTheme(settings.Theme);
 
         // 「引擎」页（FR-024）先建卡片，再决定当前引擎是否可用（未配置则回退并提示）
@@ -171,7 +190,7 @@ public partial class SettingsViewModel : ObservableObject
 
         _ttsAvailable = tts.InstalledVoiceCount > 0;
 
-        RefreshHistory();
+        _ = RefreshHistoryAsync();
         RefreshVocabulary();
         if (_clipboardMonitorEnabled)
         {
@@ -225,6 +244,32 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _hotkeyProfileText;
 
+    /// <summary>翻译并原位替换热键（默认 Alt+R，功能开关另控）。</summary>
+    [ObservableProperty]
+    private string _hotkeyReplaceText;
+
+    [ObservableProperty]
+    private string _hotkeyInputStatus = "";
+
+    [ObservableProperty]
+    private string _hotkeySelectStatus = "";
+
+    [ObservableProperty]
+    private string _hotkeyCaptureStatus = "";
+
+    [ObservableProperty]
+    private string _hotkeyProfileStatus = "";
+
+    [ObservableProperty]
+    private string _hotkeyReplaceStatus = "";
+
+    [ObservableProperty]
+    private bool _replaceSelectionEnabled;
+
+    /// <summary>原位替换成功后是否写入翻译历史；隐私模式下仍由主链路强制不写。</summary>
+    [ObservableProperty]
+    private bool _replaceWritesHistory = true;
+
     [ObservableProperty]
     private bool _hotkeyInputInvalid;
 
@@ -233,6 +278,8 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _hotkeyCaptureInvalid;
+    [ObservableProperty]
+    private bool _hotkeyReplaceInvalid;
 
     [ObservableProperty]
     private bool _hotkeyProfileInvalid;
@@ -395,6 +442,7 @@ public partial class SettingsViewModel : ObservableObject
         Select,
         Capture,
         Profile,
+        Replace,
     }
 
     partial void OnHotkeyInputTextChanged(string value) => ApplyHotkey(HotkeySlot.Input, value);
@@ -405,6 +453,25 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnHotkeyProfileTextChanged(string value) => ApplyHotkey(HotkeySlot.Profile, value);
 
+    partial void OnHotkeyReplaceTextChanged(string value) => ApplyHotkey(HotkeySlot.Replace, value);
+
+    partial void OnReplaceSelectionEnabledChanged(bool value)
+    {
+        Save(s => s.ReplaceSelectionEnabled = value);
+        if (value)
+        {
+            ApplyHotkey(HotkeySlot.Replace, HotkeyReplaceText, force: true);
+        }
+        else
+        {
+            _hotkeyManager.Unregister("replace");
+            HotkeyReplaceInvalid = false;
+        }
+    }
+
+    partial void OnReplaceWritesHistoryChanged(bool value) => Save(s => s.ReplaceWritesHistory = value);
+
+
     [RelayCommand]
     private void ResetHotkeys()
     {
@@ -412,10 +479,24 @@ public partial class SettingsViewModel : ObservableObject
         ApplyHotkey(HotkeySlot.Select, HotkeyDefinition.DefaultSelect.ToString(), force: true);
         ApplyHotkey(HotkeySlot.Capture, HotkeyDefinition.DefaultCapture.ToString(), force: true);
         ApplyHotkey(HotkeySlot.Profile, HotkeyDefinition.DefaultProfile.ToString(), force: true);
+        ApplyHotkey(HotkeySlot.Replace, HotkeyDefinition.DefaultReplace.ToString(), force: true);
         HotkeyInputText = HotkeyDefinition.DefaultInput.ToString();
         HotkeySelectText = HotkeyDefinition.DefaultSelect.ToString();
         HotkeyCaptureText = HotkeyDefinition.DefaultCapture.ToString();
         HotkeyProfileText = HotkeyDefinition.DefaultProfile.ToString();
+        HotkeyReplaceText = HotkeyDefinition.DefaultReplace.ToString();
+    }
+
+    [RelayCommand]
+    private void ResetHotkey(string? slot)
+    {
+        var parsed = Enum.TryParse<HotkeySlot>(slot, ignoreCase: true, out var value)
+            ? value
+            : HotkeySlot.Input;
+        var defaultValue = DefaultOf(parsed).ToString();
+        ApplyHotkey(parsed, defaultValue, force: true);
+        SetHotkeyText(parsed, defaultValue);
+        SetStatus(parsed, $"{defaultValue} 已恢复默认");
     }
 
     private void ApplyHotkey(HotkeySlot slot, string value, bool force = false)
@@ -423,30 +504,45 @@ public partial class SettingsViewModel : ObservableObject
         var current = CurrentHotkeyText(slot);
         if (!force && string.Equals(current, value, StringComparison.Ordinal) && _hotkeyManager.IsRegistered(NameOf(slot)))
         {
+            if (!IsInvalid(slot))
+            {
+                SetStatus(slot, $"{value} 可用");
+            }
             return;
         }
 
         if (!HotkeyDefinition.TryParse(value, out var newDefinition))
         {
             SetInvalid(slot, true);
-            HotkeyMessage = "热键格式不正确：需为 修饰键 + 字母/数字/F1~F12 的组合";
+            SetStatus(slot, "格式不支持：需要 Ctrl / Alt / Shift / Win + 字母、数字或 F1~F12");
+            HotkeyMessage = "热键格式不正确，请按提示重新录入";
             return;
         }
 
-        // 三个热键之间不得重复
+        // 「翻译并替换」未启用时不占用系统热键，只保存配置供下次启用。
+        if (slot == HotkeySlot.Replace && !ReplaceSelectionEnabled)
+        {
+            Save(s => s.HotkeyReplaceTranslate = value);
+            SetInvalid(slot, false);
+            SetStatus(slot, $"{value} 已保存；启用替换后注册");
+            return;
+        }
+
+        // 各热键之间不得重复
+        var oldDefinition = HotkeyDefinition.ParseOrDefault(current, DefaultOf(slot));
         foreach (var other in OtherSlots(slot))
         {
             if (HotkeyDefinition.TryParse(CurrentHotkeyText(other), out var otherDefinition)
                 && otherDefinition == newDefinition)
             {
                 SetInvalid(slot, true);
-                SetInvalid(other, true);
-                HotkeyMessage = "热键不能重复，请重新设置";
+                SetStatus(slot, $"{newDefinition} 与“{LabelOf(other)}”重复；已保留原热键 {oldDefinition}");
+                HotkeyMessage = "功能之间的热键不能重复";
+                SetHotkeyText(slot, oldDefinition.ToString());
                 return;
             }
         }
 
-        var oldDefinition = HotkeyDefinition.ParseOrDefault(current, DefaultOf(slot));
 
         if (_hotkeyManager.TryRegister(NameOf(slot), newDefinition))
         {
@@ -463,6 +559,9 @@ public partial class SettingsViewModel : ObservableObject
                     case HotkeySlot.Profile:
                         s.HotkeySwitchProfile = value;
                         break;
+                    case HotkeySlot.Replace:
+                        s.HotkeyReplaceTranslate = value;
+                        break;
                     default:
                         s.HotkeyCaptureTranslate = value;
                         break;
@@ -473,6 +572,11 @@ public partial class SettingsViewModel : ObservableObject
             {
                 SetInvalid(other, false);
             }
+            SetStatus(slot, $"{newDefinition} 可用");
+            foreach (var other in OtherSlots(slot))
+            {
+                SetStatus(other, "");
+            }
 
             HotkeyMessage = "";
             return;
@@ -480,7 +584,8 @@ public partial class SettingsViewModel : ObservableObject
 
         _hotkeyManager.TryRegister(NameOf(slot), oldDefinition);
         SetInvalid(slot, true);
-        HotkeyMessage = $"热键 {newDefinition} 注册失败，可能已被其他程序占用，已保留原热键 {oldDefinition}";
+        SetStatus(slot, $"{newDefinition} 已被系统或其他程序占用；原热键 {oldDefinition} 仍可用");
+        HotkeyMessage = $"热键 {newDefinition} 注册失败，请换一个组合";
         SetHotkeyText(slot, oldDefinition.ToString());
     }
 
@@ -489,6 +594,7 @@ public partial class SettingsViewModel : ObservableObject
         HotkeySlot.Input => "input",
         HotkeySlot.Select => "select",
         HotkeySlot.Profile => "profile",
+        HotkeySlot.Replace => "replace",
         _ => "capture",
     };
 
@@ -497,7 +603,17 @@ public partial class SettingsViewModel : ObservableObject
         HotkeySlot.Input => HotkeyDefinition.DefaultInput,
         HotkeySlot.Select => HotkeyDefinition.DefaultSelect,
         HotkeySlot.Profile => HotkeyDefinition.DefaultProfile,
+        HotkeySlot.Replace => HotkeyDefinition.DefaultReplace,
         _ => HotkeyDefinition.DefaultCapture,
+    };
+
+    private static string LabelOf(HotkeySlot slot) => slot switch
+    {
+        HotkeySlot.Input => "输入翻译",
+        HotkeySlot.Select => "划词翻译",
+        HotkeySlot.Capture => "截图翻译",
+        HotkeySlot.Profile => "场景档案切换",
+        _ => "翻译并替换",
     };
 
     private static IEnumerable<HotkeySlot> OtherSlots(HotkeySlot slot) =>
@@ -508,6 +624,7 @@ public partial class SettingsViewModel : ObservableObject
         HotkeySlot.Input => _settings.HotkeyInputTranslate,
         HotkeySlot.Select => _settings.HotkeySelectTranslate,
         HotkeySlot.Profile => _settings.HotkeySwitchProfile,
+        HotkeySlot.Replace => _settings.HotkeyReplaceTranslate,
         _ => _settings.HotkeyCaptureTranslate,
     };
 
@@ -523,6 +640,9 @@ public partial class SettingsViewModel : ObservableObject
                 break;
             case HotkeySlot.Profile:
                 HotkeyProfileText = value;
+                break;
+            case HotkeySlot.Replace:
+                HotkeyReplaceText = value;
                 break;
             default:
                 HotkeyCaptureText = value;
@@ -543,8 +663,42 @@ public partial class SettingsViewModel : ObservableObject
             case HotkeySlot.Profile:
                 HotkeyProfileInvalid = invalid;
                 break;
+            case HotkeySlot.Replace:
+                HotkeyReplaceInvalid = invalid;
+                break;
             default:
                 HotkeyCaptureInvalid = invalid;
+                break;
+        }
+    }
+
+    private bool IsInvalid(HotkeySlot slot) => slot switch
+    {
+        HotkeySlot.Input => HotkeyInputInvalid,
+        HotkeySlot.Select => HotkeySelectInvalid,
+        HotkeySlot.Profile => HotkeyProfileInvalid,
+        HotkeySlot.Replace => HotkeyReplaceInvalid,
+        _ => HotkeyCaptureInvalid,
+    };
+
+    private void SetStatus(HotkeySlot slot, string status)
+    {
+        switch (slot)
+        {
+            case HotkeySlot.Input:
+                HotkeyInputStatus = status;
+                break;
+            case HotkeySlot.Select:
+                HotkeySelectStatus = status;
+                break;
+            case HotkeySlot.Profile:
+                HotkeyProfileStatus = status;
+                break;
+            case HotkeySlot.Replace:
+                HotkeyReplaceStatus = status;
+                break;
+            default:
+                HotkeyCaptureStatus = status;
                 break;
         }
     }
@@ -596,12 +750,21 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _historyMessage = "";
 
-    partial void OnHistoryKeywordChanged(string value) => RefreshHistory();
+    partial void OnHistoryKeywordChanged(string value) => _ = RefreshHistoryAsync();
 
     [RelayCommand]
-    private void RefreshHistory()
+    private async Task RefreshHistoryAsync()
     {
-        var records = _history.Search(HistoryKeyword);
+        var version = ++_historyRefreshVersion;
+        var keyword = HistoryKeyword;
+        var grouped = HistoryGroupedView && string.IsNullOrWhiteSpace(keyword);
+        var records = await Task.Run(() => _history.Search(keyword));
+
+        if (version != _historyRefreshVersion)
+        {
+            return; // 输入已继续变化，旧查询结果直接丢弃
+        }
+
         HistoryItems.Clear();
         HistoryGroups.Clear();
         foreach (var record in records)
@@ -609,7 +772,7 @@ public partial class SettingsViewModel : ObservableObject
             HistoryItems.Add(record);
         }
 
-        if (IsHistoryGrouped)
+        if (grouped)
         {
             foreach (var group in HistoryGrouper.Group(records))
             {
@@ -625,9 +788,9 @@ public partial class SettingsViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsHistoryGrouped));
         HistoryMessage = HistoryItems.Count == 0
-            ? (string.IsNullOrWhiteSpace(HistoryKeyword) ? "暂无翻译历史" : "没有匹配的记录")
+            ? (string.IsNullOrWhiteSpace(keyword) ? "暂无翻译历史" : "没有匹配的记录")
             : $"共 {HistoryItems.Count} 条"
-              + (IsHistoryGrouped ? $" · {HistoryGroups.Count} 个会话" : "")
+              + (grouped ? $" · {HistoryGroups.Count} 个会话" : "")
               + (HistoryItems.Count >= 500 ? "（仅显示最近 500 条）" : "");
     }
 
@@ -642,7 +805,7 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DeleteHistory(TranslationRecord? record)
+    private async Task DeleteHistoryAsync(TranslationRecord? record)
     {
         if (record is null)
         {
@@ -650,7 +813,7 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         _history.Delete(record.Id);
-        RefreshHistory();
+        await RefreshHistoryAsync();
     }
 
     [RelayCommand]
@@ -675,7 +838,7 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ClearHistory()
+    private async Task ClearHistoryAsync()
     {
         // FR-014：一键清空需二次确认
         var confirm = MessageBox.Show(
@@ -687,7 +850,7 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         _history.Clear();
-        RefreshHistory();
+        await RefreshHistoryAsync();
         HistoryMessage = "已清空翻译历史";
     }
 
@@ -906,7 +1069,10 @@ public partial class SettingsViewModel : ObservableObject
     {
         try
         {
-            new TranslationApp.Windows.OnboardingWindow(_settings).Show();
+            var guide = new TranslationApp.Windows.FirstRunGuideWindow(
+                _settings, _store, _hotkeyManager, _catalog, _ocr);
+            guide.OpenDoctorRequested += (_, _) => SettingsNavigationRequested?.Invoke(this, "诊断");
+            guide.Show();
         }
         catch (Exception ex)
         {
@@ -1195,6 +1361,76 @@ public partial class SettingsViewModel : ObservableObject
             Log.Warning(ex, "代理测试失败");
             ProxyMessage = "代理不可用：" + ex.Message;
         }
+    }
+
+    [RelayCommand]
+    private async Task EditHistoryAsync(TranslationRecord? record)
+    {
+        if (record is null) return;
+
+        var dialog = new TranslationApp.Windows.EditTranslationWindow(record)
+        {
+            Owner = System.Windows.Application.Current.MainWindow,
+        };
+        if (dialog.ShowDialog() != true) return;
+        if (string.IsNullOrWhiteSpace(dialog.EditedText))
+        {
+            HistoryMessage = "译文不能为空";
+            return;
+        }
+
+        _history.Update(record.Id, dialog.EditedText.Trim(), dialog.Reviewed && !dialog.Rejected, dialog.Rejected);
+        if (dialog.AddToGlossary) AddGlossaryFromHistory(
+            record.SourceText, dialog.EditedText.Trim(), record.SourceLanguage, record.TargetLanguage);
+        await RefreshHistoryAsync();
+        HistoryMessage = dialog.AddToGlossary ? "译文已保存并加入术语表" : "译文已保存";
+    }
+
+    [RelayCommand]
+    private async Task ToggleHistoryReviewedAsync(TranslationRecord? record)
+    {
+        if (record is null) return;
+        var reviewed = !record.Reviewed;
+        _history.Update(record.Id, record.TranslatedText, reviewed, reviewed ? false : record.Rejected);
+        await RefreshHistoryAsync();
+    }
+
+    [RelayCommand]
+    private async Task ToggleHistoryRejectedAsync(TranslationRecord? record)
+    {
+        if (record is null) return;
+        var rejected = !record.Rejected;
+        _history.Update(record.Id, record.TranslatedText, rejected ? false : record.Reviewed, rejected);
+        await RefreshHistoryAsync();
+    }
+
+    [RelayCommand]
+    private void AddHistoryToGlossary(TranslationRecord? record)
+    {
+        if (record is null) return;
+        AddGlossaryFromHistory(record.SourceText, record.TranslatedText, record.SourceLanguage, record.TargetLanguage);
+        HistoryMessage = "已加入术语表";
+    }
+
+    private void AddGlossaryFromHistory(
+        string source, string target, string sourceLanguage = "*", string targetLanguage = "*")
+    {
+        if (GlossaryItems.Any(item =>
+                string.Equals(item.Source, source, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(item.Target, target, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        GlossaryItems.Add(new GlossaryItemViewModel
+        {
+            Source = source,
+            Target = target,
+            Enabled = true,
+            SourceLanguage = sourceLanguage,
+            TargetLanguage = targetLanguage,
+        });
+        SaveGlossary(quiet: false);
     }
 
     // ==================== 公共 ====================

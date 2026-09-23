@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using TranslationApp.Core.Hotkey;
 using TranslationApp.Theming;
 using TranslationApp.ViewModels;
 
@@ -10,11 +11,14 @@ namespace TranslationApp.Windows;
 public partial class MainWindow : Window
 {
     private readonly SettingsViewModel _viewModel;
+    private readonly HotkeyManager _hotkeys;
 
-    public MainWindow(SettingsViewModel viewModel)
+    public MainWindow(SettingsViewModel viewModel, HotkeyManager hotkeys)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _hotkeys = hotkeys;
+        _viewModel.SettingsNavigationRequested += (_, section) => NavigateToSection(section);
         DataContext = viewModel;
 
         // 代理密码框不是可绑定属性（WPF 出于安全不暴露 Password 为依赖属性），
@@ -29,9 +33,23 @@ public partial class MainWindow : Window
         ThemeManager.ApplyTitleBar(this);
     }
 
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        // 设置窗口录制热键时先释放全局注册，否则 Windows 会把现有组合吞成应用热键。
+        _hotkeys.SuspendAll();
+    }
+
+    protected override void OnDeactivated(EventArgs e)
+    {
+        base.OnDeactivated(e);
+        _hotkeys.ResumeAll();
+    }
+
     protected override void OnClosing(CancelEventArgs e)
     {
         e.Cancel = true;
+        _hotkeys.ResumeAll();
         Hide();
     }
 
@@ -51,5 +69,27 @@ public partial class MainWindow : Window
         {
             _viewModel.RefreshEngineStats();
         }
+    }
+
+    /// <summary>按导航页签名切换设置分区；Doctor 的“打开设置”操作复用这里。</summary>
+    public void NavigateToSection(string section)
+    {
+        var header = section switch
+        {
+            "hotkeys" => "热键",
+            "advanced" => "高级",
+            "updates" => "更新与数据",
+            _ => section,
+        };
+
+        var tab = NavTabs.Items.OfType<TabItem>()
+            .FirstOrDefault(item => string.Equals(item.Header as string, header, StringComparison.Ordinal));
+        if (tab is null)
+        {
+            return;
+        }
+
+        NavTabs.SelectedItem = tab;
+        Activate();
     }
 }
