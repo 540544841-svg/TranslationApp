@@ -56,4 +56,11 @@
     <Resource Include="Assets\app.ico" />
   </ItemGroup>
 
+  <Target Name="RemoveNativeImportLibrariesFromPublish" AfterTargets="ComputeFilesToPublish">
+    <!-- OnnxRuntime 包把 .lib 导入库也标成了 native 资产。它们是链接期文件，不属于运行时依赖；
+         若随发布复制会破坏“单文件零外置”约定，也让发布冒烟 CI 出现额外文件。 -->
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
 </Project>

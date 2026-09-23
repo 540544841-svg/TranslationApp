@@ -41,6 +41,17 @@ if (-not (Test-Path $exe)) {
     throw "发布产物未找到：$exe"
 }
 
+# 兼容旧发布目录：OnnxRuntime 包曾经把 .lib 导入库复制到输出；新目标已从源发布列表剔除。
+# 把历史上残留的链接期文件清掉，否则单文件门禁会被旧文件误判。
+Get-ChildItem -LiteralPath $OutputDir -File -Filter "onnxruntime*.lib" |
+    Remove-Item -Force
+
+$unexpected = Get-ChildItem -LiteralPath $OutputDir -File |
+    Where-Object { $_.Name -notin @("TranslationApp.exe", "latest.json") }
+if ($unexpected) {
+    throw "单文件发布出现额外文件：$($unexpected.Name -join ', ')"
+}
+
 $sizeMB = [math]::Round((Get-Item $exe).Length / 1MB, 1)
 Write-Host ""
 Write-Host ("发布成功：{0}（{1} MB）" -f $exe, $sizeMB) -ForegroundColor Green
