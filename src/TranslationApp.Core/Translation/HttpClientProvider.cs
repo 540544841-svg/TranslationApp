@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace TranslationApp.Core.Translation;
 
@@ -41,8 +43,16 @@ public sealed record ProxyOptions(string Host, int Port, string? UserName, strin
         return proxy;
     }
 
-    /// <summary>用于缓存键：协议不同即视为不同配置。</summary>
-    public string CacheKey => $"{NormalizedScheme}://{Host}:{Port}:{UserName}";
+    /// <summary>用于缓存键：协议、端点、用户名与密码摘要任一变化都必须重建客户端。</summary>
+    public string CacheKey
+    {
+        get
+        {
+            var credentialHash = Convert.ToHexString(SHA256.HashData(
+                Encoding.UTF8.GetBytes($"{UserName ?? ""}\u0000{Password ?? ""}")));
+            return $"{NormalizedScheme}://{Host}:{Port}:{credentialHash}";
+        }
+    }
 }
 
 /// <summary>

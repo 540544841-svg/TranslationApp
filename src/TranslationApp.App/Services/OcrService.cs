@@ -60,6 +60,12 @@ public sealed class OcrService
     /// <summary>系统可用的 OCR 识别语言。</summary>
     public IReadOnlyList<OcrLanguageTag> AvailableLanguages => _availableLanguages;
 
+    /// <summary>PaddleOCR 是否已在本进程内失败并回退（Doctor 诊断用）。</summary>
+    public bool IsPaddleDegraded => _router.IsPaddleDegraded;
+
+    /// <summary>PaddleOCR 三件套与字典的嵌入资源名（Doctor 诊断用）。</summary>
+    public IReadOnlyList<string> PaddleModelResources => PaddleOcrEngine.RequiredResourceNames;
+
     /// <summary>OcrEngine.MaxImageDimension 的运行期实际取值（本机实测 10000）。</summary>
     public int MaxImageDimension { get; }
 

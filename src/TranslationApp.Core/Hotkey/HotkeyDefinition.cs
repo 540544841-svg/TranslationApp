@@ -33,6 +33,9 @@ public sealed record HotkeyDefinition(HotkeyModifiers Modifiers, int VirtualKey)
     /// <summary>默认热键：场景档案循环切换 Alt+P（FR-037，P0 批 2）。</summary>
     public static readonly HotkeyDefinition DefaultProfile = new(HotkeyModifiers.Alt, 'P');
 
+    /// <summary>默认热键：翻译并原位替换 Alt+R。</summary>
+    public static readonly HotkeyDefinition DefaultReplace = new(HotkeyModifiers.Alt, 'R');
+
     /// <summary>解析失败时返回的默认值（避免设置串损坏导致启动失败）。</summary>
     public static HotkeyDefinition ParseOrDefault(string? text, HotkeyDefinition fallback) =>
         TryParse(text, out var def) ? def : fallback;

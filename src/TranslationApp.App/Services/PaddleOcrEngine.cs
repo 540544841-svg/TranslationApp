@@ -61,6 +61,10 @@ public sealed class PaddleOcrEngine : IOcrEngine, IDisposable
     private static readonly SemaphoreSlim ModelExtractGate = new(1, 1);
     private static bool _modelsExtracted;
 
+    /// <summary>Doctor 用于确认发布产物是否包含全部模型资源。</summary>
+    internal static IReadOnlyList<string> RequiredResourceNames =>
+        Models.Select(model => model.Resource).ToArray();
+
     // ==================== 懒加载会话与空闲释放 ====================
 
     private readonly Func<bool> _resident;
@@ -94,6 +98,7 @@ public sealed class PaddleOcrEngine : IOcrEngine, IDisposable
 
         // 全程持锁：既串行化对 ORT 会话的并发推理，也保证空闲释放不会与推理并发（ReleaseSessionCore 同锁）
         await _sessionGate.WaitAsync();
+        var releaseGateHere = true;
         try
         {
             var session = await GetOrCreateSessionCoreAsync();
@@ -101,9 +106,22 @@ public sealed class PaddleOcrEngine : IOcrEngine, IDisposable
 
             var stopwatch = Stopwatch.StartNew();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(RecognizeTimeoutSeconds));
-            var result = await Task.Run(
-                    () => Detect(session, bgra, width, height, timeout.Token), timeout.Token)
-                .WaitAsync(timeout.Token); // 5s 硬顶：协作取消 + 等待超时双保险，超时异常 → 路由降级
+            var detection = Task.Run(
+                () => Detect(session, bgra, width, height, timeout.Token), CancellationToken.None);
+
+            OcrResult result;
+            try
+            {
+                result = await detection.WaitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            {
+                // 超时只把失败交给上层降级；会话锁与原生任务必须等推理真正结束后才能释放/销毁。
+                releaseGateHere = false;
+                _ = ReleaseTimedOutSessionAsync(detection, session);
+                throw new TimeoutException($"PaddleOCR 单次识别超过 {RecognizeTimeoutSeconds}s");
+            }
+
             stopwatch.Stop();
             _lastUsedUtc = DateTimeOffset.UtcNow;
             EnsureIdleTimer();
@@ -118,6 +136,43 @@ public sealed class PaddleOcrEngine : IOcrEngine, IDisposable
                 height);
             LogRecognition(result, recognition, stopwatch.ElapsedMilliseconds);
             return recognition;
+        }
+        finally
+        {
+            if (releaseGateHere)
+            {
+                _sessionGate.Release();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 超时后等待原生推理真正结束，再销毁失效会话并释放独占锁。
+    /// 方法当前调用方已持有 <see cref="_sessionGate"/>，后续识别会在此处完成后重新建会话。
+    /// </summary>
+    private async Task ReleaseTimedOutSessionAsync(Task<OcrResult> detection, RapidOcr session)
+    {
+        try
+        {
+            await detection.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "PaddleOCR 超时后的原生推理最终异常（会话将重建）");
+        }
+
+        try
+        {
+            if (ReferenceEquals(_session, session))
+            {
+                _session = null;
+                session.Dispose();
+                Log.Information("PaddleOCR 超时会话已销毁，下次识别将重建");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "PaddleOCR 超时会话销毁失败（不影响后续重建）");
         }
         finally
         {
