@@ -423,4 +423,15 @@ public sealed class AppSettings
 
     /// <summary>首次运行上手卡是否已看过（FR-059）：看过就不再弹，设置页可再看一次。</summary>
     public bool OnboardingShown { get; set; }
+
+    // ==================== 签名更新 / 备份 ====================
+
+    /// <summary>签名更新清单地址；空 = 未配置更新通道。</summary>
+    public string UpdateManifestUrl { get; set; } = "";
+
+    /// <summary>启动后自动检查更新（只检查，不自动下载或安装）。</summary>
+    public bool UpdateAutoCheck { get; set; }
+
+    /// <summary>最近一次检查更新的 UTC 时间（ISO 8601）；仅用于展示。</summary>
+    public string LastUpdateCheckUtc { get; set; } = "";
 }

@@ -64,6 +64,9 @@ public sealed class HistoryDatabase
                     SourceLanguage TEXT    NOT NULL,
                     TargetLanguage TEXT    NOT NULL,
                     Engine         TEXT    NOT NULL
+                    ,Reviewed       INTEGER NOT NULL DEFAULT 0
+                    ,Rejected       INTEGER NOT NULL DEFAULT 0
+                    ,EditedAtMs     INTEGER NULL
                 );
                 CREATE INDEX IF NOT EXISTS IX_History_CreatedAt ON History(CreatedAtMs DESC);
 
@@ -108,6 +111,16 @@ public sealed class HistoryDatabase
                 }
             }
 
+            // 可编辑 TM：Reviewed = 人工校对，Rejected = 禁止复用；旧库按两个布尔列无损升级。
+            EnsureColumn(connection, "History", "Reviewed", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(connection, "History", "Rejected", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(connection, "History", "EditedAtMs", "INTEGER NULL");
+            using (var index = connection.CreateCommand())
+            {
+                index.CommandText =
+                    "CREATE INDEX IF NOT EXISTS IX_History_TmQuality ON History(TargetLanguage, Rejected, Reviewed);";
+                index.ExecuteNonQuery();
+            }
             IsAvailable = true;
             UnavailableReason = null;
         }
@@ -116,5 +129,35 @@ public sealed class HistoryDatabase
             IsAvailable = false;
             UnavailableReason = ex.Message;
         }
+    }
+
+    /// <summary>用一个一致性 SQLite 快照备份当前数据库；目标文件不存在时创建。</summary>
+    public void BackupTo(string destinationPath)
+    {
+        if (!IsAvailable) throw new InvalidOperationException("历史数据库不可用，无法备份");
+        var directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+        using var source = OpenConnection();
+        using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false,
+        }.ToString());
+        destination.Open();
+        source.BackupDatabase(destination);
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string table, string column, string definition)
+    {
+        using var check = connection.CreateCommand();
+        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = @Column;";
+        check.Parameters.AddWithValue("@Column", column);
+        if (Convert.ToInt64(check.ExecuteScalar() ?? 0L) != 0) return;
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+        alter.ExecuteNonQuery();
     }
 }

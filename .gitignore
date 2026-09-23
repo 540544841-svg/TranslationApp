@@ -3,6 +3,10 @@ bin/
 obj/
 publish/
 
+# 离线发布密钥：绝不能提交
+build/secrets/
+*-release-private.pem
+
 # 界面验收截图（由 build/verify-ui.ps1 生成）
 artifacts/
 

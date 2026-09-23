@@ -19,9 +19,7 @@ public sealed class JsonSettingsStore : ISettingsStore
 
     public JsonSettingsStore(string? filePath = null)
     {
-        _filePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TranslationApp", "settings.json");
+        _filePath = filePath ?? AppPaths.SettingsFile;
     }
 
     /// <summary>默认存储路径。</summary>
