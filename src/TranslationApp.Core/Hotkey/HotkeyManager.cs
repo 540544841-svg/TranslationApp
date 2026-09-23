@@ -48,6 +48,7 @@ public sealed class HotkeyManager : IDisposable
     private readonly Dictionary<int, HotkeyDefinition> _registered = new();
     private int _nextId = 1;
     private bool _disposed;
+    private bool _suspended;
 
     public HotkeyManager()
     {
@@ -56,9 +57,9 @@ public sealed class HotkeyManager : IDisposable
     }
 
     /// <summary>
-    /// 注册（或更新）指定名称的热键。同名重注册时先注销旧键；
-    /// 注册失败（热键被其他程序占用）返回 false，此时旧热键已失效，
-    /// 调用方应尽快恢复原热键或提示用户。
+    /// 注册（或更新）指定名称的热键。更新时先尝试新组合，成功后再释放旧组合；
+    /// 注册失败（热键被其他程序占用）返回 false，旧热键保持可用，
+    /// 调用方只需提示用户更换组合。
     /// </summary>
     public bool TryRegister(string name, HotkeyDefinition definition)
     {
@@ -69,40 +70,161 @@ public sealed class HotkeyManager : IDisposable
             return false;
         }
 
-        if (!_idByName.TryGetValue(name, out var id))
-        {
-            id = _nextId++;
-            _idByName[name] = id;
-            _nameById[id] = name;
-        }
-        else
-        {
-            UnregisterHotKey(_hwnd, id);
-            _registered.Remove(id);
-        }
-
-        if (!RegisterHotKey(_hwnd, id, (uint)definition.Modifiers, (uint)definition.VirtualKey))
+        if (IsHeldByOtherName(name, definition))
         {
             return false;
         }
 
-        _registered[id] = definition;
+        int? oldId = _idByName.TryGetValue(name, out var existingId) ? existingId : null;
+        if (oldId.HasValue && _registered.TryGetValue(oldId.Value, out var current) && current == definition)
+        {
+            return true; // 同名同组合是幂等更新；Windows 会拒绝为同一组合重复分配新 ID。
+        }
+
+        if (_suspended)
+        {
+            // 设置窗口打开时所有全局热键暂时注销。这里先用注册/立即注销探测组合是否可用，
+            // 更新的是“待恢复”定义，避免录制 Alt+D 时被应用自己的旧热键抢先吞掉。
+            var probeId = _nextId++;
+            if (!RegisterHotKey(_hwnd, probeId, (uint)definition.Modifiers, (uint)definition.VirtualKey))
+            {
+                return false;
+            }
+
+            UnregisterHotKey(_hwnd, probeId);
+            if (oldId.HasValue)
+            {
+                _registered.Remove(oldId.Value);
+                _nameById.Remove(oldId.Value);
+            }
+
+            _idByName[name] = probeId;
+            _nameById[probeId] = name;
+            _registered[probeId] = definition;
+            return true;
+        }
+
+        var newId = _nextId++;
+        if (!RegisterHotKey(_hwnd, newId, (uint)definition.Modifiers, (uint)definition.VirtualKey))
+        {
+            return false; // 旧组合仍持有，不会因新组合被占用而失效
+        }
+
+        if (oldId.HasValue && !UnregisterHotKey(_hwnd, oldId.Value))
+        {
+            UnregisterHotKey(_hwnd, newId);
+            return false;
+        }
+
+        if (oldId.HasValue)
+        {
+            _registered.Remove(oldId.Value);
+            _nameById.Remove(oldId.Value);
+        }
+        _idByName[name] = newId;
+        _nameById[newId] = name;
+        _registered[newId] = definition;
         return true;
     }
 
     /// <summary>注销指定名称的热键（未注册时静默忽略）。</summary>
+    /// <summary>探测组合是否可用；不会改变当前注册或待恢复定义。</summary>
+    public bool CanRegister(string name, HotkeyDefinition definition)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!definition.IsValidKey || IsHeldByOtherName(name, definition))
+        {
+            return false;
+        }
+
+        var currentId = _idByName.TryGetValue(name, out var id) ? id : (int?)null;
+        if (currentId.HasValue && _registered.TryGetValue(currentId.Value, out var current) && current == definition)
+        {
+            return true;
+        }
+
+        var probeId = _nextId++;
+        if (!RegisterHotKey(_hwnd, probeId, (uint)definition.Modifiers, (uint)definition.VirtualKey))
+        {
+            return false;
+        }
+
+        UnregisterHotKey(_hwnd, probeId);
+        return true;
+    }
+
+    private bool IsHeldByOtherName(string name, HotkeyDefinition definition) =>
+        _registered.Any(pair =>
+            pair.Value == definition &&
+            _nameById.TryGetValue(pair.Key, out var owner) &&
+            !string.Equals(owner, name, StringComparison.Ordinal));
+
     public void Unregister(string name)
     {
         if (_idByName.TryGetValue(name, out var id))
         {
-            UnregisterHotKey(_hwnd, id);
+            if (!_suspended)
+            {
+                UnregisterHotKey(_hwnd, id);
+            }
             _registered.Remove(id);
+            _nameById.Remove(id);
+            _idByName.Remove(name);
         }
     }
 
     /// <summary>当前是否持有指定名称的热键。</summary>
     public bool IsRegistered(string name) =>
         _idByName.TryGetValue(name, out var id) && _registered.ContainsKey(id);
+
+    /// <summary>
+    /// 暂停全部全局热键，供设置/引导窗口录制按键时使用。保留当前定义与槽位映射，
+    /// 期间仍可通过 TryRegister 校验并更新待恢复的热键。
+    /// </summary>
+    public void SuspendAll()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_suspended)
+        {
+            return;
+        }
+
+        foreach (var id in _registered.Keys.ToArray())
+        {
+            UnregisterHotKey(_hwnd, id);
+        }
+
+        _suspended = true;
+    }
+
+    /// <summary>恢复设置窗口期间暂停的全部热键，返回恢复失败的槽位名称。</summary>
+    public IReadOnlyList<string> ResumeAll()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_suspended)
+        {
+            return [];
+        }
+
+        _suspended = false;
+        var failures = new List<string>();
+        foreach (var (id, definition) in _registered.ToArray())
+        {
+            if (RegisterHotKey(_hwnd, id, (uint)definition.Modifiers, (uint)definition.VirtualKey))
+            {
+                continue;
+            }
+
+            if (_nameById.Remove(id, out var name))
+            {
+                _idByName.Remove(name);
+                failures.Add(name);
+            }
+            _registered.Remove(id);
+        }
+
+        return failures;
+    }
 
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {

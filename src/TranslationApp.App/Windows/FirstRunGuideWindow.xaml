@@ -1,0 +1,150 @@
+<Window x:Class="TranslationApp.Windows.FirstRunGuideWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TranslationApp.Controls"
+        Title="速译 · 首次使用引导" Width="560" Height="560"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen" ShowInTaskbar="False"
+        Background="{DynamicResource Brush.Window}"
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}">
+    <Grid Margin="24,20,24,18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="30 秒完成初始设置" FontSize="{StaticResource FontSize.Headline}"
+                       Foreground="{DynamicResource Brush.TextPrimary}"/>
+            <TextBlock Text="三步确认引擎、热键与本机能力，之后就能直接开始翻译"
+                       Style="{StaticResource Text.Caption}" Margin="0,5,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,18,0,14">
+            <Border x:Name="Step1Dot" Width="24" Height="24" CornerRadius="12"
+                    Background="{DynamicResource Brush.Primary}"/>
+            <Border Width="48" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
+            <Border x:Name="Step2Dot" Width="24" Height="24" CornerRadius="12"
+                    Background="{DynamicResource Brush.SurfaceMuted}"/>
+            <Border Width="48" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
+            <Border x:Name="Step3Dot" Width="24" Height="24" CornerRadius="12"
+                    Background="{DynamicResource Brush.SurfaceMuted}"/>
+        </StackPanel>
+
+        <Grid Grid.Row="2">
+            <Border x:Name="EnginePage" Style="{StaticResource Card}" Padding="18">
+                <StackPanel>
+                    <TextBlock Text="1 / 3 · 选择翻译引擎" FontSize="{StaticResource FontSize.Title}"
+                               FontWeight="{StaticResource Weight.Medium}"/>
+                    <TextBlock Text="只显示当前可直接使用的引擎；以后可在设置中随时切换"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,14"/>
+                    <ComboBox x:Name="EngineSelector" Width="360" HorizontalAlignment="Left"
+                              Style="{StaticResource ComboBox.Modern}"
+                              DisplayMemberPath="Display" SelectedValuePath="Id"/>
+                    <TextBlock x:Name="EngineStatus" Style="{StaticResource Text.Hint}"
+                               TextWrapping="Wrap" Margin="0,12,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border x:Name="HotkeyPage" Style="{StaticResource Card}" Padding="18" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="2 / 3 · 设置核心热键" FontSize="{StaticResource FontSize.Title}"
+                               FontWeight="{StaticResource Weight.Medium}"/>
+                    <TextBlock Text="点击键帽框后按下新组合；Esc 取消录制"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,12"/>
+                    <TextBlock Text="输入翻译" Style="{StaticResource Text.SectionTitle}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
+                        <controls:HotkeyBox x:Name="InputHotkeyBox" Width="300"/>
+                        <Button Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Tag="input" Click="OnResetHotkeyClick"/>
+                    </StackPanel>
+                    <TextBlock Text="划词翻译" Style="{StaticResource Text.SectionTitle}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
+                        <controls:HotkeyBox x:Name="SelectHotkeyBox" Width="300"/>
+                        <Button Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Tag="select" Click="OnResetHotkeyClick"/>
+                    </StackPanel>
+                    <TextBlock Text="截图翻译" Style="{StaticResource Text.SectionTitle}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
+                        <controls:HotkeyBox x:Name="CaptureHotkeyBox" Width="300"/>
+                        <Button Content="恢复默认" Style="{StaticResource Button.Outline}" Margin="10,0,0,0"
+                                Tag="capture" Click="OnResetHotkeyClick"/>
+                    </StackPanel>
+                    <Border x:Name="HotkeyError" Style="{StaticResource Banner.Error}" Margin="0,4,0,0"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="HotkeyErrorText" Style="{StaticResource Text.Hint}"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+                    <TextBlock Style="{StaticResource Text.Hint}" TextWrapping="Wrap" Margin="0,10,0,0"
+                               Text="支持 Ctrl / Alt / Shift / Win + 字母、数字或 F1~F12。与其他全局热键冲突时保留原热键并提示更换。"/>
+                </StackPanel>
+            </Border>
+
+            <Border x:Name="CheckPage" Style="{StaticResource Card}" Padding="18" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="3 / 3 · 运行能力自检" FontSize="{StaticResource FontSize.Title}"
+                               FontWeight="{StaticResource Weight.Medium}"/>
+                    <TextBlock Text="确认翻译引擎、三个核心热键和 OCR 语言包均可工作"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                    <Border Style="{StaticResource Hairline}"/>
+                    <Grid Margin="0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="EngineCheckGlyph" Grid.Column="0" Text="&#xE946;"
+                                   FontFamily="{StaticResource Font.Icon}" VerticalAlignment="Top"/>
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                            <TextBlock Text="翻译引擎" FontWeight="{StaticResource Weight.Medium}"/>
+                            <TextBlock x:Name="EngineCheckDetail" Style="{StaticResource Text.Hint}"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="HotkeyCheckGlyph" Grid.Column="0" Text="&#xE946;"
+                                   FontFamily="{StaticResource Font.Icon}" VerticalAlignment="Top"/>
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                            <TextBlock Text="核心热键" FontWeight="{StaticResource Weight.Medium}"/>
+                            <TextBlock x:Name="HotkeyCheckDetail" Style="{StaticResource Text.Hint}"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="OcrCheckGlyph" Grid.Column="0" Text="&#xE946;"
+                                   FontFamily="{StaticResource Font.Icon}" VerticalAlignment="Top"/>
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                            <TextBlock Text="OCR 语言包" FontWeight="{StaticResource Weight.Medium}"/>
+                            <TextBlock x:Name="OcrCheckDetail" Style="{StaticResource Text.Hint}"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="CheckSummary" Style="{StaticResource Text.Hint}"
+                               TextWrapping="Wrap" Margin="0,10,0,0"/>
+                    <Button x:Name="OpenDoctorButton" Content="打开 Doctor 诊断中心"
+                            Style="{StaticResource Button.Outline}" HorizontalAlignment="Left"
+                            Margin="0,12,0,0" Visibility="Collapsed" Click="OnOpenDoctorClick"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,16,0,0">
+            <Button x:Name="BackButton" Content="上一步" Style="{StaticResource Button.Outline}"
+                    HorizontalAlignment="Left" MinWidth="88" Click="OnBackClick" Visibility="Collapsed"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="SecondaryButton" Content="稍后测试" Style="{StaticResource Button.Tonal}"
+                        MinWidth="88" Margin="0,0,8,0" Visibility="Collapsed" Click="OnSecondaryClick"/>
+                <Button x:Name="NextButton" Content="下一步" Style="{StaticResource Button.Primary}"
+                        MinWidth="96" IsDefault="True" Click="OnNextClick"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

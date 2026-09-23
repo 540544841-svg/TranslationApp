@@ -13,6 +13,14 @@ namespace TranslationApp.Controls;
 /// </summary>
 public partial class HotkeyBox : UserControl
 {
+    public sealed class HotkeyCapturedEventArgs(string hotkey) : EventArgs
+    {
+        public string Hotkey { get; } = hotkey;
+    }
+
+    /// <summary>成功捕获一个有效组合键后触发（文本绑定已更新）。</summary>
+    public event EventHandler<HotkeyCapturedEventArgs>? HotkeyCaptured;
+
     public static readonly DependencyProperty TextProperty = DependencyProperty.Register(
         nameof(Text), typeof(string), typeof(HotkeyBox),
         new FrameworkPropertyMetadata("", FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnTextChanged));
@@ -21,6 +29,10 @@ public partial class HotkeyBox : UserControl
         nameof(IsInvalid), typeof(bool), typeof(HotkeyBox),
         new PropertyMetadata(false));
 
+    public static readonly DependencyProperty StatusProperty = DependencyProperty.Register(
+        nameof(Status), typeof(string), typeof(HotkeyBox),
+        new PropertyMetadata("", OnStatusChanged));
+
     public static readonly DependencyProperty IsRecordingProperty = DependencyProperty.Register(
         nameof(IsRecording), typeof(bool), typeof(HotkeyBox),
         new PropertyMetadata(false, OnIsRecordingChanged));
@@ -28,6 +40,7 @@ public partial class HotkeyBox : UserControl
     public HotkeyBox()
     {
         InitializeComponent();
+        IsKeyboardFocusWithinChanged += OnIsKeyboardFocusWithinChanged;
     }
 
     /// <summary>标准化热键字符串，如 "Alt+D"。</summary>
@@ -44,6 +57,13 @@ public partial class HotkeyBox : UserControl
         set => SetValue(IsInvalidProperty, value);
     }
 
+    /// <summary>录入后的可用性/冲突说明；空值时不占布局。</summary>
+    public string Status
+    {
+        get => (string)GetValue(StatusProperty);
+        set => SetValue(StatusProperty, value);
+    }
+
     /// <summary>是否处于录制中（描边转主色并显示提示）。</summary>
     public bool IsRecording
     {
@@ -57,6 +77,9 @@ public partial class HotkeyBox : UserControl
     private static void OnIsRecordingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((HotkeyBox)d).RefreshDisplay();
 
+    private static void OnStatusChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((HotkeyBox)d).RefreshDisplay();
+
     /// <summary>按当前状态刷新三种呈现：录制提示 / 按键帽 / 空值。</summary>
     private void RefreshDisplay()
     {
@@ -66,6 +89,10 @@ public partial class HotkeyBox : UserControl
         RecordingHint.Visibility = recording ? Visibility.Visible : Visibility.Collapsed;
         Keycaps.Visibility = !recording && !string.IsNullOrEmpty(hotkey) ? Visibility.Visible : Visibility.Collapsed;
         EmptyHint.Visibility = !recording && string.IsNullOrEmpty(hotkey) ? Visibility.Visible : Visibility.Collapsed;
+        StatusText.Text = Status ?? "";
+        StatusText.Visibility = !recording && !string.IsNullOrWhiteSpace(Status)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         if (recording)
         {
@@ -79,26 +106,47 @@ public partial class HotkeyBox : UserControl
     private static IReadOnlyList<string> SplitKeycaps(string hotkey) =>
         hotkey.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private void OnRootMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        Focus(); // 点击任意位置即开始录制
-        e.Handled = true;
-    }
-
-    private void OnBoxGotFocus(object sender, KeyboardFocusChangedEventArgs e)
+    private void BeginRecording()
     {
         IsRecording = true;
+        RecordingHint.Text = "请按下组合键…";
+        SetCurrentValue(StatusProperty, "");
         if (IsInvalid)
         {
-            // 重新录制时清除错误态，给用户干净的起点
             SetCurrentValue(IsInvalidProperty, false);
         }
     }
+
+    private void OnIsKeyboardFocusWithinChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if ((bool)e.NewValue)
+        {
+            BeginRecording();
+        }
+        else
+        {
+            IsRecording = false;
+        }
+    }
+
+    private void OnRootMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        Focus();
+        BeginRecording();
+        e.Handled = true;
+    }
+
+    private void OnBoxGotFocus(object sender, KeyboardFocusChangedEventArgs e) => BeginRecording();
 
     private void OnBoxLostFocus(object sender, KeyboardFocusChangedEventArgs e) => IsRecording = false;
 
     private void OnBoxPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (!IsRecording)
+        {
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             IsRecording = false;
@@ -123,12 +171,14 @@ public partial class HotkeyBox : UserControl
 
         if (!definition.IsValidKey)
         {
-            e.Handled = true; // 不支持的主键（需至少一个修饰键 + 允许的主键）
+            RecordingHint.Text = "需要 Ctrl / Alt / Shift / Win + 字母、数字或 F1~F12";
+            e.Handled = true;
             return;
         }
 
-        SetCurrentValue(TextProperty, definition.ToString()); // 触发 VM 即时保存与重注册
+        SetCurrentValue(TextProperty, definition.ToString());
         IsRecording = false;
+        HotkeyCaptured?.Invoke(this, new HotkeyCapturedEventArgs(definition.ToString()));
         e.Handled = true;
     }
 }
