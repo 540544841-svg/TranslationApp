@@ -58,6 +58,97 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <summary>本次会话的前台应用进程名（FR-058；空 = 不知道 / 不适用）。</summary>
     private string _foregroundApp = "";
 
+    // 单栏翻译与换说法共用一套会话：每次启动都会取消上一轮，旧轮次即使迟到也只能收尾，不能再写 UI/历史/朗读。
+    private TranslationRun? _translationRun;
+    private long _translationSessionVersion;
+
+    /// <summary>
+    /// 一次翻译会话的生命周期：翻译主任务与后台词典任务共享取消令牌。
+    /// CTS 只在所有使用者都结束后释放，避免后台任务仍持有令牌时提前 Dispose。
+    /// </summary>
+    private sealed class TranslationRun
+    {
+        private readonly object _gate = new();
+        private readonly CancellationTokenSource _cts;
+        private int _users = 1;
+        private bool _disposed;
+
+        public TranslationRun(long version, CancellationTokenSource cts)
+        {
+            Version = version;
+            _cts = cts;
+        }
+
+        public long Version { get; }
+
+        public CancellationToken Token => _cts.Token;
+
+        public void Track(Task task)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _users++;
+            }
+
+            _ = task.ContinueWith(
+                static (_, state) => ((TranslationRun)state!).Release(),
+                this,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        public void Cancel()
+        {
+            CancellationTokenSource? cts;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                cts = _cts;
+            }
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 与最后一个后台使用者同时收尾时，Dispose 可能刚发生；会话已结束，无需再取消。
+            }
+        }
+
+        public void Complete() => Release();
+
+        private void Release()
+        {
+            CancellationTokenSource? dispose = null;
+            lock (_gate)
+            {
+                if (_users == 0)
+                {
+                    return;
+                }
+
+                if (--_users == 0)
+                {
+                    _disposed = true;
+                    dispose = _cts;
+                }
+            }
+
+            dispose?.Dispose();
+        }
+    }
+
     public QuickTranslateViewModel(
         TranslatorCatalog catalog,
         AppSettings settings,
@@ -159,15 +250,18 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// 查一次词典（FR-049 本地 mdx + FR-056 AI 兜底）。只在译文成功落地后跑，
     /// 且**在 await 处回到 UI 线程**再改属性。两者都缺席（开关全关 / 非单词）→ 直接清零不查。
     /// </summary>
-    private async Task LookUpDictionaryAsync(string source, string translated)
+    private async Task LookUpDictionaryAsync(string source, string translated, TranslationRun run)
     {
         var mdxAllowed = _dictionaries is not null && _settings.DictionariesEnabled;
         var aiAllowed = _settings.AiDictionaryEnabled;
         if ((!mdxAllowed && !aiAllowed) || !IsSingleWord(source))
         {
-            DictionaryDefinition = "";
-            DictionaryWord = "";
-            DictionarySource = "";
+            if (IsCurrent(run))
+            {
+                DictionaryDefinition = "";
+                DictionaryWord = "";
+                DictionarySource = "";
+            }
             return;
         }
 
@@ -175,7 +269,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         {
             // 首次查词会把资源块解到缓存目录（上百毫秒），AI 词典更是一次网络往返 ——
             // 全放后台，别把译文落地的节奏拖住
-            var hit = await Task.Run(() =>
+            var hit = await Task.Run(async () =>
             {
                 if (mdxAllowed)
                 {
@@ -187,14 +281,16 @@ public partial class QuickTranslateViewModel : ObservableObject
                     }
                 }
 
-                var entry = aiAllowed ? QueryAiDictionary(source) : null;
+                var entry = aiAllowed ? await QueryAiDictionaryAsync(source, run.Token) : null;
                 return entry is null
                     ? null
                     : new DictionaryCard(entry.Wordhead, entry.Definition, "AI 词典");
-            });
+            }, run.Token);
 
             // 等结果期间用户可能已经改写输入或换了会话：过期结果直接丢弃，不给小窗挂上不相干的释义
-            if (!IsSingleWord(InputText) || !string.Equals(InputText.Trim(), source, StringComparison.Ordinal))
+            if (!IsCurrent(run)
+                || !IsSingleWord(InputText)
+                || !string.Equals(InputText.Trim(), source, StringComparison.Ordinal))
             {
                 return;
             }
@@ -213,6 +309,10 @@ public partial class QuickTranslateViewModel : ObservableObject
             DictionarySource = hit.Source ?? "";
             IsDictionaryExpanded = false;
         }
+        catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
+        {
+            // 会话已切换，词典结果已无展示对象。
+        }
         catch (Exception ex)
         {
             // 词典只是加分项：任何异常都不该影响已落地的译文
@@ -229,7 +329,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// 既不该被术语表改写，也不该计入引擎看板（会让 P50 与失败率失真）。
     /// 8 秒拿不到就放弃：这是卡片，不是用户等的答案。
     /// </summary>
-    private AiDictionaryEntry? QueryAiDictionary(string word)
+    private async Task<AiDictionaryEntry?> QueryAiDictionaryAsync(string word, CancellationToken cancellationToken)
     {
         if (GlossaryTranslator.Unwrap(_catalog.Resolve(_settings.Engine))
             is not LlmTranslator { IsConfigured: true } llm)
@@ -237,12 +337,13 @@ public partial class QuickTranslateViewModel : ObservableObject
             return null;
         }
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(AiDictionaryTimeout);
         try
         {
-            using var timeout = new CancellationTokenSource(AiDictionaryTimeout);
-            return llm.QueryDictionaryAsync(word, TargetLanguage, timeout.Token).GetAwaiter().GetResult();
+            return await llm.QueryDictionaryAsync(word, TargetLanguage, timeout.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Log.Debug("AI 词典超时（{Timeout}ms），本次不显示词典卡", (int)AiDictionaryTimeout.TotalMilliseconds);
             return null;
@@ -372,6 +473,7 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// </summary>
     public void ResetForShow(string? notice, string targetLanguage, string? initialText = null, string? sourceLanguage = null)
     {
+        CancelTranslation(); // 旧会话在途时必须先失效，否则迟到结果会写进本次呼出的界面
         InputText = initialText ?? "";
         ResultText = "";
         ErrorText = "";
@@ -423,14 +525,42 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// </summary>
     internal void SetSelectionSession(bool fromSelection) => _selectionSession = fromSelection;
 
-    [RelayCommand]
-    private async Task TranslateAsync()
+    private TranslationRun BeginTranslationSession()
     {
-        if (IsBusy)
+        CancelTranslation();
+        var cts = new CancellationTokenSource();
+        var run = new TranslationRun(++_translationSessionVersion, cts);
+        _translationRun = run;
+        return run;
+    }
+
+    private bool IsCurrent(TranslationRun run) =>
+        run.Version == _translationSessionVersion && !run.Token.IsCancellationRequested;
+
+    private void CompleteTranslationSession(TranslationRun run)
+    {
+        var ownsCurrent = ReferenceEquals(_translationRun, run);
+        if (ownsCurrent && run.Version == _translationSessionVersion)
         {
-            return;
+            IsBusy = false;
         }
 
+        run.Complete();
+    }
+
+    /// <summary>失效当前单栏会话并取消在途请求；迟到响应会被版本号丢弃。</summary>
+    public void CancelTranslation()
+    {
+        _translationSessionVersion++;
+        var run = _translationRun;
+        _translationRun = null;
+        run?.Cancel();
+        IsBusy = false;
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task TranslateAsync()
+    {
         var text = InputText?.Trim() ?? "";
         Log.Debug("翻译请求：输入 {Length} 字符，{Source}→{Target}", text.Length, SourceLanguage, TargetLanguage);
         if (text.Length == 0)
@@ -441,34 +571,54 @@ public partial class QuickTranslateViewModel : ObservableObject
 
         var translator = _catalog.Resolve(_settings.Engine);
         SupportsStyle = TranslatorCatalog.SupportsDirectives(translator);
-
-        // FR-045（P0 批 4）：TM 相似句回填——本地查询替代网络请求，只会更快，不破落定延迟红线
-        if (_settings.TmReuseEnabled && !_tmSkipThisSession)
-        {
-            var tmHit = TmMatcher.Find(text, _history.TmCandidates(TargetLanguage));
-            if (tmHit is not null)
-            {
-                ApplyTmSuccess(text, tmHit);
-                return;
-            }
-        }
-
-        IsBusy = true;
-        ErrorText = "";
-        ResultText = "";
-        StatusText = "翻译中…";
+        var run = BeginTranslationSession();
+        var token = run.Token;
 
         try
         {
-            var result = await TranslateWithDirectiveAsync(translator, text, BuildDirective(translator, text));
-            ApplySuccess(translator, text, result);
+            // FR-045（P0 批 4）：TM 相似句回填——本地查询替代网络请求，只会更快，不破落定延迟红线
+            if (_settings.TmReuseEnabled && !_tmSkipThisSession)
+            {
+                var tmHit = TmMatcher.Find(text, _history.TmCandidates(TargetLanguage));
+                if (tmHit is not null)
+                {
+                    if (IsCurrent(run))
+                    {
+                        ApplyTmSuccess(text, tmHit, run);
+                    }
+                    return;
+                }
+            }
+
+            IsBusy = true;
+            ErrorText = "";
+            ResultText = "";
+            StatusText = "翻译中…";
+
+            var result = await TranslateWithDirectiveAsync(
+                translator, text, BuildDirective(translator, text), token);
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
+            ApplySuccess(translator, text, result, run);
             StatusText = _cleanedNote ? "已清洗换行" : "";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // 新会话/关窗主动取消：静默结束，状态已由取消方接管。
         }
         catch (TranslationException ex)
         {
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
             if (TryResolveFallback(translator, ex, out var fallback))
             {
-                await TranslateWithFallbackAsync(text, translator, fallback, ex);
+                await TranslateWithFallbackAsync(text, translator, fallback, ex, run);
             }
             else
             {
@@ -477,13 +627,18 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
             ErrorText = "发生未知错误";
             StatusText = "";
             Log.Error(ex, "翻译出现未预期异常（引擎={Engine}）", translator.Name);
         }
         finally
         {
-            IsBusy = false;
+            CompleteTranslationSession(run);
         }
     }
 
@@ -492,10 +647,16 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// <param name="autoSpeak">FR-051：换说法时用户在看着译文，不再朗读一遍原文。</param>
     private void ApplySuccess(
         ITranslator translator, string text, TranslationResult result,
+        TranslationRun run,
         bool recordHistory = true, bool autoSpeak = true)
     {
+        if (!IsCurrent(run))
+        {
+            return;
+        }
+
         ResultText = result.TranslatedText;
-        _ = LookUpDictionaryAsync(text, result.TranslatedText);
+        run.Track(LookUpDictionaryAsync(text, result.TranslatedText, run));
         if (!string.IsNullOrEmpty(result.DetectedSourceLanguage))
         {
             _lastDetectedLanguage = result.DetectedSourceLanguage;
@@ -585,16 +746,26 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// 两引擎都失败时**只保留一条**错误条（主引擎的分类文案 = 主因），状态行补充说明已试过备用引擎。
     /// </summary>
     private async Task TranslateWithFallbackAsync(
-        string text, ITranslator primary, ITranslator fallback, TranslationException primaryError)
+        string text, ITranslator primary, ITranslator fallback, TranslationException primaryError, TranslationRun run)
     {
+        if (!IsCurrent(run))
+        {
+            return;
+        }
+
         StatusText = EngineFallback.InProgressStatus(primary.Name, fallback.Name);
         Log.Information("引擎降级：{Primary} → {Fallback}，原因={ErrorType}",
             primary.Id, fallback.Id, primaryError.ErrorType);
 
         try
         {
-            var result = await fallback.TranslateAsync(text, SourceLanguage, TargetLanguage);
-            ApplySuccess(fallback, text, result);
+            var result = await fallback.TranslateAsync(text, SourceLanguage, TargetLanguage, run.Token);
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
+            ApplySuccess(fallback, text, result, run);
             StatusText = EngineFallback.SuccessStatus(primary.Name, fallback.Name, primaryError.Message)
                 + (_cleanedNote ? " · 已清洗换行" : "");
             // P0 批 1 / spec §4.2：主引擎「失败后被降级救回」计 FallbackUsed（失败列已由装饰器记过，不重复）
@@ -606,8 +777,17 @@ public partial class QuickTranslateViewModel : ObservableObject
                 fallback.Id, text.Length, result.TranslatedText.Length);
             NotifyFallbackThreshold(primary, fallback);
         }
+        catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
+        {
+            // 新会话已接管，降级请求静默退出。
+        }
         catch (TranslationException fallbackError)
         {
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
             ErrorText = DescribeError(primaryError.ErrorType);
             StatusText = EngineFallback.BothFailedStatus(fallback.Name);
             Log.Warning("降级后仍失败（备用={Fallback}，错误类型={ErrorType}）：{Reason}",
@@ -676,15 +856,20 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// 不重复入库（同句同译早已在历史里）、不记引擎统计（没有引擎调用）；
     /// 「重新机器翻译」给一次点击机会，点了本会话强制走引擎。
     /// </summary>
-    private void ApplyTmSuccess(string text, TmHit hit)
+    private void ApplyTmSuccess(string text, TmHit hit, TranslationRun run)
     {
+        if (!IsCurrent(run))
+        {
+            return;
+        }
+
         ResultText = hit.Entry.Translated;
         IsTmHit = true;
         var age = DateTimeOffset.UtcNow - hit.Entry.CreatedAt;
         var ageText = age.TotalDays < 1 ? "今天的记录" : $"{age.TotalDays:0} 天前的记录";
         StatusText = $"TM 命中 {hit.Score:P0} · 来自 {ageText}";
         UpdateAlignment(text, hit.Entry.Translated);
-        _ = LookUpDictionaryAsync(text, hit.Entry.Translated);
+        run.Track(LookUpDictionaryAsync(text, hit.Entry.Translated, run));
         RefreshFavoriteState();
         TryAutoSpeakSource(text);
     }
@@ -861,16 +1046,16 @@ public partial class QuickTranslateViewModel : ObservableObject
     }
 
     private Task<TranslationResult> TranslateWithDirectiveAsync(
-        ITranslator translator, string text, TranslationDirective directive) =>
+        ITranslator translator, string text, TranslationDirective directive, CancellationToken cancellationToken) =>
         translator is IPromptDirectiveTranslator directable
-            ? directable.TranslateAsync(text, SourceLanguage, TargetLanguage, directive)
-            : translator.TranslateAsync(text, SourceLanguage, TargetLanguage);
+            ? directable.TranslateAsync(text, SourceLanguage, TargetLanguage, directive, cancellationToken)
+            : translator.TranslateAsync(text, SourceLanguage, TargetLanguage, cancellationToken);
 
     /// <summary>
     /// 换说法（FR-051）：同一原文带新风格重新请求，成功即替换译文；点已激活的按钮 = 取消风格。
     /// 不写历史（同句多译会污染 TM 候选池）、不自动朗读、强制跳过 TM 回填（否则风格打不进回填的译文）。
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanApplyStyle))]
+    [RelayCommand(CanExecute = nameof(CanApplyStyle), AllowConcurrentExecutions = true)]
     private async Task ApplyStyleAsync(string? styleKey)
     {
         var current = TranslationStyles.Parse(ActiveStyleKey);
@@ -888,28 +1073,49 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
 
         var translator = _catalog.Resolve(_settings.Engine);
+        var run = BeginTranslationSession();
         IsBusy = true;
         ErrorText = "";
         StatusText = target == TranslationStyle.None ? "恢复原样…" : $"{target.DisplayName()}…";
         try
         {
-            var result = await TranslateWithDirectiveAsync(translator, text, BuildDirective(translator, text));
-            ApplySuccess(translator, text, result, recordHistory: false, autoSpeak: false);
+            var result = await TranslateWithDirectiveAsync(
+                translator, text, BuildDirective(translator, text), run.Token);
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
+            ApplySuccess(translator, text, result, run, recordHistory: false, autoSpeak: false);
             StatusText = target == TranslationStyle.None ? "已恢复原样" : $"已换说法：{target.DisplayName()}";
+        }
+        catch (OperationCanceledException) when (run.Token.IsCancellationRequested)
+        {
+            // 新会话已接管，换说法请求静默退出。
         }
         catch (TranslationException ex)
         {
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
             ReportFailure(translator, ex);
         }
         catch (Exception ex)
         {
+            if (!IsCurrent(run))
+            {
+                return;
+            }
+
             ErrorText = "发生未知错误";
             StatusText = "";
             Log.Error(ex, "换说法出现未预期异常（引擎={Engine}）", translator.Name);
         }
         finally
         {
-            IsBusy = false;
+            CompleteTranslationSession(run);
         }
     }
 

@@ -424,7 +424,7 @@ public sealed class AppSettings
     /// <summary>首次运行上手卡是否已看过（FR-059）：看过就不再弹，设置页可再看一次。</summary>
     public bool OnboardingShown { get; set; }
 
-    // ==================== 签名更新 / 备份 ====================
+    // ==================== 签名更新 / 备份 / 原位替换 ====================
 
     /// <summary>签名更新清单地址；空 = 未配置更新通道。</summary>
     public string UpdateManifestUrl { get; set; } = "";
@@ -434,4 +434,13 @@ public sealed class AppSettings
 
     /// <summary>最近一次检查更新的 UTC 时间（ISO 8601）；仅用于展示。</summary>
     public string LastUpdateCheckUtc { get; set; } = "";
+
+    /// <summary>“翻译并替换”热键；仅在 <see cref="ReplaceSelectionEnabled"/> 开启时注册。</summary>
+    public string HotkeyReplaceTranslate { get; set; } = "Alt+R";
+
+    /// <summary>启用“翻译并替换选中文本”；默认关，避免用户不熟悉时误替换。</summary>
+    public bool ReplaceSelectionEnabled { get; set; }
+
+    /// <summary>粘贴替换后是否写入翻译历史；默认写入，隐私模式下始终不写。</summary>
+    public bool ReplaceWritesHistory { get; set; } = true;
 }

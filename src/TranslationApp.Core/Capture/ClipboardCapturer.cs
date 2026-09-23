@@ -19,7 +19,7 @@ public interface ITextCapturer
 
 /// <summary>
 /// 剪贴板取词器（FR-005 MVP 唯一方案）：
-/// 1. 备份剪贴板文本；2. SendInput 模拟 Ctrl+C；3. 轮询剪贴板序号变化（上限 300ms / 间隔 30ms）；
+/// 1. 备份剪贴板文本；2. SendInput 模拟 Ctrl+C；3. 轮询剪贴板序号变化（上限 300ms / 间隔 15ms）；
 /// 4. 读取 Unicode 文本；5. 还原剪贴板。
 /// 全流程异常保护：还原失败只记日志，绝不上抛导致程序崩溃。
 /// </summary>
@@ -31,11 +31,11 @@ public sealed class ClipboardCapturer : ITextCapturer
     private const int ClipboardOpenRetries = 5;
     private const int ClipboardRetryDelayMs = 20;
     private const int PollTimeoutMs = 300;   // 轮询上限（FR-005）
-    private const int PollIntervalMs = 30;   // 轮询间隔（FR-005）
+    private const int PollIntervalMs = 15;   // 轮询间隔（FR-005）
     private const int CaptureAttempts = 3;   // 首次未复制成功时重试（个别应用首次按键会被自身状态吞掉）
     private const int AttemptIntervalMs = 60;
-    private const int ModifierReleaseTimeoutMs = 500;
-    private const int ModifierPollIntervalMs = 25;
+    private const int ModifierReleaseTimeoutMs = 300;
+    private const int ModifierPollIntervalMs = 10;
     private const ushort VkShift = 0x10;
     private const ushort VkControl = 0x11;
     private const ushort VkMenu = 0x12;
@@ -50,16 +50,21 @@ public sealed class ClipboardCapturer : ITextCapturer
 
     private readonly Action<string>? _log;
     private readonly Action<TimeSpan>? _suppressFor;
+    private readonly IClipboardSnapshotProvider? _snapshotProvider;
 
     /// <param name="log">可选的日志回调（Core 层不依赖具体日志框架）。</param>
     /// <param name="suppressFor">
     /// 抑制剪贴板监听的回调（FR-017）：本程序写剪贴板（还原取词内容）时必须让监听器忽略这次变化，
     /// 否则「监听剪贴板 → 自动翻译」会与本程序的还原动作互相触发形成循环。
     /// </param>
-    public ClipboardCapturer(Action<string>? log = null, Action<TimeSpan>? suppressFor = null)
+    public ClipboardCapturer(
+        Action<string>? log = null,
+        Action<TimeSpan>? suppressFor = null,
+        IClipboardSnapshotProvider? snapshotProvider = null)
     {
         _log = log;
         _suppressFor = suppressFor;
+        _snapshotProvider = snapshotProvider;
     }
 
     /// <summary>
@@ -79,46 +84,70 @@ public sealed class ClipboardCapturer : ITextCapturer
         }
 
         var originalText = TryGetClipboardText();
+        var snapshot = _snapshotProvider?.Capture();
         var sequenceBefore = GetClipboardSequenceNumber();
         _log?.Invoke(
             $"取词开始：目标窗口={DescribeForegroundWindow()}，剪贴板原文本 {originalText?.Length ?? -1} 字符，序号={sequenceBefore}");
 
         string? captured = null;
-        for (var attempt = 1; attempt <= CaptureAttempts && captured is null; attempt++)
+        uint? copiedSequence = null;
+        var copySent = false;
+        try
         {
-            if (attempt > 1)
+            for (var attempt = 1; attempt <= CaptureAttempts && captured is null; attempt++)
             {
-                await Task.Delay(AttemptIntervalMs, cancellationToken);
+                if (attempt > 1)
+                {
+                    await Task.Delay(AttemptIntervalMs, cancellationToken);
+                }
+
+                // 关键：热键在按键按下的瞬间触发，此时用户往往还按着 Alt/Ctrl，
+                // 若不等待松开，模拟的 Ctrl+C 会变成 Ctrl+Alt+C 而被目标应用忽略（取词失败的根因）。
+                var waited = await WaitForModifiersReleasedAsync(cancellationToken);
+                if (waited > 0)
+                {
+                    _log?.Invoke($"等待修饰键松开 {waited}ms 后再模拟复制（第 {attempt} 次）");
+                }
+
+                try
+                {
+                    SendCopyKeystroke();
+                    copySent = true;
+                }
+                catch (Exception ex)
+                {
+                    _log?.Invoke($"模拟复制按键失败：{ex.Message}");
+                    break;
+                }
+
+                captured = await WaitForClipboardTextAsync(
+                    sequenceBefore, cancellationToken, sequence => copiedSequence = sequence);
+                var sequenceAfter = GetClipboardSequenceNumber();
+                if (sequenceAfter != sequenceBefore)
+                {
+                    copiedSequence = sequenceAfter;
+                }
+
+                if (captured is null && sequenceAfter != sequenceBefore)
+                {
+                    break; // 剪贴板已变化但内容为空：说明确实没有可取的文本，无需重试
+                }
             }
 
-            // 关键：热键在按键按下的瞬间触发，此时用户往往还按着 Alt/Ctrl，
-            // 若不等待松开，模拟的 Ctrl+C 会变成 Ctrl+Alt+C 而被目标应用忽略（取词失败的根因）。
-            var waited = await WaitForModifiersReleasedAsync(cancellationToken);
-            if (waited > 0)
-            {
-                _log?.Invoke($"等待修饰键松开 {waited}ms 后再模拟复制（第 {attempt} 次）");
-            }
-
-            try
-            {
-                SendCopyKeystroke();
-            }
-            catch (Exception ex)
-            {
-                _log?.Invoke($"模拟复制按键失败：{ex.Message}");
-                break;
-            }
-
-            captured = await WaitForClipboardTextAsync(sequenceBefore, cancellationToken);
-            if (captured is null && GetClipboardSequenceNumber() != sequenceBefore)
-            {
-                break; // 剪贴板已变化但内容为空：说明确实没有可取的文本，无需重试
-            }
+            return captured;
         }
+        finally
+        {
+            if (copySent && copiedSequence is null && cancellationToken.IsCancellationRequested)
+            {
+                // Ctrl+C 可能已在取消信号到达前发出，目标应用稍后才写入剪贴板。
+                // 取词任务已不再等待结果，但仍要给这段尾部窗口一次有界的还原机会。
+                copiedSequence = await WaitForClipboardChangeAsync(sequenceBefore);
+            }
 
-        _log?.Invoke($"取词结束：序号={GetClipboardSequenceNumber()}，取得 {captured?.Length ?? -1} 字符");
-        RestoreClipboard(originalText, sequenceBefore);
-        return captured;
+            _log?.Invoke($"取词结束：序号={GetClipboardSequenceNumber()}，取得 {captured?.Length ?? -1} 字符");
+            RestoreClipboard(snapshot, originalText, copiedSequence);
+        }
     }
 
     /// <summary>
@@ -150,43 +179,92 @@ public sealed class ClipboardCapturer : ITextCapturer
         return false;
     }
 
-    /// <summary>轮询等待剪贴板更新并读取文本（FR-005：上限 300ms、间隔 30ms）。</summary>
-    private async Task<string?> WaitForClipboardTextAsync(uint sequenceBefore, CancellationToken cancellationToken)
+    /// <summary>轮询等待剪贴板更新并读取文本（FR-005：上限 300ms、间隔 15ms）。</summary>
+    private static async Task<string?> WaitForClipboardTextAsync(
+        uint sequenceBefore, CancellationToken cancellationToken, Action<uint> onChanged)
     {
         var elapsed = 0;
         while (elapsed < PollTimeoutMs)
         {
-            await Task.Delay(PollIntervalMs, cancellationToken);
+            try
+            {
+                await Task.Delay(PollIntervalMs, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // 取消可能发生在 Ctrl+C 已生效、下一次轮询尚未执行时；先记录序号再退出，
+                // 外层 finally 才能据此决定是否还原剪贴板。
+                RecordClipboardChange(sequenceBefore, onChanged);
+                throw;
+            }
             elapsed += PollIntervalMs;
 
-            if (GetClipboardSequenceNumber() == sequenceBefore)
+            var sequenceAfter = GetClipboardSequenceNumber();
+            if (sequenceAfter == sequenceBefore)
             {
                 continue; // 剪贴板未变化 = 还没复制成功，继续等待
             }
+
+            onChanged(sequenceAfter);
 
             var text = TryGetClipboardText();
             return string.IsNullOrWhiteSpace(text) ? null : text;
         }
 
+        RecordClipboardChange(sequenceBefore, onChanged);
         return null; // 超时：无选中或目标应用不支持复制，调用方降级为手动输入
     }
 
+    /// <summary>有界等待剪贴板序号变化，不再受已取消令牌影响（仅用于取消后的尾部还原）。</summary>
+    private static async Task<uint?> WaitForClipboardChangeAsync(uint sequenceBefore)
+    {
+        for (var elapsed = 0; elapsed < PollTimeoutMs; elapsed += PollIntervalMs)
+        {
+            var current = GetClipboardSequenceNumber();
+            if (current != sequenceBefore)
+            {
+                return current;
+            }
+
+            await Task.Delay(PollIntervalMs);
+        }
+
+        var final = GetClipboardSequenceNumber();
+        return final == sequenceBefore ? null : final;
+    }
+
+    private static void RecordClipboardChange(uint sequenceBefore, Action<uint> onChanged)
+    {
+        var current = GetClipboardSequenceNumber();
+        if (current != sequenceBefore)
+        {
+            onChanged(current);
+        }
+    }
+
     /// <summary>还原剪贴板；仅在剪贴板已被我们改变时执行，失败只记日志。</summary>
-    private void RestoreClipboard(string? originalText, uint sequenceBefore)
+    private void RestoreClipboard(
+        IClipboardSnapshot? snapshot, string? originalText, uint? copiedSequence)
     {
         try
         {
-            if (GetClipboardSequenceNumber() == sequenceBefore)
+            if (copiedSequence is null || GetClipboardSequenceNumber() != copiedSequence.Value)
             {
-                return; // 剪贴板没被动过，无需还原
+                return; // 未复制成功，或用户随后又改了剪贴板：不覆盖用户的新内容
             }
 
             // 还原前先抑制剪贴板监听，避免本程序的写入被当成「用户复制」而触发翻译
             _suppressFor?.Invoke(TimeSpan.FromSeconds(1));
 
+            if (snapshot is not null && _snapshotProvider?.TryRestore(snapshot) == true)
+            {
+                _log?.Invoke("剪贴板已按原格式完整还原");
+                return;
+            }
+
             if (originalText is null)
             {
-                _log?.Invoke("原剪贴板无文本内容（可能为图片等格式），已跳过还原");
+                _log?.Invoke("原剪贴板无文本内容（可能为图片等格式），快照恢复失败后无法降级还原");
                 return;
             }
 

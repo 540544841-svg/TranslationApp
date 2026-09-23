@@ -981,6 +981,9 @@ public partial class QuickWindow : Window
         // FR-020 AC 4：关窗即取消在途对比请求，不留后台任务
         _vm.CancelComparison();
 
+        // 单栏请求同样随窗口隐藏失效：迟到响应不得再写回下一次会话。
+        _vm.CancelTranslation();
+
         // FR-053：跟读同理——窗口都隐藏了，语音不能还在念下一句
         _vm.CancelShadowReading();
 
