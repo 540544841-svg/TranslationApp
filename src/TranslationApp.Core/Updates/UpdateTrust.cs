@@ -11,24 +11,26 @@ namespace TranslationApp.Core.Updates;
 public static class UpdateTrust
 {
     /// <summary>当前内置发布公钥标识。</summary>
-    public const string ReleaseKeyId = "release-2026-01";
+    public const string ReleaseKeyId = "release-2026-02";
 
     /// <summary>
     /// 发布公钥。私钥不得进入仓库或发布包，只保存在发布机的离线密钥库中。
     /// 更换发布密钥时必须同时提升 <see cref="ReleaseKeyId"/> 并发布一次普通更新，
     /// 让旧版本先把新公钥带过去。
+    /// 2026-09-23 轮换：旧密钥（release-2026-01）的私钥已丢失，重新生成 3072 位密钥对并把标识升到
+    /// release-2026-02。旧版本未发布过正式更新，因此没有需要兼容的历史客户端。
     /// </summary>
     public const string ReleasePublicKeyPem = """
         -----BEGIN PUBLIC KEY-----
-        MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA6wZb249xEkub6RDynndX
-        t8z+xKMMJVrGZ39dQFfFcGXWXE9PBBroDJ6FZ2qIcS2vUfYreoQ1i/fCeujVQnqf
-        1Xid7VShjuwEjRa6cqKgtCeSK1R8OZby9sGxj6DaNKFY1Os2P+dm2czerFRl7wEM
-        1QOXWbalBSFKNE40F//6OkM6D8DcCdGEvTcKdi1m1TV1kgX91ZVMUkRHyOhct4/b
-        oOs/vN86LNz2meCxY95h81BzJhn7ks7YKRtx8lyZiUrim5vFZd7rTox/Bmv1D9lg
-        ptFnUZ58NbTRlVvs8C9gQ9Hz9B6htrP58Y4Cnflodjs0KucerCO6F2TKABQlIqNr
-        Z6JJquPA37PXLK5TMs2qTJFQlzYFezZlG2VLKE8x2M5tZ9fyrQywb/nEAIoHWnqJ
-        bC9n45sZkevQH7tRc6Ys/uIXjoI7WI3L+t83QNbRfMuFqo0pcs/lctlYaF7XPcuo
-        EyAXvh9qUD4Y0qlDQkSS4qiY1XXnydcyApM/6lwE+tadAgMBAAE=
+        MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvmq1P3VJf4BgtLIVUS9S
+        JoedwNwclD9sW/ZGigqIcstJnxQ8o239qdBM8ubi+sir4dXESXvVeF0kFm7jakHy
+        uSqQbhArlchrdipuzMbVn+zbXWU9HvY8jZbF+SKlFave+hcNwugKZQlAwEYXbtsX
+        mes/wv4tqa44b441GVPqzWZXBGiMmUNXcVExqJG5CZTZtDtztEJ4Hmr+G34vhXdk
+        a0hfuGe8Xexa0tdkFLEWUhnubhvKcEF8AFSoCEceIQxrgzNQbLYna2pzDGbsWs8X
+        De98jTLcDu6TtPLprKhJyd/SSJ3hziJWpkPFxZw6maXPUf2+Ub7wJgFzOkbMdJlC
+        p6RqGJzXa4KjkiMsDzgUtHEOtL+4uaincpPS4J1I1Oa+mO9147RSdX8hzO20QPmG
+        7q1cTtRJhHql77f6RjMwEiYgCXlZ9UBWw8W9+VUEDv/U/aOcGeZGBTYRCZ0nj0fe
+        eY17FWjbvRJVlh8+lG087F98YMmup8fmvzKF2OPeb5EdAgMBAAE=
         -----END PUBLIC KEY-----
         """;
 

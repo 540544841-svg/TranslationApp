@@ -13,8 +13,8 @@
     <LangVersion>12</LangVersion>
     <RootNamespace>TranslationApp</RootNamespace>
     <AssemblyName>TranslationApp</AssemblyName>
-    <!-- 0.2.0：签名更新、备份恢复、原位替换、可编辑 TM、术语表 v2、三步引导与 Doctor。 -->
-    <Version>0.2.0</Version>
+    <!-- 0.3.0：OCR 原生引擎进程隔离（同 EXE 子进程 + 命名管道）+ 发布密钥轮换（release-2026-02）。 -->
+    <Version>0.3.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- PDB 内嵌，保证 publish 产物只有单 EXE -->

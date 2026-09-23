@@ -38,7 +38,7 @@ param(
 
     [string]$Notes = "",
 
-    [string]$KeyId = "release-2026-01",
+    [string]$KeyId = "release-2026-02",
 
     [string]$OutputPath = "latest.json",
 
@@ -111,8 +111,10 @@ try {
             throw "无法从 UpdateTrust.cs 读取内置公钥"
         }
 
-        $trustedPem = ($publicKeyMatch.Groups['pem'].Value -replace "`r?`n", "`n").Trim()
-        $derivedPem = ($rsa.ExportSubjectPublicKeyInfoPem() -replace "`r?`n", "`n").Trim()
+        # 比完整性而非比排版：C# 原始字符串字面量在源码里带缩进（运行时已被剔除），
+        # 因此剔除全部空白字符后再比对，否则缩进差异会让这项校验恒失败。
+        $trustedPem = ($publicKeyMatch.Groups['pem'].Value -replace '\s', '')
+        $derivedPem = ($rsa.ExportSubjectPublicKeyInfoPem() -replace '\s', '')
         if ($trustedPem -ne $derivedPem) {
             throw "私钥与程序内置发布公钥不匹配；请先用 new-update-signing-key.ps1 轮换密钥并重建程序。"
         }

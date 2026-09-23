@@ -24,3 +24,34 @@ jobs:
 
       - name: Test
         run: dotnet test TranslationApp.sln -c Release --no-build --no-restore
+
+  # 发布链路冒烟：跑与 build\publish.ps1 完全同一条 dotnet publish（自包含单文件 win-x64）。
+  # 目的是把「发布时才暴露」的问题（单文件裁剪、原生库嵌入、嵌入模型资源、体积门禁）提前到每次推送。
+  publish-smoke:
+    runs-on: windows-latest
+    needs: build-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish single-file win-x64
+        run: >-
+          dotnet publish src/TranslationApp.App/TranslationApp.App.csproj
+          -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Verify artifact (单文件、体积、嵌入模型资源)
+        shell: pwsh
+        run: |
+          $exe = Get-Item publish\TranslationApp.exe
+          $sizeMB = [math]::Round($exe.Length / 1MB, 1)
+          Write-Host "发布产物：$($exe.FullName)（$sizeMB MB）"
+          $others = Get-ChildItem publish -File | Where-Object { $_.Name -ne 'TranslationApp.exe' }
+          if ($others) { throw "单文件发布出现额外文件：$($others.Name -join ', ')" }
+          if ($sizeMB -gt 200) { throw "单 EXE 体积 $sizeMB MB 超出 200MB 硬约束。" }
