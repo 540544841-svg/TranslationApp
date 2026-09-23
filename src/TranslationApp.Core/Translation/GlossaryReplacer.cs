@@ -31,7 +31,8 @@ public static class GlossaryReplacer
     private const char TokenClose = '\uE001';
 
     public static GlossaryResult Apply(
-        string translated, IReadOnlyList<GlossaryItem> items, string? sourceText = null)
+        string translated, IReadOnlyList<GlossaryItem> items, string? sourceText = null,
+        string? sourceLanguage = null, string? targetLanguage = null)
     {
         if (string.IsNullOrEmpty(translated) || items is not { Count: > 0 })
             return new GlossaryResult(translated ?? string.Empty, 0,
@@ -40,7 +41,8 @@ public static class GlossaryReplacer
         try
         {
             var usable = items
-                .Where(i => i.Enabled && !string.IsNullOrWhiteSpace(i.Source) && !string.IsNullOrWhiteSpace(i.Target))
+                .Where(i => i.Enabled && !string.IsNullOrWhiteSpace(i.Source) && !string.IsNullOrWhiteSpace(i.Target)
+                            && AppliesToLanguage(i, sourceLanguage, targetLanguage))
                 .OrderByDescending(i => i.Source.Length)
                 .Take(MaxItems)
                 .ToList();
@@ -53,22 +55,29 @@ public static class GlossaryReplacer
 
             foreach (var item in usable)
             {
-                // 反向保护（FR-041）：原文里已有 Target → 该词对本条内容不可靠，跳过
-                if (sourceText is not null
-                    && sourceText.Contains(item.Target, StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    conflicts.Add(new GlossaryReplacement(item.Source, item.Target, 0));
-                    continue;
+                    // 反向保护（FR-041）：原文里已有 Target → 该词对本条内容不可靠，跳过
+                    if (sourceText is not null
+                        && sourceText.Contains(item.Target, StringComparison.OrdinalIgnoreCase))
+                    {
+                        conflicts.Add(new GlossaryReplacement(item.Source, item.Target, 0));
+                        continue;
+                    }
+
+                    var token = $"{TokenOpen}{tokens.Count}{TokenClose}";
+                    var (replaced, count) = ReplaceOne(text, item, token);
+                    if (count == 0) continue;
+
+                    tokens.Add((token, item.Target));
+                    text = replaced;
+                    totalHits += count;
+                    applied.Add(new GlossaryReplacement(item.Source, item.Target, count));
                 }
-
-                var token = $"{TokenOpen}{tokens.Count}{TokenClose}";
-                var (replaced, count) = ReplaceOne(text, item, token);
-                if (count == 0) continue;
-
-                tokens.Add((token, item.Target));
-                text = replaced;
-                totalHits += count;
-                applied.Add(new GlossaryReplacement(item.Source, item.Target, count));
+                catch
+                {
+                    // 单条无效正则只跳过该条，不能让整张术语表失效。
+                }
             }
 
             foreach (var (token, target) in tokens)
@@ -86,6 +95,26 @@ public static class GlossaryReplacer
 
     private static (string, int) ReplaceOne(string text, GlossaryItem item, string token)
     {
+        var mode = GlossaryMatchModes.Normalize(item.MatchMode);
+        if (mode == GlossaryMatchModes.Regex)
+        {
+            var regex = new Regex(
+                item.Source,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(100));
+            var count = regex.Matches(text).Count;
+            return count > 0 ? (regex.Replace(text, token), count) : (text, 0);
+        }
+
+        if (mode is GlossaryMatchModes.Contains or GlossaryMatchModes.CaseSensitive)
+        {
+            var comparison = mode == GlossaryMatchModes.CaseSensitive
+                ? StringComparison.Ordinal
+                : StringComparison.OrdinalIgnoreCase;
+            var count = CountOccurrences(text, item.Source, comparison);
+            return count > 0 ? (ReplaceOrdinal(text, item.Source, token, comparison), count) : (text, 0);
+        }
+
         if (item.Source.All(c => c < 128))
         {
             // ASCII：词首/词尾分别判断是否需要词界（"c++" 结尾非词字符，不要求后置边界）
@@ -118,6 +147,56 @@ public static class GlossaryReplacer
     }
 
     /// <summary>
+    private static bool AppliesToLanguage(GlossaryItem item, string? sourceLanguage, string? targetLanguage)
+    {
+        return LanguageMatches(item.SourceLanguage, sourceLanguage)
+               && LanguageMatches(item.TargetLanguage, targetLanguage);
+    }
+
+    private static bool LanguageMatches(string scope, string? actual)
+    {
+        if (string.IsNullOrWhiteSpace(scope) || scope == "*") return true;
+        if (string.IsNullOrWhiteSpace(actual)) return true;
+        return string.Equals(scope.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CountOccurrences(string text, string needle, StringComparison comparison)
+    {
+        var count = 0;
+        var start = 0;
+        while (start < text.Length)
+        {
+            var index = text.IndexOf(needle, start, comparison);
+            if (index < 0) break;
+            count++;
+            start = index + needle.Length;
+        }
+
+        return count;
+    }
+
+    private static string ReplaceOrdinal(
+        string text, string source, string target, StringComparison comparison)
+    {
+        var builder = new StringBuilder();
+        var start = 0;
+        while (start < text.Length)
+        {
+            var index = text.IndexOf(source, start, comparison);
+            if (index < 0)
+            {
+                builder.Append(text, start, text.Length - start);
+                break;
+            }
+
+            builder.Append(text, start, index - start);
+            builder.Append(target);
+            start = index + source.Length;
+        }
+
+        return builder.ToString();
+    }
+
     /// 解析设置里的术语 JSON。损坏（手改配置 / 版本不兼容）时返回空表并置 corrupted，
     /// 由 UI 提示「按空表运行」；自动过滤空词条并截断到 <see cref="MaxItems"/>。
     /// </summary>
@@ -132,7 +211,15 @@ public static class GlossaryReplacer
             if (raw is null) { corrupted = true; return new List<GlossaryItem>(); }
             return raw
                 .Where(i => !string.IsNullOrWhiteSpace(i?.Source) && !string.IsNullOrWhiteSpace(i?.Target))
-                .Select(i => i with { Source = i.Source.Trim(), Target = i.Target.Trim() })
+                .Select(i => i with
+                {
+                    Source = i.Source.Trim(),
+                    Target = i.Target.Trim(),
+                    SourceLanguage = string.IsNullOrWhiteSpace(i.SourceLanguage) ? "*" : i.SourceLanguage.Trim(),
+                    TargetLanguage = string.IsNullOrWhiteSpace(i.TargetLanguage) ? "*" : i.TargetLanguage.Trim(),
+                    MatchMode = GlossaryMatchModes.Normalize(i.MatchMode),
+                    Note = i.Note?.Trim() ?? "",
+                })
                 .Take(MaxItems)
                 .ToList();
         }

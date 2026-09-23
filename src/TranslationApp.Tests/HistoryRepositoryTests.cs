@@ -93,6 +93,50 @@ public sealed class HistoryRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void Update_ChangesTranslationAndQualityState()
+    {
+        _history.Add("hello", "你好", "en", "zh-CN", "Bing");
+        var record = _history.Search(null).Single();
+
+        var changed = _history.Update(record.Id, "您好", reviewed: true, rejected: false);
+
+        Assert.Equal(1, changed);
+        var updated = _history.Search(null).Single();
+        Assert.Equal("您好", updated.TranslatedText);
+        Assert.True(updated.Reviewed);
+        Assert.False(updated.Rejected);
+        Assert.NotNull(updated.EditedAt);
+    }
+
+    [Fact]
+    public void TmCandidates_ExcludeRejected_AndPrioritizeReviewed()
+    {
+        _history.Add("same source", "普通译文", "en", "zh-CN", "Bing");
+        _history.Add("same source", "校对译文", "en", "zh-CN", "Bing");
+        _history.Add("same source", "禁用译文", "en", "zh-CN", "Bing");
+        var records = _history.Search(null);
+        _history.Update(records.Single(item => item.TranslatedText == "校对译文").Id,
+            "校对译文", reviewed: true, rejected: false);
+        _history.Update(records.Single(item => item.TranslatedText == "禁用译文").Id,
+            "禁用译文", reviewed: false, rejected: true);
+
+        var candidates = _history.TmCandidates("zh-CN");
+
+        Assert.Equal("校对译文", candidates[0].Translated);
+        Assert.DoesNotContain(candidates, item => item.Translated == "禁用译文");
+    }
+
+    [Fact]
+    public void ContextSource_ExcludesRejectedRecord()
+    {
+        _history.Add("旧句", "旧译", "en", "zh-CN", "Bing");
+        var record = _history.Search(null).Single();
+        _history.Update(record.Id, record.TranslatedText, reviewed: false, rejected: true);
+
+        Assert.Null(_history.ContextSource("zh-CN", "当前句"));
+    }
+
+    [Fact]
     public void Clear_RemovesAllRecords()
     {
         _history.Add("a", "甲", "en", "zh-CN", "Bing");

@@ -1,7 +1,7 @@
 namespace TranslationApp.Core.History;
 
 /// <summary>一条 TM 候选（来自翻译历史的轻量投影）。</summary>
-public sealed record TmCandidate(string Source, string Translated, DateTimeOffset CreatedAt);
+public sealed record TmCandidate(string Source, string Translated, DateTimeOffset CreatedAt, bool Reviewed = false);
 
 /// <summary>命中结果：候选 + 相似度（0~1）。</summary>
 public sealed record TmHit(TmCandidate Entry, double Score);

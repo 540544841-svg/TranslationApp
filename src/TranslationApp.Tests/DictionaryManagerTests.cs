@@ -111,7 +111,7 @@ public sealed class DictionaryManagerTests : IDisposable
 
         // 列表可见：设置页要能说明「词典装着，只是功能关了」；查询与懒扫描一律被门控挡住
         Assert.Null(manager.Query("c"));
-        Assert.Equal(1, manager.List().Count);
+        Assert.Single(manager.List());
     }
 
     [Fact]

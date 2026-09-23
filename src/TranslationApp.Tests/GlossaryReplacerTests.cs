@@ -157,4 +157,82 @@ public class GlossaryReplacerTests
         Assert.Equal(src[0].Enabled, back[0].Enabled);
         Assert.Equal(src[1].Enabled, back[1].Enabled);
     }
+
+    [Fact]
+    public void Apply_ContainsMode_MatchesInsideWord()
+    {
+        var item = new GlossaryItem("cat", "猫", MatchMode: GlossaryMatchModes.Contains);
+        var result = GlossaryReplacer.Apply("concatenate", [item]);
+
+        Assert.Equal("con猫enate", result.Text);
+    }
+
+    [Fact]
+    public void Apply_CaseSensitiveMode_IsOrdinal()
+    {
+        var item = new GlossaryItem("API", "接口", MatchMode: GlossaryMatchModes.CaseSensitive);
+
+        Assert.Equal("接口 and api", GlossaryReplacer.Apply("API and api", [item]).Text);
+    }
+
+    [Fact]
+    public void Apply_RegexMode_ReplacesPattern()
+    {
+        var item = new GlossaryItem(@"\b[A-Z]{2}\d{2}\b", "编号", MatchMode: GlossaryMatchModes.Regex);
+
+        var result = GlossaryReplacer.Apply("订单 AB12 与 CD34", [item]);
+
+        Assert.Equal("订单 编号 与 编号", result.Text);
+        Assert.Equal(2, result.Hits);
+    }
+
+    [Fact]
+    public void Apply_InvalidRegex_SkipsOnlyThatItem()
+    {
+        var broken = new GlossaryItem("[", "错误", MatchMode: GlossaryMatchModes.Regex);
+        var valid = Item("memory", "内存");
+
+        var result = GlossaryReplacer.Apply("memory", [broken, valid]);
+
+        Assert.Equal("内存", result.Text);
+        Assert.Equal(1, result.Hits);
+    }
+
+    [Fact]
+    public void Apply_LanguageScope_FiltersByLanguagePair()
+    {
+        var scoped = new GlossaryItem(
+            "memory", "内存", SourceLanguage: "en", TargetLanguage: "zh-CN");
+
+        Assert.Equal("内存", GlossaryReplacer.Apply("memory", [scoped], sourceLanguage: "en", targetLanguage: "zh-CN").Text);
+        Assert.Equal("memory", GlossaryReplacer.Apply("memory", [scoped], sourceLanguage: "en", targetLanguage: "ja").Text);
+    }
+
+    [Fact]
+    public void Parse_OldJson_DefaultsV2Fields()
+    {
+        var items = GlossaryReplacer.Parse(
+            """[{"Source":"memory","Target":"内存","Enabled":true}]""", out var corrupted);
+
+        Assert.False(corrupted);
+        var item = Assert.Single(items);
+        Assert.Equal("*", item.SourceLanguage);
+        Assert.Equal("*", item.TargetLanguage);
+        Assert.Equal(GlossaryMatchModes.Word, item.MatchMode);
+        Assert.Equal("", item.Note);
+    }
+
+    [Fact]
+    public void Serialize_Parse_Roundtrip_PreservesV2Fields()
+    {
+        var source = new GlossaryItem(
+            "SKU", "商品编码", SourceLanguage: "en", TargetLanguage: "zh-CN",
+            MatchMode: GlossaryMatchModes.CaseSensitive, Note: "Ozon 商品");
+
+        var parsed = Assert.Single(GlossaryReplacer.Parse(
+            GlossaryReplacer.Serialize([source]), out var corrupted));
+
+        Assert.False(corrupted);
+        Assert.Equal(source, parsed);
+    }
 }

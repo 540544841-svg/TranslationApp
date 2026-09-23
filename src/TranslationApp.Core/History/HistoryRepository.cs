@@ -25,6 +25,9 @@ public interface IHistoryRepository
 
     void Delete(long id);
 
+    /// <summary>编辑 TM 译文并更新校对/禁用状态；返回受影响行数。</summary>
+    int Update(long id, string translatedText, bool reviewed, bool rejected);
+
     /// <summary>清空全部历史（FR-014「一键清空」）。</summary>
     void Clear();
 
@@ -56,11 +59,16 @@ public sealed class HistoryRepository : IHistoryRepository
         public string SourceLanguage { get; init; } = "";
         public string TargetLanguage { get; init; } = "";
         public string Engine { get; init; } = "";
+        public bool Reviewed { get; init; }
+        public bool Rejected { get; init; }
+        public long? EditedAtMs { get; init; }
 
         public TranslationRecord ToRecord() => new(
             Id,
             DateTimeOffset.FromUnixTimeMilliseconds(CreatedAtMs),
-            SourceText, TranslatedText, SourceLanguage, TargetLanguage, Engine);
+            SourceText, TranslatedText, SourceLanguage, TargetLanguage, Engine,
+            Reviewed, Rejected,
+            EditedAtMs is { } edited ? DateTimeOffset.FromUnixTimeMilliseconds(edited) : null);
     }
 
     public void Add(string sourceText, string translatedText, string sourceLanguage, string targetLanguage, string engine)
@@ -149,13 +157,14 @@ public sealed class HistoryRepository : IHistoryRepository
             using var connection = _database.OpenConnection();
             var rows = connection.Query<Row>(
                 """
-                SELECT SourceText, TranslatedText, CreatedAtMs FROM History
-                WHERE TargetLanguage = @TargetLanguage ORDER BY Id DESC LIMIT @Limit;
+                SELECT SourceText, TranslatedText, CreatedAtMs, Reviewed FROM History
+                WHERE TargetLanguage = @TargetLanguage AND Rejected = 0
+                ORDER BY Reviewed DESC, Id DESC LIMIT @Limit;
                 """,
                 new { TargetLanguage = targetLanguage, Limit = limit });
             return rows
                 .Select(r => new TmCandidate(r.SourceText, r.TranslatedText,
-                    DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs)))
+                    DateTimeOffset.FromUnixTimeMilliseconds(r.CreatedAtMs), r.Reviewed))
                 .ToArray();
         }
         catch
@@ -183,7 +192,7 @@ public sealed class HistoryRepository : IHistoryRepository
             var rows = connection.Query<Row>(
                 """
                 SELECT SourceText, CreatedAtMs FROM History
-                WHERE TargetLanguage = @TargetLanguage AND CreatedAtMs >= @Cutoff
+                WHERE TargetLanguage = @TargetLanguage AND Rejected = 0 AND CreatedAtMs >= @Cutoff
                 ORDER BY Id DESC LIMIT @Limit;
                 """,
                 new { TargetLanguage = targetLanguage, Cutoff = cutoff, Limit = ContextProbeRows });
@@ -220,6 +229,36 @@ public sealed class HistoryRepository : IHistoryRepository
         catch
         {
             // 忽略
+        }
+    }
+
+    public int Update(long id, string translatedText, bool reviewed, bool rejected)
+    {
+        if (!_database.IsAvailable) return 0;
+        try
+        {
+            using var connection = _database.OpenConnection();
+            return connection.Execute(
+                """
+                UPDATE History
+                SET TranslatedText = @TranslatedText,
+                    Reviewed = @Reviewed,
+                    Rejected = @Rejected,
+                    EditedAtMs = @EditedAtMs
+                WHERE Id = @Id;
+                """,
+                new
+                {
+                    Id = id,
+                    TranslatedText = translatedText,
+                    Reviewed = reviewed,
+                    Rejected = rejected,
+                    EditedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                });
+        }
+        catch
+        {
+            return 0;
         }
     }
 

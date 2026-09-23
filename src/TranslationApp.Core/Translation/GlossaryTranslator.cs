@@ -67,12 +67,12 @@ public sealed class GlossaryTranslator : ITranslator, IPromptDirectiveTranslator
         {
             return RunAsync(
                 () => directable.TranslateAsync(text, sourceLanguage, targetLanguage, TranslationDirective.None, cancellationToken),
-                text, cancellationToken);
+                text, sourceLanguage, targetLanguage, cancellationToken);
         }
 
         return RunAsync(
             () => _inner.TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken),
-            text, cancellationToken);
+            text, sourceLanguage, targetLanguage, cancellationToken);
     }
 
     /// <summary>
@@ -93,12 +93,13 @@ public sealed class GlossaryTranslator : ITranslator, IPromptDirectiveTranslator
 
         return RunAsync(
             () => directable.TranslateAsync(text, sourceLanguage, targetLanguage, directive, cancellationToken),
-            text, cancellationToken);
+            text, sourceLanguage, targetLanguage, cancellationToken);
     }
 
     /// <summary>请求 + 术语后置替换 + 成败统计的公共尾巴（两种入口共用，行为完全一致）。</summary>
     private async Task<TranslationResult> RunAsync(
-        Func<Task<TranslationResult>> request, string sourceText, CancellationToken cancellationToken)
+        Func<Task<TranslationResult>> request, string sourceText,
+        string sourceLanguage, string targetLanguage, CancellationToken cancellationToken)
     {
         TranslationResult result;
         var startedAt = Environment.TickCount64;
@@ -123,20 +124,22 @@ public sealed class GlossaryTranslator : ITranslator, IPromptDirectiveTranslator
         }
 
         var elapsed = Environment.TickCount64 - startedAt;
-        var applied = ApplyGlossary(result, sourceText);
+        var applied = ApplyGlossary(result, sourceText, sourceLanguage, targetLanguage);
         Record(EngineOutcome.Success, null, elapsed);
         return applied;
     }
 
     /// <summary>术语替换（传入原文以启用 FR-041 反向保护：Target 已在原文中的词条跳过替换）。</summary>
-    private TranslationResult ApplyGlossary(TranslationResult result, string sourceText)
+    private TranslationResult ApplyGlossary(
+        TranslationResult result, string sourceText, string sourceLanguage, string targetLanguage)
     {
         try
         {
             var items = _glossary();
             if (items.Count == 0) return result;
 
-            var g = GlossaryReplacer.Apply(result.TranslatedText, items, sourceText);
+            var g = GlossaryReplacer.Apply(
+                result.TranslatedText, items, sourceText, sourceLanguage, targetLanguage);
             if (g.Hits == 0 && g.Conflicts.Count == 0) return result;
             return result with
             {

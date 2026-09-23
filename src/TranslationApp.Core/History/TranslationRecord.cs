@@ -8,10 +8,18 @@ public sealed record TranslationRecord(
     string TranslatedText,
     string SourceLanguage,
     string TargetLanguage,
-    string Engine)
+    string Engine,
+    bool Reviewed = false,
+    bool Rejected = false,
+    DateTimeOffset? EditedAt = null)
 {
     /// <summary>列表展示用时间（本地时区，精确到分钟）。</summary>
     public string CreatedAtDisplay => CreatedAt.ToLocalTime().ToString("MM-dd HH:mm");
+
+    /// <summary>TM 质量徽标文案；空串表示普通记录。</summary>
+    public string QualityBadge => Rejected ? "禁用复用" : Reviewed ? "已校对" : "";
+
+    public bool HasQualityBadge => QualityBadge.Length > 0;
 
     /// <summary>搜索/列表用的一行摘要（原文单行化并截断）。</summary>
     public string SourceSummary => Summarize(SourceText);
