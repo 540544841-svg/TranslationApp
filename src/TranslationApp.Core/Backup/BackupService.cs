@@ -158,6 +158,19 @@ public sealed class BackupService
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 var previous = SafeCombinedPath(rollback, file.Path);
                 Directory.CreateDirectory(Path.GetDirectoryName(previous)!);
+
+                var isHistory = string.Equals(file.Path, HistoryEntry, StringComparison.OrdinalIgnoreCase);
+                if (isHistory)
+                {
+                    // 【顺序是正确性的一部分】必须在覆盖主文件**之前**把连接池里还握着的旧连接收干并
+                    // 删掉 -wal/-shm。反过来（先 File.Copy、后 ClearAllPools）时，关闭旧连接触发的那次
+                    // WAL 检查点会写进**刚恢复的主文件**，把备份之后新写入的行带回来。
+                    // 该缺陷在本机因检查点时机不同而不可见，在干净 CI runner 上稳定复现为“恢复后仍是 2 行”。
+                    SqliteConnection.ClearAllPools();
+                    DeleteIfExists(target + "-wal");
+                    DeleteIfExists(target + "-shm");
+                }
+
                 if (File.Exists(target))
                 {
                     File.Copy(target, previous, overwrite: true);
@@ -166,9 +179,9 @@ public sealed class BackupService
                 // 先登记再覆盖：若 File.Copy 只写了一半就失败，回滚也必须处理这个目标。
                 restored.Add(file.Path);
                 File.Copy(source, target, overwrite: true);
-                if (string.Equals(file.Path, HistoryEntry, StringComparison.OrdinalIgnoreCase))
+                if (isHistory)
                 {
-                    SqliteConnection.ClearAllPools();
+                    // 恢复出来的是单文件快照，伴随文件属于旧库，清掉以免被误当成同一代的 WAL
                     DeleteIfExists(target + "-wal");
                     DeleteIfExists(target + "-shm");
                 }
@@ -189,6 +202,14 @@ public sealed class BackupService
                 {
                     var target = SafeCombinedPath(_dataDirectory, relative);
                     var previous = SafeCombinedPath(rollback, relative);
+                    var isHistory = string.Equals(relative, HistoryEntry, StringComparison.OrdinalIgnoreCase);
+                    if (isHistory)
+                    {
+                        // 与正向路径同一顺序要求：先收干连接池、清伴随文件，再回写主文件
+                        SqliteConnection.ClearAllPools();
+                        DeleteIfExists(target + "-wal");
+                        DeleteIfExists(target + "-shm");
+                    }
                     if (File.Exists(previous))
                     {
                         File.Copy(previous, target, overwrite: true);
@@ -198,7 +219,7 @@ public sealed class BackupService
                         DeleteIfExists(target);
                     }
 
-                    if (string.Equals(relative, HistoryEntry, StringComparison.OrdinalIgnoreCase))
+                    if (isHistory)
                     {
                         DeleteIfExists(target + "-wal");
                         DeleteIfExists(target + "-shm");
