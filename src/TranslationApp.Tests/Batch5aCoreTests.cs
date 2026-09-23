@@ -149,8 +149,9 @@ public sealed class Batch5aCoreTests : IDisposable
         var prompt = Build(new TranslationDirective("上一段", TranslationStyle.Formal), custom);
 
         Assert.Equal(
-            $"ctx:上一段|style:{LlmPrompt.StyleInstruction(TranslationStyle.Formal)}|text:当前这段文本",
+            $"ctx:上一段|style:{LlmPrompt.StyleInstruction(TranslationStyle.Formal)}|text:{LlmPrompt.UserMessageTextReference}",
             prompt);
+        Assert.DoesNotContain("当前这段文本", prompt);
     }
 
     [Fact]
@@ -275,12 +276,12 @@ public sealed class Batch5aCoreTests : IDisposable
         }, new HttpClientProvider());
 
     [Fact]
-    public void LlmRequest_UserMessageIsAlwaysTheTextBeingTranslated()
+    public async Task LlmRequest_UserMessageIsAlwaysTheTextBeingTranslated()
     {
         var request = CreateTranslator().CreateRequest(
             "正文在这里", "auto", "zh-CN", new TranslationDirective("语境在这里", TranslationStyle.Formal));
 
-        var json = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+        var json = await request.Content!.ReadAsStringAsync();
         using var document = System.Text.Json.JsonDocument.Parse(json);
         var system = document.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()!;
         var user = document.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;

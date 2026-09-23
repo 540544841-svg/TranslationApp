@@ -160,7 +160,15 @@ public sealed class BingTranslator : ITranslator
 
         using (response)
         {
-            var json = await response.Content.ReadAsStringAsync();
+            string json;
+            try
+            {
+                json = await response.Content.ReadAsStringAsync(timeout.Token);
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TranslationException(TranslationErrorType.Network, "请求超时", ex);
+            }
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest)
             {
                 // 令牌失效：交给上层刷新后重试

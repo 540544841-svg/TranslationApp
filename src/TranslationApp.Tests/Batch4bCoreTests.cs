@@ -91,6 +91,19 @@ public sealed class LocalApiServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Translate_RequestBodyOverLimit_413()
+    {
+        var oversized = new string('x', LocalApiServer.MaxRequestBodyBytes + 1);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{_base}/api/translate")
+        {
+            Content = new StringContent(oversized, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("X-Auth", Token);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await _http.SendAsync(request)).StatusCode);
+    }
+
+    [Fact]
     public async Task Status_WithToken_ReportsConfiguredEngines()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, $"{_base}/api/status");

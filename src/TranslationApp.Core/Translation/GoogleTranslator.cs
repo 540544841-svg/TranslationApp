@@ -119,7 +119,15 @@ public sealed class GoogleTranslator : ITranslator
                 throw ClassifyStatus(response.StatusCode);
             }
 
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            string json;
+            try
+            {
+                json = await response.Content.ReadAsStringAsync(timeout.Token);
+            }
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TranslationException(TranslationErrorType.Network, "请求超时", ex);
+            }
             var (translated, detected) = GoogleResponseParser.Parse(json);
             return new TranslationResult(translated, detected);
         }

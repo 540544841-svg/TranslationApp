@@ -25,11 +25,17 @@ public sealed class LocalApiServer : IDisposable
     /// <summary>单次翻译超时。</summary>
     public const int RequestTimeoutMs = 15_000;
 
+    /// <summary>请求体上限；本地 API 的单次文本远小于此，仅用于阻止任意大 body 占用内存。</summary>
+    public const int MaxRequestBodyBytes = 64 * 1024;
+
     private readonly HttpListener _listener = new();
     private readonly string _token;
     private readonly Func<string, string, string, CancellationToken, Task<LocalApiTranslation>> _translate;
     private readonly Func<IReadOnlyList<string>> _configuredEngineIds;
     private readonly SemaphoreSlim _gate = new(1, MaxConcurrency);
+    private readonly object _requestStateGate = new();
+    private readonly ManualResetEventSlim _requestsDrained = new(initialState: true);
+    private int _activeRequests;
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
@@ -110,11 +116,37 @@ public sealed class LocalApiServer : IDisposable
                 return; // Stop()/Dispose() 打断等待属正常收尾
             }
 
-            _ = Task.Run(() => HandleAsync(context), CancellationToken.None);
+            QueueRequest(context, ct);
         }
     }
 
-    private async Task HandleAsync(HttpListenerContext context)
+    /// <summary>先登记再调度，确保 Dispose 不会在任务启动窗口内误判为已排空。</summary>
+    private void QueueRequest(HttpListenerContext context, CancellationToken cancellationToken)
+    {
+        lock (_requestStateGate)
+        {
+            if (_disposed)
+            {
+                try
+                {
+                    context.Response.Abort();
+                }
+                catch
+                {
+                    // 客户端可能已断开。
+                }
+
+                return;
+            }
+
+            _activeRequests++;
+            _requestsDrained.Reset();
+        }
+
+        _ = Task.Run(() => HandleAsync(context, cancellationToken), CancellationToken.None);
+    }
+
+    private async Task HandleAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
         var response = context.Response;
         try
@@ -150,7 +182,7 @@ public sealed class LocalApiServer : IDisposable
                     return;
 
                 case ("POST", "/api/translate"):
-                    await HandleTranslateAsync(context);
+                    await HandleTranslateAsync(context, cancellationToken);
                     return;
 
                 default:
@@ -180,19 +212,45 @@ public sealed class LocalApiServer : IDisposable
             {
                 // 忽略
             }
+
+            CompleteRequest();
         }
     }
 
-    private async Task HandleTranslateAsync(HttpListenerContext context)
+    private void CompleteRequest()
+    {
+        lock (_requestStateGate)
+        {
+            _activeRequests--;
+            if (_activeRequests == 0)
+            {
+                _requestsDrained.Set();
+            }
+        }
+    }
+
+    private async Task HandleTranslateAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
         var response = context.Response;
+        var request = context.Request;
+        if (request.ContentLength64 > MaxRequestBodyBytes)
+        {
+            await WriteJsonAsync(response, 413, new { error = "请求体过大" });
+            return;
+        }
+
         string text;
         string source;
         string target;
         try
         {
-            using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-            var body = await reader.ReadToEndAsync();
+            var body = await ReadBodyAsync(request.InputStream, cancellationToken);
+            if (body is null)
+            {
+                await WriteJsonAsync(response, 413, new { error = "请求体过大" });
+                return;
+            }
+
             using var doc = JsonDocument.Parse(body);
             text = GetString(doc.RootElement, "text");
             source = GetString(doc.RootElement, "source", "auto");
@@ -203,6 +261,10 @@ public sealed class LocalApiServer : IDisposable
             await WriteJsonAsync(response, 400, new { error = "body 需为合法 JSON" });
             return;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
 
         if (text.Trim().Length == 0 || target.Length == 0)
         {
@@ -210,10 +272,14 @@ public sealed class LocalApiServer : IDisposable
             return;
         }
 
-        await _gate.WaitAsync();
+        var entered = false;
         try
         {
-            using var timeout = new CancellationTokenSource(RequestTimeoutMs);
+            await _gate.WaitAsync(cancellationToken);
+            entered = true;
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(RequestTimeoutMs);
             var result = await _translate(text.Trim(), source, target, timeout.Token);
             await WriteJsonAsync(response, 200, new
             {
@@ -221,6 +287,10 @@ public sealed class LocalApiServer : IDisposable
                 engine = result.Engine,
                 glossaryHits = result.GlossaryHits,
             });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 服务正在停止：不抢写响应，连接由外层关闭。
         }
         catch (OperationCanceledException)
         {
@@ -233,8 +303,29 @@ public sealed class LocalApiServer : IDisposable
         }
         finally
         {
-            _gate.Release();
+            if (entered)
+            {
+                _gate.Release();
+            }
         }
+    }
+
+    private static async Task<string?> ReadBodyAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[MaxRequestBodyBytes + 1];
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(total, buffer.Length - total), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total > MaxRequestBodyBytes ? null : Encoding.UTF8.GetString(buffer, 0, total);
     }
 
     private static string GetString(JsonElement root, string name, string fallback = "") =>
@@ -256,15 +347,26 @@ public sealed class LocalApiServer : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        lock (_requestStateGate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+        }
+
+        Stop();
+        _listener.Close();
+        // Stop 已取消在途请求；只有确认排空后才释放同步原语，避免在仍被使用时 Dispose。
+        if (!_requestsDrained.Wait(TimeSpan.FromSeconds(2)))
         {
             return;
         }
 
-        _disposed = true;
-        Stop();
-        _listener.Close();
         _gate.Dispose();
+        _requestsDrained.Dispose();
         _cts?.Dispose();
     }
 }

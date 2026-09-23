@@ -134,6 +134,18 @@ public class LlmTranslatorTests
     }
 
     [Fact]
+    public void CreateRequest_CustomTextPlaceholder_KeepsTextOnlyInUserMessage()
+    {
+        using var request = CreateTranslator(prompt: "把{text}翻译成{target}")
+            .CreateRequest("hello world", "en", "zh-CN");
+        var (_, systemPrompt, userText, _, _) = ReadBody(request);
+
+        Assert.Equal("hello world", userText);
+        Assert.Contains("用户消息中的文本", systemPrompt);
+        Assert.DoesNotContain("hello world", systemPrompt);
+    }
+
+    [Fact]
     public void BuildRequestBody_IsValidJsonWithSystemThenUser()
     {
         using var document = JsonDocument.Parse(
@@ -184,9 +196,10 @@ public class LlmTranslatorTests
     [Fact]
     public void BuildPrompt_CustomPrompt_ReplacesPlaceholders()
     {
-        var prompt = LlmPrompt.Build("{source}→{target}: {text}", "en", "zh-CN", "hello");
+        var prompt = LlmPrompt.Build("{source}→{target}：{text}", "en", "zh-CN", "hello");
 
-        Assert.Equal("英语→中文（简体）: hello", prompt);
+        Assert.Equal("英语→中文（简体）：用户消息中的文本", prompt);
+        Assert.DoesNotContain("hello", prompt);
     }
 
     [Fact]
@@ -194,7 +207,8 @@ public class LlmTranslatorTests
     {
         var prompt = LlmPrompt.Build("把{文本}翻成{目标}（源：{源}）", "en", "zh-CN", "hello");
 
-        Assert.Equal("把hello翻成中文（简体）（源：英语）", prompt);
+        Assert.Equal("把用户消息中的文本翻成中文（简体）（源：英语）", prompt);
+        Assert.DoesNotContain("hello", prompt);
     }
 
     [Fact]

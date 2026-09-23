@@ -23,6 +23,12 @@ public static class LlmPrompt
     /// <summary>FR-050：上一段原文作语境时追加的一句（明确"不要翻译它"，防模型把语境续写）。</summary>
     internal const string ContextTemplate = "上一段原文（仅供理解上下文与术语，不要翻译它、不要输出它）：{语境}";
 
+    /// <summary>
+    /// `{text}` 的替换文案：正文始终作为独立的 user message 发送，系统提示里只保留位置引用，
+    /// 避免同一段用户文本同时进入 system 与 user，既浪费 token 也扩大提示注入面。
+    /// </summary>
+    internal const string UserMessageTextReference = "用户消息中的文本";
+
     /// <summary>自定义 Prompt 支持的占位符（中英文两种写法等价）。</summary>
     internal static readonly string[] PlaceholderHint =
         ["{source}", "{target}", "{text}", "{context}", "{style}"];
@@ -72,8 +78,8 @@ public static class LlmPrompt
             .Replace("{目标}", targetDisplay, StringComparison.Ordinal)
             .Replace("{source}", sourceDisplay, StringComparison.Ordinal)
             .Replace("{源}", sourceDisplay, StringComparison.Ordinal)
-            .Replace("{text}", text, StringComparison.Ordinal)
-            .Replace("{文本}", text, StringComparison.Ordinal)
+            .Replace("{text}", UserMessageTextReference, StringComparison.Ordinal)
+            .Replace("{文本}", UserMessageTextReference, StringComparison.Ordinal)
             .Replace("{context}", contextValue, StringComparison.Ordinal)
             .Replace("{语境}", contextValue, StringComparison.Ordinal)
             .Replace("{style}", styleValue, StringComparison.Ordinal)
