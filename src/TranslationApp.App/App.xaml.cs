@@ -51,6 +51,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // P0「OCR 原生引擎进程隔离」：同一 EXE 以 --ocr-worker <管道名> 自启动的**子进程模式**。
+        // 必须在任何其他初始化之前分流：不取单实例互斥体（否则会被主进程挡住）、不建托盘、不注册热键。
+        if (OcrWorkerProtocol.TryParseWorkerArguments(e.Args, out var ocrWorkerPipe))
+        {
+            StartOcrWorker(ocrWorkerPipe);
+            return;
+        }
         InitLogging(e.Args.Contains("--verbose"));
         _verboseStartup = e.Args.Contains("--verbose");
         RegisterGlobalExceptionHandlers();
@@ -164,6 +171,61 @@ public partial class App : Application
         {
             Log.Debug(ex, "后台检查更新失败");
         }
+    }
+
+    /// <summary>
+    /// OCR 隔离进程的**子进程入口**（P0「OCR 原生引擎进程隔离」）：只跑命名管道服务循环，
+    /// 不建托盘/不注册热键/不开 UI/不取单实例互斥体。管道断开（主进程退出或被强杀）即自行结束。
+    /// 放到后台线程执行，启动线程只是设好日志并返回，让 WPF 调度器保持可响应，以便收尾时能正常退出。
+    /// </summary>
+    private void StartOcrWorker(string pipeName)
+    {
+        InitWorkerLogging();
+        Log.Information(
+            "=== OCR 隔离进程启动（PID {Pid}，管道 {Pipe}）===", Environment.ProcessId, pipeName);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await OcrWorkerHost.RunAsync(pipeName);
+                Log.Information("OCR 隔离进程正常退出（PID {Pid}）", Environment.ProcessId);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "OCR 隔离进程异常退出");
+            }
+            finally
+            {
+                Log.CloseAndFlush();
+                _ = Dispatcher.BeginInvoke(new Action(() => Shutdown(0)));
+            }
+        });
+    }
+
+    /// <summary>
+    /// 隔离进程独立日志（<c>ocr-worker-*.log</c>）：与主进程日志同一目录、同一隐私纪律，
+    /// 但分开文件便于把「原生库崩了」与「主进程正常」分开排查。
+    /// </summary>
+    private static void InitWorkerLogging()
+    {
+        if (PrivacyPeek())
+        {
+            Log.Logger = new LoggerConfiguration().CreateLogger();
+            return;
+        }
+
+        var logDir = AppPaths.LogsDirectory;
+        Directory.CreateDirectory(logDir);
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.File(
+                Path.Combine(logDir, "ocr-worker-.log"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 3,
+                shared: true,
+                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .CreateLogger();
     }
 
     private static void InitLogging(bool verbose)
@@ -334,9 +396,13 @@ public partial class App : Application
         services.AddSingleton<AutoStart>();
         // FR-021 截图翻译：OCR 能力探测（Windows.Media.Ocr）+ 截屏/遮罩/识别流程编排。
         // FR-030（14.9.2）：识别按 OcrLocalEngine 分发 windows/paddle 双引擎；paddle 降级一次性气泡走同一回调
+        // P0（OCR 原生引擎进程隔离）：paddle 跑在同 EXE 自启动的子进程里，这里是它的进程/管道管理器。
+        // 注册为单例以便容器卸载时收尾（正常路径下子进程会因管道断开而自行退出）。
+        services.AddSingleton<OcrWorkerLauncher>();
         services.AddSingleton(sp => new OcrService(
             sp.GetRequiredService<AppSettings>(),
-            (title, message) => _trayIcon?.ShowNotification(title, message, NotificationIcon.Warning)));
+            (title, message) => _trayIcon?.ShowNotification(title, message, NotificationIcon.Warning),
+            sp.GetRequiredService<OcrWorkerLauncher>()));
         // Doctor：集中诊断热键、OCR、代理、数据库与更新通道；只在设置页命令触发。
         services.AddSingleton<DoctorService>();
         // FR-027 钉图：张数/像素上限判定与窗口登记（气泡回调在调用时读 _trayIcon，故注册顺序无关）

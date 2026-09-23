@@ -26,19 +26,22 @@ public sealed class DoctorService
     private readonly OcrService _ocr;
     private readonly HistoryDatabase _database;
     private readonly UpdateService _updates;
+    private readonly OcrWorkerLauncher? _workerLauncher;
 
     public DoctorService(
         AppSettings settings,
         HotkeyManager hotkeys,
         OcrService ocr,
         HistoryDatabase database,
-        UpdateService updates)
+        UpdateService updates,
+        OcrWorkerLauncher? workerLauncher = null)
     {
         _settings = settings;
         _hotkeys = hotkeys;
         _ocr = ocr;
         _database = database;
         _updates = updates;
+        _workerLauncher = workerLauncher;
     }
 
     public async Task<DiagnosticReport> RunAsync(CancellationToken cancellationToken = default)
@@ -48,6 +51,7 @@ public sealed class DoctorService
         results.AddRange(CheckHotkeys());
         results.Add(CheckWindowsOcr());
         results.Add(CheckPaddleOcr());
+        results.Add(await CheckOcrWorkerAsync(cancellationToken));
         results.Add(CheckDatabase());
         results.Add(CheckDataDirectory());
         results.AddRange(CheckUpdateInstallability());
@@ -217,7 +221,7 @@ public sealed class DoctorService
                 "ocr-paddle",
                 "PaddleOCR 嵌入模型",
                 DiagnosticStatus.Warning,
-                "4/4 模型资源完整，但本进程曾初始化或识别失败，已回退到 Windows OCR。",
+                "4/4 模型资源完整，但 OCR 隔离进程曾启动或识别失败，已回退到 Windows OCR。",
                 "检查杀毒软件隔离记录与临时目录权限；重启速译后可再试。");
         }
 
@@ -238,6 +242,63 @@ public sealed class DoctorService
                 DiagnosticStatus.Skipped,
                 "当前使用 Windows OCR；4/4 嵌入模型资源已打包，未执行在线下载或推理。",
                 null);
+    }
+
+    /// <summary>
+    /// P0「OCR 原生引擎进程隔离」：真的把同 EXE 以 <c>--ocr-worker</c> 拉起来并走一次握手，
+    /// 确认「起得来、说得上话」。只握手不建推理会话（不加载 ONNX 模型，秒级返回、不占内存）。
+    /// </summary>
+    private async Task<DiagnosticResult> CheckOcrWorkerAsync(CancellationToken cancellationToken)
+    {
+        const string id = "ocr-worker";
+        const string label = "OCR 隔离进程";
+
+        if (_workerLauncher is null)
+        {
+            return new DiagnosticResult(
+                id, label, DiagnosticStatus.Warning,
+                "未装配隔离进程启动器，PaddleOCR 选项不可用（恒走系统识别）。",
+                "使用完整发布产物（EXE/apphost）运行；以 dotnet 直接托管 dll 时不支持自启动子进程。");
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            await using var channel = await _workerLauncher.OpenAsync(timeout.Token);
+            var hello = await OcrWorkerProtocol.HandshakeAsync(channel, timeout.Token);
+            if (!hello.Ok || !string.Equals(hello.Kind, OcrWorkerProtocol.KindHello, StringComparison.Ordinal))
+            {
+                return new DiagnosticResult(
+                    id, label, DiagnosticStatus.Failed,
+                    $"隔离进程已连接，但握手应答异常：{Safe(hello.Message ?? hello.Kind)}",
+                    "查看 ocr-worker-*.log 与杀毒软件隔离记录。");
+            }
+
+            return new DiagnosticResult(
+                id, label, DiagnosticStatus.Passed,
+                $"隔离进程已应答（PID {hello.Pid}，版本 {Safe(hello.Version)}）；"
+                + "PaddleOCR 的原生 ONNX 库即使崩溃也只影响该子进程，主进程与热键不受影响。",
+                null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return new DiagnosticResult(
+                id, label, DiagnosticStatus.Failed,
+                "隔离进程探测超过 10 秒未应答。",
+                "检查 EXE 是否被安全软件拦截，以及 %TEMP% 是否可写（模型落盘在该目录）。");
+        }
+        catch (Exception ex)
+        {
+            return new DiagnosticResult(
+                id, label, DiagnosticStatus.Failed,
+                $"隔离进程启动或握手失败：{Safe(ex.Message)}",
+                "确认使用发布版 EXE 运行，并检查 EXE 同目录权限与安全软件拦截记录。");
+        }
     }
 
     private DiagnosticResult CheckDatabase()

@@ -11,19 +11,27 @@ namespace TranslationApp.Services;
 /// （能力探测、语言解析、识别），识别按设置 <c>OcrLocalEngine</c> 经 <see cref="OcrEngineRouter"/>
 /// 分发到 <see cref="WindowsOcrEngine"/>（默认，Windows.Media.Ocr，auto 双跑择优与几何覆盖率门控在其内部）
 /// 或 <see cref="PaddleOcrEngine"/>（RapidOcrNet 适配器，懒加载 + 空闲释放）；paddle 初始化失败或
-/// 识别异常/超时自动回退 windows 引擎并一次性提示（14.9.2 降级策略）。
+/// **进程隔离（P0，唯一遗留项）**：上面那个适配器不再在本进程里跑——它由同一个 EXE 以
+/// <c>--ocr-worker</c> 自启动为子进程，经命名管道受 <see cref="OcrWorkerClient"/> 驱动。
+/// 子进程崩溃/启动失败/识别异常或超时都只算**本次失败**：自动回退 windows 引擎并一次性提示
+/// （14.9.2 降级策略），主进程继续常驻，不会因为原生 ONNX 运行时崩溃而退出。
 /// 默认路径（windows）行为与 FR-030 之前逐字节一致（AC 1 零回归）。
 /// </summary>
 public sealed class OcrService
 {
     private readonly OcrEngineRouter _router;
     private readonly IReadOnlyList<OcrLanguageTag> _availableLanguages;
+    private readonly bool _paddleIsolated;
 
     /// <summary>
     /// </summary>
     /// <param name="settings">应用设置（每次识别时读 <c>OcrLocalEngine</c>/<c>OcrPaddleResident</c>，设置即时生效）。</param>
     /// <param name="notifyFallback">paddle 降级时的一次性气泡回调（标题, 文案）；null = 仅降级不提示。</param>
-    public OcrService(AppSettings settings, Action<string, string>? notifyFallback = null)
+    /// <param name="workerLauncher">OCR 隔离进程启动器；null = 未装配隔离进程（paddle 选项不可用，恒走 windows）。</param>
+    public OcrService(
+        AppSettings settings,
+        Action<string, string>? notifyFallback = null,
+        OcrWorkerLauncher? workerLauncher = null)
     {
         try
         {
@@ -46,12 +54,19 @@ public sealed class OcrService
             _availableLanguages.Count == 0 ? "无" : string.Join("、", _availableLanguages.Select(l => l.Tag)),
             MaxImageDimension);
 
+        // P0「OCR 原生引擎进程隔离」：paddle 推理改由同一 EXE 自启动的子进程执行，原生库崩溃不再带走托盘进程。
+        // 未装配启动器（例如以 dotnet dll 宿主运行）时 paddle 恒不可用 → 路由直接走 windows，
+        // 与「运行库/模型未随包分发」是同一路径，行为可预期。
+        var paddle = workerLauncher is null
+            ? null
+            : new OcrWorkerClient(workerLauncher.OpenAsync, () => settings.OcrPaddleResident);
+        _paddleIsolated = paddle is not null;
         _router = new OcrEngineRouter(
             new WindowsOcrEngine(_availableLanguages),
-            new PaddleOcrEngine(() => settings.OcrPaddleResident),
+            paddle,
             () => settings.OcrLocalEngine,
             message => notifyFallback?.Invoke("速译 - 截图翻译", message),
-            ex => Log.Warning(ex, "PaddleOCR 引擎失败，本进程内降级为系统识别引擎（OcrLocalEngine 设置保留不变）"));
+            ex => Log.Warning(ex, "PaddleOCR 隔离进程失败，本进程内降级为系统识别引擎（OcrLocalEngine 设置保留不变）"));
     }
 
     /// <summary>系统是否安装了至少一种 OCR 语言包。</summary>
@@ -62,6 +77,9 @@ public sealed class OcrService
 
     /// <summary>PaddleOCR 是否已在本进程内失败并回退（Doctor 诊断用）。</summary>
     public bool IsPaddleDegraded => _router.IsPaddleDegraded;
+
+    /// <summary>paddle 是否已按「原生引擎进程隔离」装配（Doctor 诊断用）。</summary>
+    public bool IsPaddleProcessIsolated => _paddleIsolated;
 
     /// <summary>PaddleOCR 三件套与字典的嵌入资源名（Doctor 诊断用）。</summary>
     public IReadOnlyList<string> PaddleModelResources => PaddleOcrEngine.RequiredResourceNames;
