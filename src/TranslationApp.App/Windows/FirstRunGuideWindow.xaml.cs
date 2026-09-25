@@ -22,9 +22,11 @@ public partial class FirstRunGuideWindow : Window
     private readonly HotkeyManager _hotkeys;
     private readonly TranslatorCatalog _catalog;
     private readonly OcrService _ocr;
+    private readonly InPlaceTranslationService _translations;
     private int _step = 1;
     private bool _checked;
     private int _checkFailures;
+    private string? _practiceTranslation;
 
     public event EventHandler? OpenDoctorRequested;
 
@@ -33,7 +35,8 @@ public partial class FirstRunGuideWindow : Window
         ISettingsStore store,
         HotkeyManager hotkeys,
         TranslatorCatalog catalog,
-        OcrService ocr)
+        OcrService ocr,
+        InPlaceTranslationService translations)
     {
         InitializeComponent();
         _settings = settings;
@@ -41,6 +44,7 @@ public partial class FirstRunGuideWindow : Window
         _hotkeys = hotkeys;
         _catalog = catalog;
         _ocr = ocr;
+        _translations = translations;
 
         var choices = catalog.All
             .Where(engine => engine.IsConfigured)
@@ -54,6 +58,8 @@ public partial class FirstRunGuideWindow : Window
         InputHotkeyBox.HotkeyCaptured += OnHotkeyCaptured;
         SelectHotkeyBox.HotkeyCaptured += OnHotkeyCaptured;
         CaptureHotkeyBox.HotkeyCaptured += OnHotkeyCaptured;
+        PracticeSourceText.Text = "A reliable tool should reduce effort, not add another thing to remember.";
+        PracticeTargetText.Text = PracticeSourceText.Text;
         EngineStatus.Text = choices.Length > 1
             ? "当前引擎可随时在“设置 → 翻译”中更换。"
             : "当前使用零配置引擎，后续可添加官方引擎或 AI 引擎。";
@@ -118,6 +124,7 @@ public partial class FirstRunGuideWindow : Window
         {
             box.IsInvalid = true;
             box.Status = "格式不支持：需要 Ctrl / Alt / Shift / Win + 字母、数字或 F1~F12";
+            box.Suggestions = Array.Empty<string>();
             return;
         }
 
@@ -135,12 +142,13 @@ public partial class FirstRunGuideWindow : Window
         {
             box.IsInvalid = true;
             box.Status = $"与“{duplicate.Item2}”重复，请换一个组合";
+            box.Suggestions = BuildGuideSuggestions(name, definition);
             return;
         }
 
         var reserved = new[]
         {
-            ("场景档案切换", _settings.HotkeySwitchProfile),
+            ("场景模式切换", _settings.HotkeySwitchProfile),
             ("翻译并替换", _settings.HotkeyReplaceTranslate),
         };
         var reservedMatch = reserved.FirstOrDefault(item =>
@@ -149,6 +157,7 @@ public partial class FirstRunGuideWindow : Window
         {
             box.IsInvalid = true;
             box.Status = $"与“{reservedMatch.Item1}”重复，请换一个组合";
+            box.Suggestions = BuildGuideSuggestions(name, definition);
             return;
         }
 
@@ -156,11 +165,38 @@ public partial class FirstRunGuideWindow : Window
         {
             box.IsInvalid = true;
             box.Status = $"{definition} 已被系统或其他程序占用";
+            box.Suggestions = BuildGuideSuggestions(name, definition);
             return;
         }
 
         box.IsInvalid = false;
         box.Status = $"{definition} 可用";
+        box.Suggestions = Array.Empty<string>();
+    }
+
+    private IReadOnlyList<string> BuildGuideSuggestions(string name, HotkeyDefinition requested)
+    {
+        var appOwned = new[]
+        {
+            InputHotkeyBox.Text,
+            SelectHotkeyBox.Text,
+            CaptureHotkeyBox.Text,
+            _settings.HotkeySwitchProfile,
+            _settings.HotkeyReplaceTranslate,
+        }
+            .Select(text => HotkeyDefinition.TryParse(text, out var definition)
+                ? definition
+                : (HotkeyDefinition?)null)
+            .Where(definition => definition is not null)
+            .Select(definition => definition!)
+            .ToArray();
+
+        return HotkeySuggestionGenerator.Suggest(
+                requested,
+                appOwned,
+                candidate => _hotkeys.CanRegister(name, candidate))
+            .Select(definition => definition.ToString())
+            .ToArray();
     }
 
     private void OnNextClick(object sender, RoutedEventArgs e)
@@ -186,6 +222,13 @@ public partial class FirstRunGuideWindow : Window
             }
 
             _step = 3;
+            ShowStep();
+            return;
+        }
+
+        if (_step == 3)
+        {
+            _step = 4;
             ShowStep();
             RunChecks();
             return;
@@ -220,6 +263,12 @@ public partial class FirstRunGuideWindow : Window
     {
         if (_step == 3)
         {
+            _step = 4;
+            ShowStep();
+            RunChecks();
+        }
+        else if (_step == 4)
+        {
             Close();
         }
     }
@@ -228,6 +277,67 @@ public partial class FirstRunGuideWindow : Window
     {
         OpenDoctorRequested?.Invoke(this, EventArgs.Empty);
         Close();
+    }
+
+    private async void OnPracticeTranslateClick(object sender, RoutedEventArgs e)
+    {
+        var source = PracticeSourceText.Text?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            PracticeMessage.Foreground = (Brush)FindResource("Brush.Error");
+            PracticeMessage.Text = "先输入一段练习文字。";
+            return;
+        }
+
+        PracticeTranslateButton.IsEnabled = false;
+        PracticeMessage.Foreground = (Brush)FindResource("Brush.TextTertiary");
+        PracticeMessage.Text = "正在调用当前引擎…";
+        try
+        {
+            var result = await _translations.TranslateAsync(
+                source, _settings.SourceLanguage, _settings.TargetLanguage);
+            _practiceTranslation = result.Text;
+            PracticeReplaceButton.IsEnabled = !string.IsNullOrWhiteSpace(_practiceTranslation);
+            PracticeMessage.Foreground = (Brush)FindResource("Brush.Success");
+            PracticeMessage.Text = result.FromMemory
+                ? "已从翻译记忆取回结果；现在可以验证替换与 Ctrl+Z 撤销。"
+                : $"已由 {result.EngineName} 完成；现在可以验证替换与 Ctrl+Z 撤销。";
+        }
+        catch (Exception ex)
+        {
+            _practiceTranslation = null;
+            PracticeReplaceButton.IsEnabled = false;
+            PracticeMessage.Foreground = (Brush)FindResource("Brush.Error");
+            PracticeMessage.Text = $"翻译失败：{ex.Message}";
+        }
+        finally
+        {
+            PracticeTranslateButton.IsEnabled = true;
+        }
+    }
+
+    private void OnPracticeReplaceClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_practiceTranslation))
+        {
+            return;
+        }
+
+        PracticeTargetText.Focus();
+        PracticeTargetText.SelectAll();
+        PracticeTargetText.SelectedText = _practiceTranslation;
+        PracticeTargetText.CaretIndex = PracticeTargetText.Text.Length;
+        PracticeMessage.Foreground = (Brush)FindResource("Brush.TextTertiary");
+        PracticeMessage.Text = "已替换到练习区；现在按 Ctrl+Z 应恢复原文。";
+    }
+
+    private void OnPracticeResetClick(object sender, RoutedEventArgs e)
+    {
+        _practiceTranslation = null;
+        PracticeTargetText.Text = PracticeSourceText.Text;
+        PracticeReplaceButton.IsEnabled = false;
+        PracticeMessage.Foreground = (Brush)FindResource("Brush.TextTertiary");
+        PracticeMessage.Text = "练习区已重置。";
     }
 
     private bool TrySaveCoreHotkeys()
@@ -263,8 +373,8 @@ public partial class FirstRunGuideWindow : Window
                 if (parsed[i].Definition == parsed[j].Definition)
                 {
                     ShowHotkeyError("核心热键不能重复，请为每个功能选择不同组合。");
-                    SetGuideHotkeyError(parsed[i].Edit.Name, $"{parsed[i].Edit.Label}与其他核心热键重复");
-                    SetGuideHotkeyError(parsed[j].Edit.Name, $"{parsed[j].Edit.Label}与其他核心热键重复");
+                    SetGuideHotkeyError(parsed[i].Edit.Name, $"{parsed[i].Edit.Label}与其他核心热键重复", parsed[i].Definition);
+                    SetGuideHotkeyError(parsed[j].Edit.Name, $"{parsed[j].Edit.Label}与其他核心热键重复", parsed[j].Definition);
                     return false;
                 }
             }
@@ -272,7 +382,7 @@ public partial class FirstRunGuideWindow : Window
             if (reserved.Any(text => HotkeyDefinition.TryParse(text, out var other) && other == parsed[i].Definition))
             {
                 ShowHotkeyError($"{parsed[i].Edit.Label}的组合已分配给其他功能，请换一个组合。");
-                SetGuideHotkeyError(parsed[i].Edit.Name, $"{parsed[i].Edit.Label}的组合已分配给其他功能");
+                SetGuideHotkeyError(parsed[i].Edit.Name, $"{parsed[i].Edit.Label}的组合已分配给其他功能", parsed[i].Definition);
                 return false;
             }
         }
@@ -289,7 +399,7 @@ public partial class FirstRunGuideWindow : Window
                 }
                 RestoreCoreHotkeyBoxes();
                 ShowHotkeyError($"{edit.Label}热键 {definition} 注册失败，可能已被其他程序占用；原热键已保留。");
-                SetGuideHotkeyError(edit.Name, $"{definition} 已被系统或其他程序占用；原热键仍可用");
+                SetGuideHotkeyError(edit.Name, $"{definition} 已被系统或其他程序占用；原热键仍可用", definition);
                 return false;
             }
             applied.Add((edit.Name, previous));
@@ -325,7 +435,7 @@ public partial class FirstRunGuideWindow : Window
         HotkeyError.Visibility = Visibility.Visible;
     }
 
-    private void SetGuideHotkeyError(string name, string message)
+    private void SetGuideHotkeyError(string name, string message, HotkeyDefinition? requested = null)
     {
         var box = name switch
         {
@@ -333,6 +443,9 @@ public partial class FirstRunGuideWindow : Window
             "capture" => CaptureHotkeyBox,
             _ => InputHotkeyBox,
         };
+        box.Suggestions = requested is not null && !string.IsNullOrEmpty(message)
+            ? BuildGuideSuggestions(name, requested)
+            : Array.Empty<string>();
         box.IsInvalid = !string.IsNullOrEmpty(message);
         box.Status = message;
     }
@@ -387,16 +500,25 @@ public partial class FirstRunGuideWindow : Window
     {
         EnginePage.Visibility = _step == 1 ? Visibility.Visible : Visibility.Collapsed;
         HotkeyPage.Visibility = _step == 2 ? Visibility.Visible : Visibility.Collapsed;
-        CheckPage.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
+        PracticePage.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
+        CheckPage.Visibility = _step == 4 ? Visibility.Visible : Visibility.Collapsed;
 
         Step1Dot.Background = (Brush)FindResource(_step >= 1 ? "Brush.Primary" : "Brush.SurfaceMuted");
         Step2Dot.Background = (Brush)FindResource(_step >= 2 ? "Brush.Primary" : "Brush.SurfaceMuted");
         Step3Dot.Background = (Brush)FindResource(_step >= 3 ? "Brush.Primary" : "Brush.SurfaceMuted");
+        Step4Dot.Background = (Brush)FindResource(_step >= 4 ? "Brush.Primary" : "Brush.SurfaceMuted");
 
         BackButton.Visibility = _step > 1 ? Visibility.Visible : Visibility.Collapsed;
-        SecondaryButton.Visibility = _step == 3 ? Visibility.Visible : Visibility.Collapsed;
-        NextButton.Content = _step == 1 ? "下一步" : _step == 2 ? "下一步" : "运行自检";
-        if (_step == 3)
+        SecondaryButton.Content = _step == 3 ? "跳过练习" : "稍后测试";
+        SecondaryButton.Visibility = _step >= 3 ? Visibility.Visible : Visibility.Collapsed;
+        NextButton.Content = _step switch
+        {
+            1 => "下一步",
+            2 => "下一步",
+            3 => "开始自检",
+            _ => "运行自检",
+        };
+        if (_step == 4)
         {
             _checked = false;
             _checkFailures = 0;

@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:TranslationApp.Controls"
-        Title="速译 · 首次使用引导" Width="560" Height="560"
+        Title="速译 · 首次使用引导" Width="600" Height="640"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen" ShowInTaskbar="False"
         Background="{DynamicResource Brush.Window}"
-        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}">
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
+        SnapsToDevicePixels="True" UseLayoutRounding="True">
     <Grid Margin="24,20,24,18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -17,25 +18,28 @@
         <StackPanel Grid.Row="0">
             <TextBlock Text="30 秒完成初始设置" FontSize="{StaticResource FontSize.Headline}"
                        Foreground="{DynamicResource Brush.TextPrimary}"/>
-            <TextBlock Text="三步确认引擎、热键与本机能力，之后就能直接开始翻译"
+            <TextBlock Text="四步完成设置、实际翻译与能力自检，之后就能直接开始使用"
                        Style="{StaticResource Text.Caption}" Margin="0,5,0,0"/>
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,18,0,14">
             <Border x:Name="Step1Dot" Width="24" Height="24" CornerRadius="12"
                     Background="{DynamicResource Brush.Primary}"/>
-            <Border Width="48" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
+            <Border Width="32" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
             <Border x:Name="Step2Dot" Width="24" Height="24" CornerRadius="12"
                     Background="{DynamicResource Brush.SurfaceMuted}"/>
-            <Border Width="48" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
+            <Border Width="32" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
             <Border x:Name="Step3Dot" Width="24" Height="24" CornerRadius="12"
+                    Background="{DynamicResource Brush.SurfaceMuted}"/>
+            <Border Width="32" Height="2" Margin="4,0" Background="{DynamicResource Brush.Border}"/>
+            <Border x:Name="Step4Dot" Width="24" Height="24" CornerRadius="12"
                     Background="{DynamicResource Brush.SurfaceMuted}"/>
         </StackPanel>
 
         <Grid Grid.Row="2">
             <Border x:Name="EnginePage" Style="{StaticResource Card}" Padding="18">
                 <StackPanel>
-                    <TextBlock Text="1 / 3 · 选择翻译引擎" FontSize="{StaticResource FontSize.Title}"
+                    <TextBlock Text="1 / 4 · 选择翻译引擎" FontSize="{StaticResource FontSize.Title}"
                                FontWeight="{StaticResource Weight.Medium}"/>
                     <TextBlock Text="只显示当前可直接使用的引擎；以后可在设置中随时切换"
                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,14"/>
@@ -49,7 +53,7 @@
 
             <Border x:Name="HotkeyPage" Style="{StaticResource Card}" Padding="18" Visibility="Collapsed">
                 <StackPanel>
-                    <TextBlock Text="2 / 3 · 设置核心热键" FontSize="{StaticResource FontSize.Title}"
+                    <TextBlock Text="2 / 4 · 设置核心热键" FontSize="{StaticResource FontSize.Title}"
                                FontWeight="{StaticResource Weight.Medium}"/>
                     <TextBlock Text="点击键帽框后按下新组合；Esc 取消录制"
                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,12"/>
@@ -81,9 +85,46 @@
                 </StackPanel>
             </Border>
 
+            <Border x:Name="PracticePage" Style="{StaticResource Card}" Padding="18" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="3 / 4 · 实际翻译一次" FontSize="{StaticResource FontSize.Title}"
+                               FontWeight="{StaticResource Weight.Medium}"/>
+                    <TextBlock Text="这里直接使用你刚选的引擎；翻译后可在练习区验证替换和 Ctrl+Z 撤销"
+                               Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,10"/>
+                    <TextBox x:Name="PracticeSourceText" Height="64" AcceptsReturn="True"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             ToolTip="可以改成任意句子"/>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="PracticeTranslateButton" Content="翻译这段文字"
+                                Grid.Column="0" Style="{StaticResource Button.Primary}"
+                                Click="OnPracticeTranslateClick"/>
+                        <TextBlock x:Name="PracticeMessage" Grid.Column="1"
+                                   VerticalAlignment="Center" Margin="12,0,0,0"
+                                   Style="{StaticResource Text.Hint}" TextWrapping="Wrap"/>
+                    </Grid>
+                    <Border Style="{StaticResource Hairline}" Margin="0,12"/>
+                    <TextBlock Text="练习替换区（可编辑）" Style="{StaticResource Text.SectionTitle}"/>
+                    <TextBlock Text="点“替换到练习区”后，按 Ctrl+Z 应该恢复替换前的文字。"
+                               Style="{StaticResource Text.Caption}" Margin="0,3,0,8"/>
+                    <TextBox x:Name="PracticeTargetText" Height="72" AcceptsReturn="True"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="PracticeReplaceButton" Content="替换到练习区"
+                                Style="{StaticResource Button.Outline}" IsEnabled="False"
+                                Click="OnPracticeReplaceClick"/>
+                        <Button Content="重置练习区" Style="{StaticResource Button.Link}" Margin="10,0,0,0"
+                                Click="OnPracticeResetClick"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <Border x:Name="CheckPage" Style="{StaticResource Card}" Padding="18" Visibility="Collapsed">
                 <StackPanel>
-                    <TextBlock Text="3 / 3 · 运行能力自检" FontSize="{StaticResource FontSize.Title}"
+                    <TextBlock Text="4 / 4 · 运行能力自检" FontSize="{StaticResource FontSize.Title}"
                                FontWeight="{StaticResource Weight.Medium}"/>
                     <TextBlock Text="确认翻译引擎、三个核心热键和 OCR 语言包均可工作"
                                Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,5,0,0"/>
