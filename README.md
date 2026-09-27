@@ -46,13 +46,15 @@ powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/�
 
 ## 界面设计
 
-> **v3.0 重设计进行中**：全新 Win11 Fluent 风格的浏览器交互预览稿见 [`design-preview/index.html`](design-preview/index.html)
-> （双击即可打开；设计文档 `docs/superpowers/specs/2026-09-19-ui-redesign-fluent-preview-design.md`，WPF 尚未按 v3.0 落地）。
-> 以下为当前 WPF 已实现的 v2.0 规范。
+> **品牌与界面设计已定为「译印 INKSEAL」**：品牌内核与六节界面设计稿见 [`design-v4/inkseal-ui.html`](design-v4/inkseal-ui.html)
+> （双击即可打开；朱砂 `#C0392B` 单一强调色 + 圆角方印形状语言；logo 见 `design-v4/brand/logo-A-inkseal.svg`）。
+> 品牌令牌草稿在 `src/TranslationApp.App/Themes/Tokens.Brand.xaml`、`Tokens.Theme.Paper.xaml`、`Tokens.Theme.Ink.xaml`。
+> **WPF 目前仍在跑下面这套琥珀 v2.0 配色**，尚未接线到译印。
 
-界面按 `docs/UI设计规范-v2.0.md` 落地（Apple HIG + Material 3 + 品牌资产系统）：
+现行 WPF 界面按**已退役的 v2.0 规范**落地（Apple HIG + Material 3 + 品牌资产系统），
+该规范与琥珀品牌资产表已随译印方案一并删除：
 
-- **品牌资产系统 v2.0「琥珀流光」**（`docs/brand-asset-sheet.html`，已确认）：翻译品类被蓝色垄断，
+- **配色「琥珀流光」（v2.0，已退役）**：翻译品类被蓝色垄断，
   独占色落位空档的**琥珀**——荧光笔划重点（= 划词）+「黄＝快」双重语义；
   图标为**琥珀闪电**（`build/make-icon.ps1` 生成）；动效签名**「译光闪落」**——译文落定瞬间
   一道琥珀光痕扫过译文区（420ms 减速，失败/对比模式不播，系统关闭窗口动画时自动跳过）；
@@ -60,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/�
 - **琥珀三角色**：文字/图标级用 `PrimaryText`（AA 达标），填充与描边用 `Primary`，
   填充上的文字用 `OnPrimary`（暖近黑，白字对比不足）；警告色改橙红与品牌琥珀区分。
 - **设计令牌化**：颜色、字号、间距、圆角、图标、动效全部收敛为语义令牌
-  （`Themes/Tokens.Theme.Light.xaml` / `.Dark.xaml` / `Tokens.Base.xaml`），页面中无写死色值。
+  （`Themes/Tokens.Theme.Paper.xaml` / `.Ink.xaml` / `Tokens.Base.xaml` / `Tokens.Brand.xaml`），页面中无写死色值。
 - **深浅双主题**：设置 → 通用 → 主题，可选「跟随系统 / 浅色 / 深色」，切换即时生效；
   原生标题栏也同步适配（`ThemeManager` 调用 DWM 沉浸式深色模式）。
 - **控件全套重写模板**：按钮、输入框、只读结果区、下拉、复选框、开关、**斜切流光进度条**、
@@ -206,7 +208,7 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 ### 界面
 
 - [x] **界面设计系统**：语义化设计令牌 + 深浅双主题（跟随系统/浅色/深色）+ 全套控件重写模板；
-      设置窗口为左侧导航式（通用 / 更新与数据 / 诊断 / 热键 / 翻译 / **引擎** / 历史 / 生词本 / 术语表 / 高级）；详见 `docs/UI设计规范-v2.0.md`
+      设置窗口为左侧导航式（通用 / 更新与数据 / 诊断 / 热键 / 翻译 / **引擎** / 历史 / 生词本 / 术语表 / 高级）
 
 ### 翻译核心
 

@@ -1066,7 +1066,7 @@ public partial class QuickWindow : Window
     }
 
     /// <summary>
-    /// 动效签名「译光闪落」（docs/brand-asset-sheet.html 品牌资产）：
+    /// 动效签名「译光闪落」（已退役的 v2.0 琥珀品牌资产）：
     /// 译文落定瞬间一道琥珀光痕沿译文区扫过（Duration.Signature = 420ms，减速收尾），
     /// 与进度条流光、导航指示条共用同一母题。只在单结果成功落定时播放——
     /// 失败/对比模式不给奖赏，重复落定才形成条件反射；

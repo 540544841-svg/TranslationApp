@@ -22,8 +22,5 @@ artifacts/
 # 运行时数据
 *.log
 
-# 设计预览稿验收截图
-design-preview/screenshots/
-
 # Python 验收脚本的字节码缓存
 __pycache__/

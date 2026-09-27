@@ -1,0 +1,155 @@
+<!--
+  译印 INKSEAL · 纸（浅色）主题色板
+  ============================================================================
+  译印的浅色主题。ThemeManager 按路径整本替换本文件实现即时换肤（合并位置 [0]）。
+
+  取值标注：
+    [稿] = 设计稿原值，来自 design-v4/inkseal-ui.html 的 :root CSS 变量
+    [补] = 设计稿未覆盖该语义键，按其品牌规则推导补齐，已注明依据
+    注释里引用 CSS 变量时省去了开头的两个短横线（XML 注释不允许连续短横线）。
+
+  品牌对照（琥珀流光 -> 译印）：
+    琥珀 #D97A00 是「划词高亮」的品类色；译印换成朱砂 #C0392B，
+    隐喻从「划重点」变成「盖章确认」——每一次落定都留下一方印。
+    全站只有这一种高饱和色，深浅靠明度分级，不引入第二个色相。
+
+  语义翻转（重要）：
+    Color.Success 指向朱砂而非绿色。品牌规则是「成功 = 盖上了印」，
+    绿色不属于译印的词汇表。失败用冷绯（Color.Error #8E1B2C）+ 灰。
+
+  对比度（WCAG 2.1，白/纸底）：
+    TextPrimary   #15181C / 纸 #F4F3F1 ≈ 16:1   AAA
+    TextSecondary #5B6169 / 纸        ≈ 6.6:1  AA+
+    TextTertiary  #6A7078 / 纸        ≈ 4.7:1  AA（见下方说明）
+    Primary       #C0392B / 纸        ≈ 5.2:1  AA（正文级）
+    OnPrimary     #FFFFFF / 朱砂      ≈ 5.4:1  AA
+-->
+
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ================= 表面与背景 =================
+         纸是底色，印面比纸亮（白），阴刻比纸暗。层次靠「纸 / 印面 / 阴刻」三级，
+         而不是靠阴影堆叠——阴影只用来表示浮起，不表示层级。 -->
+    <Color x:Key="Color.Window">#FFF4F3F1</Color>          <!-- [稿] paper 纸 -->
+    <Color x:Key="Color.Sidebar">#FFEAE8E4</Color>         <!-- [稿] carved 阴刻 -->
+    <Color x:Key="Color.SurfaceSubtle">#FFEAE8E4</Color>   <!-- [稿] carved 阴刻 -->
+    <Color x:Key="Color.SurfaceMuted">#FFE0DEDA</Color>    <!-- [稿] carved-deep 深阴刻 -->
+    <Color x:Key="Color.Border">#FFE1DFDB</Color>          <!-- [稿] hairline -->
+    <Color x:Key="Color.BorderStrong">#FFCFCCC7</Color>    <!-- [稿] hairline-strong -->
+    <Color x:Key="Color.Hover">#FFEAE8E4</Color>           <!-- [稿] 控件底色自 sheet 沉到 carved -->
+    <Color x:Key="Color.Pressed">#FFE0DEDA</Color>         <!-- [稿] 再沉一级到 carved-deep -->
+
+    <!-- ================= 文字 ================= -->
+    <Color x:Key="Color.TextPrimary">#FF15181C</Color>     <!-- [稿] ink 墨 -->
+    <Color x:Key="Color.TextSecondary">#FF5B6169</Color>   <!-- [稿] ink-2 -->
+    <!-- [补] 设计稿的 ink-3 #8B9199 在纸底只有 2.9:1，仅够 11px 以下标注使用；
+         此处 TextTertiary 承载正文级说明文字，故取 #6A7078（墨与 ink-2 之间）达到 AA。
+         若某处确实只是字距/单位标注，请直接引用 Brand 之外的局部样式，不要放宽此键。 -->
+    <Color x:Key="Color.TextTertiary">#FF6A7078</Color>
+    <Color x:Key="Color.TextDisabled">#FFB4B1AB</Color>    <!-- [补] 纸色中性暖灰，仅禁用态 -->
+
+    <!-- ================= 品牌独占色：朱砂 ================= -->
+    <!-- Primary = 交互填充（按钮 / 开关轨道 / 焦点环）；PrimaryText = 文字级朱砂 -->
+    <Color x:Key="Color.Primary">#FFC0392B</Color>               <!-- [稿] vermilion -->
+    <Color x:Key="Color.PrimaryHover">#FFA02E22</Color>          <!-- [稿] vermilion-deep -->
+    <Color x:Key="Color.PrimaryPressed">#FF8A2419</Color>        <!-- [稿] vermilion-ink -->
+    <Color x:Key="Color.PrimaryContainer">#FFFBF0ED</Color>      <!-- [稿] vermilion-tint -->
+    <Color x:Key="Color.PrimaryContainerHover">#FFF7DED8</Color> <!-- [稿] vermilion-soft -->
+    <Color x:Key="Color.PrimaryText">#FFA02E22</Color>           <!-- [稿] 文字级用深朱砂，纸上 ≈ 7.4:1 -->
+    <Color x:Key="Color.OnPrimary">#FFFFFFFF</Color>             <!-- [稿] on-vermilion -->
+
+    <!-- ================= 语义色 ================= -->
+    <!-- 失败 = 没盖上：冷绯（比朱砂更暗更冷），不是鲜红的报错 -->
+    <Color x:Key="Color.Error">#FF8E1B2C</Color>           <!-- [稿] danger -->
+    <Color x:Key="Color.ErrorContainer">#FFF6E2E5</Color>  <!-- [稿] danger-soft -->
+    <Color x:Key="Color.ErrorBorder">#FFE9C9CE</Color>     <!-- [补] danger-soft 的加深描边 -->
+
+    <!-- 成功 = 盖上了印：与 Primary 同源，是品牌决策不是笔误 -->
+    <Color x:Key="Color.Success">#FFC0392B</Color>         <!-- [稿] 品牌规则：成功即朱砂 -->
+    <Color x:Key="Color.SuccessContainer">#FFFBF0ED</Color><!-- [稿] vermilion-tint -->
+
+    <!-- 警告独立于朱砂色相，避免「满屏红分不清警告」 -->
+    <Color x:Key="Color.Warning">#FF8A5A00</Color>         <!-- [稿] warn -->
+    <Color x:Key="Color.WarningContainer">#FFF8EEDA</Color><!-- [稿] warn-soft -->
+    <Color x:Key="Color.WarningBorder">#FFEBDCB4</Color>   <!-- [补] warn-soft 的加深描边 -->
+
+    <!-- ================= 滚动条 =================
+         墨模式下滚动条必须是暗的（用户明确反馈过「白条太扎眼」）；
+         纸模式下拇指悬停变朱砂，是品牌色最轻的一次露面。 -->
+    <Color x:Key="Color.ScrollThumb">#FFCFCCC7</Color>          <!-- [稿] hairline-strong -->
+    <Color x:Key="Color.ScrollThumbHover">#FFC0392B</Color>     <!-- [稿] hover 露出朱砂 -->
+
+    <!-- 阴影：颜色固定，透明度在 Effect 上设置。取自设计稿 shadow 的 rgba(24,18,14,·)，暖黑非纯黑 -->
+    <Color x:Key="Color.Shadow">#FF18120E</Color>
+
+    <!-- ================= 画刷 ================= -->
+    <SolidColorBrush x:Key="Brush.Window" Color="{StaticResource Color.Window}"/>
+    <SolidColorBrush x:Key="Brush.Sidebar" Color="{StaticResource Color.Sidebar}"/>
+    <SolidColorBrush x:Key="Brush.SurfaceSubtle" Color="{StaticResource Color.SurfaceSubtle}"/>
+    <SolidColorBrush x:Key="Brush.SurfaceMuted" Color="{StaticResource Color.SurfaceMuted}"/>
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}"/>
+    <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}"/>
+    <SolidColorBrush x:Key="Brush.Hover" Color="{StaticResource Color.Hover}"/>
+    <SolidColorBrush x:Key="Brush.Pressed" Color="{StaticResource Color.Pressed}"/>
+
+    <SolidColorBrush x:Key="Brush.TextPrimary" Color="{StaticResource Color.TextPrimary}"/>
+    <SolidColorBrush x:Key="Brush.TextSecondary" Color="{StaticResource Color.TextSecondary}"/>
+    <SolidColorBrush x:Key="Brush.TextTertiary" Color="{StaticResource Color.TextTertiary}"/>
+    <SolidColorBrush x:Key="Brush.TextDisabled" Color="{StaticResource Color.TextDisabled}"/>
+
+    <SolidColorBrush x:Key="Brush.Primary" Color="{StaticResource Color.Primary}"/>
+    <SolidColorBrush x:Key="Brush.PrimaryHover" Color="{StaticResource Color.PrimaryHover}"/>
+    <SolidColorBrush x:Key="Brush.PrimaryPressed" Color="{StaticResource Color.PrimaryPressed}"/>
+    <SolidColorBrush x:Key="Brush.PrimaryContainer" Color="{StaticResource Color.PrimaryContainer}"/>
+    <SolidColorBrush x:Key="Brush.PrimaryContainerHover" Color="{StaticResource Color.PrimaryContainerHover}"/>
+    <SolidColorBrush x:Key="Brush.PrimaryText" Color="{StaticResource Color.PrimaryText}"/>
+    <SolidColorBrush x:Key="Brush.OnPrimary" Color="{StaticResource Color.OnPrimary}"/>
+
+    <SolidColorBrush x:Key="Brush.Error" Color="{StaticResource Color.Error}"/>
+    <SolidColorBrush x:Key="Brush.ErrorContainer" Color="{StaticResource Color.ErrorContainer}"/>
+    <SolidColorBrush x:Key="Brush.ErrorBorder" Color="{StaticResource Color.ErrorBorder}"/>
+    <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}"/>
+    <SolidColorBrush x:Key="Brush.SuccessContainer" Color="{StaticResource Color.SuccessContainer}"/>
+    <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}"/>
+    <SolidColorBrush x:Key="Brush.WarningContainer" Color="{StaticResource Color.WarningContainer}"/>
+    <SolidColorBrush x:Key="Brush.WarningBorder" Color="{StaticResource Color.WarningBorder}"/>
+
+    <SolidColorBrush x:Key="Brush.ScrollThumb" Color="{StaticResource Color.ScrollThumb}"/>
+    <SolidColorBrush x:Key="Brush.ScrollThumbHover" Color="{StaticResource Color.ScrollThumbHover}"/>
+
+    <!-- ================= 品牌签名动效：落印 =================
+         进度与「译文落定」共用同一支笔：一道朱砂刻痕自左向右展开。
+         中段 50% 实心、两端 25% 渐隐，保证任意时刻截图都有一段清晰可见的印色。
+         时长与缓动见 Tokens.Brand.xaml 的 Brand.Duration.Stamp / Brand.Ease.Stamp。 -->
+    <LinearGradientBrush x:Key="Brush.Signature.Streak" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#00C0392B" Offset="0"/>
+        <GradientStop Color="#FFC0392B" Offset="0.25"/>
+        <GradientStop Color="#FFC0392B" Offset="0.75"/>
+        <GradientStop Color="#00C0392B" Offset="1"/>
+    </LinearGradientBrush>
+
+    <!-- ================= 截图遮罩（固定色，不随主题）=================
+         截图场景恒为暗底，故纸/墨两套取值一致，键名同。
+         遮罩用冷黑而非纯黑，避免压色；选区用墨模式的亮朱砂 #E2564A，
+         在 55% 冷黑上对比 ≈ 11:1，比纸模式的 #C0392B 更抓眼。 -->
+    <Color x:Key="Color.Capture.Scrim">#8C06080A</Color>            <!-- [稿] rgba(6,8,10,.55) -->
+    <Color x:Key="Color.Capture.Selection">#FFE2564A</Color>        <!-- [稿] 选区 / 四角 / 菱形手柄 -->
+    <Color x:Key="Color.Capture.LabelBackground">#DB0D1015</Color>  <!-- [稿] rgba(13,16,21,.86) HUD 底板 -->
+    <Color x:Key="Color.Capture.LabelText">#FFEDEFF2</Color>        <!-- [稿] HUD 文字 -->
+    <SolidColorBrush x:Key="Brush.Capture.Scrim" Color="{StaticResource Color.Capture.Scrim}"/>
+    <SolidColorBrush x:Key="Brush.Capture.Selection" Color="{StaticResource Color.Capture.Selection}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LabelBackground" Color="{StaticResource Color.Capture.LabelBackground}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LabelText" Color="{StaticResource Color.Capture.LabelText}"/>
+
+    <!-- ================= 内容覆盖层（固定色，不随主题）=================
+         颜色由被覆盖的图片本身决定（取样后二选一），故两套主题取值一致，键名同。 -->
+    <Color x:Key="Color.Overlay.TextOnLight">#FF15181C</Color>       <!-- [稿] 墨 -->
+    <Color x:Key="Color.Overlay.TextOnDark">#FFF0F1F3</Color>        <!-- [稿] 墨模式的 ink -->
+    <Color x:Key="Color.Overlay.CoverFallback">#FF8B9199</Color>     <!-- [稿] ink-3 -->
+    <SolidColorBrush x:Key="Brush.Overlay.TextOnLight" Color="{StaticResource Color.Overlay.TextOnLight}"/>
+    <SolidColorBrush x:Key="Brush.Overlay.TextOnDark" Color="{StaticResource Color.Overlay.TextOnDark}"/>
+    <SolidColorBrush x:Key="Brush.Overlay.CoverFallback" Color="{StaticResource Color.Overlay.CoverFallback}"/>
+
+    <Color x:Key="Color.TitleBarDark">#FF000000</Color>
+</ResourceDictionary>

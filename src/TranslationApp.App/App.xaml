@@ -8,15 +8,17 @@
       托盘图标 / 菜单在 App.xaml.cs 中以代码构建（避免 XAML 资源事件接线问题）。
 
       资源合并顺序很重要：
-        [0] 主题色板（运行时由 ThemeManager 整本替换，实现即时换肤）
+        [0] 主题色板（纸/墨，运行时由 ThemeManager 整本替换，实现即时换肤）
         [1] 基础令牌（字体/间距/圆角/图标/动效/阴影，与主题无关）
-        [2] 控件样式（颜色全部 DynamicResource 指向 [0]）
+        [2] 品牌令牌（朱砂三色 / 刻痕几何 / 落印动效，与主题无关）
+        [3] 控件样式（颜色全部 DynamicResource 指向 [0]）
     -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/Tokens.Theme.Light.xaml"/>
+                <ResourceDictionary Source="Themes/Tokens.Theme.Paper.xaml"/>
                 <ResourceDictionary Source="Themes/Tokens.Base.xaml"/>
+                <ResourceDictionary Source="Themes/Tokens.Brand.xaml"/>
                 <ResourceDictionary Source="Themes/Controls.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

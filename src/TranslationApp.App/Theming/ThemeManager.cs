@@ -25,8 +25,9 @@ public enum AppTheme
 /// </summary>
 public static class ThemeManager
 {
-    private const string LightSource = "Themes/Tokens.Theme.Light.xaml";
-    private const string DarkSource = "Themes/Tokens.Theme.Dark.xaml";
+    // 译印 INKSEAL：浅色=纸，深色=墨
+    private const string PaperSource = "Themes/Tokens.Theme.Paper.xaml";
+    private const string InkSource = "Themes/Tokens.Theme.Ink.xaml";
 
     /// <summary>DWM 属性：沉浸式深色模式（Windows 10 1809+ 用 20，旧版本用 19）。</summary>
     private const int DwmwaUseImmersiveDarkMode = 20;
@@ -51,7 +52,7 @@ public static class ThemeManager
             return;
         }
 
-        var source = IsDarkEffective ? DarkSource : LightSource;
+        var source = IsDarkEffective ? InkSource : PaperSource;
         var dictionaries = resources.MergedDictionaries;
 
         // 主题字典固定位于第 0 位（见 App.xaml 合并顺序），整本替换即可换肤
@@ -59,7 +60,7 @@ public static class ThemeManager
         if (existing is not null
             && existing.Source is not null
             && existing.Source.OriginalString.EndsWith(
-                IsDarkEffective ? "Tokens.Theme.Dark.xaml" : "Tokens.Theme.Light.xaml", StringComparison.Ordinal))
+                IsDarkEffective ? "Tokens.Theme.Ink.xaml" : "Tokens.Theme.Paper.xaml", StringComparison.Ordinal))
         {
             ApplyTitleBarToOpenWindows();
             return; // 已是目标主题

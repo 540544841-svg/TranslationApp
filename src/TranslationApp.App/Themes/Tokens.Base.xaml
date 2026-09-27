@@ -98,7 +98,7 @@
     <Duration x:Key="Duration.Normal">0:0:0.18</Duration>
     <Duration x:Key="Duration.WindowShow">0:0:0.16</Duration>
     <Duration x:Key="Duration.WindowHide">0:0:0.10</Duration>
-    <!-- 动效签名「译光闪落」：光痕扫过译文区（docs/brand-asset-sheet.html，420ms 减速收尾） -->
+    <!-- 动效签名「译光闪落」：光痕扫过译文区（已退役的 v2.0 琥珀资产表，420ms 减速收尾） -->
     <Duration x:Key="Duration.Signature">0:0:0.42</Duration>
 
     <!-- ================= 阴影（层级）================= -->
