@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Serilog;
+using TranslationApp.Core.History;
 using TranslationApp.Core.Settings;
 using TranslationApp.Core.Translation;
 
@@ -27,6 +29,12 @@ public partial class SettingsViewModel
     /// <summary>「引擎」页的引擎卡片（腾讯 / 百度 / Azure / DeepL）。</summary>
     public ObservableCollection<EngineCardViewModel> EngineCards { get; } = [];
 
+    /// <summary>「引擎」页的两组印面（设计稿 .eng-grid）：免密钥（Bing / Google）与官方引擎。</summary>
+    public ObservableCollection<EngineCardViewModel> KeylessEngineCards { get; } = [];
+
+    /// <inheritdoc cref="KeylessEngineCards"/>
+    public ObservableCollection<EngineCardViewModel> KeyedEngineCards { get; } = [];
+
     /// <summary>「翻译」页引擎下拉项（未配置的引擎带「（未配置）」后缀且不可选）。</summary>
     public ObservableCollection<EngineOptionViewModel> EngineOptions { get; } = [];
 
@@ -49,11 +57,20 @@ public partial class SettingsViewModel
             }
         }
 
+        foreach (var card in EngineCards)
+        {
+            // 有 Key 字段的归「官方引擎」，没有的（Bing / Google）归「免密钥」。
+            (card.Fields.Count > 0 ? KeyedEngineCards : KeylessEngineCards).Add(card);
+        }
+
+        RefreshCurrentEngineFlags();
+
         RefreshEngineOptions();
         EnsureCurrentEngineConfigured();
         InitializeCompareOptions();
         InitializeFallbackOptions();
         ProbeForeignEndpoints();
+        InitializeAiProviders();
     }
 
     /// <summary>
@@ -66,8 +83,9 @@ public partial class SettingsViewModel
         "baidu" => CreateBaiduCard(translator),
         "azure" => CreateAzureCard(translator),
         "deepl" => CreateDeepLCard(translator),
-        "llm" => CreateLlmCard(translator),
-        _ => null,
+        // llm 走下面独立的「AI 供应商」区（多档 + 双协议），不套这套单卡模板
+        "llm" => null,
+        _ => CreateKeylessCard(translator),
     };
 
     private EngineCardViewModel CreateTencentCard(ITranslator translator)
@@ -168,38 +186,36 @@ public partial class SettingsViewModel
     }
 
     /// <summary>
-    /// AI 引擎卡片（FR-022 / 13.3.1）：接口地址 + API Key + 模型名，末尾折叠区放温度与自定义 Prompt。
-    /// 不探测端点可达性：默认的 DeepSeek 在国内可直连，是否走代理由「高级」页的作用范围决定。
+    /// AI 供应商区（FR-022）：一个引擎多档配置，单独占引擎页第三组。
+    /// 从引擎目录里取裸的 <see cref="LlmTranslator"/>（绕过 Glossary 装饰器）——测试连接与获取模型列表要用它。
     /// </summary>
-    private EngineCardViewModel CreateLlmCard(ITranslator translator)
+    public AiProviderCardViewModel? AiProviders { get; private set; }
+
+    private void InitializeAiProviders()
     {
-        var card = NewCard(
-            translator,
-            $"OpenAI 兼容接口（DeepSeek / OpenAI / Ollama 等），按字符计费。默认 {LlmTranslator.DefaultBaseUrl}"
-            + $" + {LlmTranslator.DefaultModel}；三项填齐后到「翻译」页选择本引擎。");
+        if (_catalog.Find("llm") is not { } entry || GlossaryTranslator.Unwrap(entry) is not LlmTranslator llm)
+        {
+            return;
+        }
 
-        AddField(card, new EngineFieldViewModel(
-            "接口地址", "填根地址或 /v1 均可，程序按 /v1/chat/completions 自动补全",
-            EngineFieldKind.Plain, _settings.LlmBaseUrl,
-            v => Save(s => s.LlmBaseUrl = v.Trim()),
-            _ => card.HandleFieldChanged(),
-            width: 300));
+        AiProviders = new AiProviderCardViewModel(
+            _settings, _store.Save, OnEngineCardChanged, llm, _engineStats);
+    }
 
-        AddField(card, new EngineFieldViewModel(
-            "API Key", "经 DPAPI 加密后落盘，配置文件中无明文",
-            EngineFieldKind.Secret, SecretStore.Unprotect(_settings.LlmApiKeyEncrypted) ?? "",
-            v => Save(s => s.LlmApiKeyEncrypted = SecretStore.Protect(v)),
-            _ => card.HandleFieldChanged(),
-            width: 300));
+    /// <summary>
+    /// 免密钥引擎（Bing / Google）的印面：没有 Key 字段，只有看板、说明与「测试连接」，
+    /// 与官方引擎并列为两组——设计稿 06 引擎写的是「七个引擎各一张印面」。
+    /// </summary>
+    private EngineCardViewModel CreateKeylessCard(ITranslator translator)
+    {
+        var description = translator.Id switch
+        {
+            "bing" => "微软必应翻译的公开接口：零配置、国内可直连，是默认引擎。",
+            _ => "Google 公开接口：零配置，但国内网络通常需要代理才可达。",
+        };
 
-        AddField(card, new EngineFieldViewModel(
-            "模型名", "如 deepseek-chat / gpt-4o-mini；Ollama 填本地模型名",
-            EngineFieldKind.Plain, _settings.LlmModel,
-            v => Save(s => s.LlmModel = v.Trim()),
-            _ => card.HandleFieldChanged(),
-            width: 200));
-
-        card.EnableAdvancedOptions(_settings.LlmPrompt, _settings.LlmTemperature);
+        var card = NewCard(translator, description);
+        card.IsKeyless = true;
         return card;
     }
 
@@ -294,13 +310,49 @@ public partial class SettingsViewModel
     /// <summary>初始化完成前不落盘（构造期赋初值不应视为用户变更）。</summary>
     private bool _compareInitialized;
 
+    /// <summary>「对比引擎」行的首枚胶囊：解析后第一个参与对比的引擎（设计稿里的朱砂胶囊）。</summary>
+    [ObservableProperty]
+    private string _comparePrimaryTag = "";
+
+    /// <summary>「对比引擎」行剩余的胶囊（设计稿 .tag.line）。</summary>
+    public ObservableCollection<string> CompareEngineTags { get; } = [];
+
+    /// <summary>是否展开引擎勾选清单；收起时该行就是设计稿里的一行摘要。</summary>
+    [ObservableProperty]
+    private bool _compareEditorOpen;
+
+    [RelayCommand]
+    private void ToggleCompareEditor() => CompareEditorOpen = !CompareEditorOpen;
+
+    /// <summary>
+    /// 摘要胶囊只显示真正会参与对比的引擎（走与翻译同一套 EngineComparison 解析），
+    /// 所以未勾选时看到的就是自动挑出来的「当前引擎 + 首个其它已配置引擎」。
+    /// </summary>
+    private void RefreshCompareEngineTags()
+    {
+        var resolved = EngineComparison.ResolveEngines(_settings.CompareEngineIds, _catalog.All, _settings.Engine);
+        var names = resolved.Select(engine => ShortEngineName(engine.Name)).ToArray();
+        if (ComparePrimaryTag == names.FirstOrDefault()
+            && CompareEngineTags.SequenceEqual(names.Skip(1), StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        ComparePrimaryTag = names.FirstOrDefault() ?? "";
+        CompareEngineTags.Clear();
+        foreach (var name in names.Skip(1))
+        {
+            CompareEngineTags.Add(name);
+        }
+    }
+
     private void InitializeCompareOptions()
     {
         var selected = EngineComparison.ParseIds(_settings.CompareEngineIds);
         foreach (var translator in _catalog.All)
         {
             CompareEngineOptions.Add(new CompareEngineOptionViewModel(
-                translator.Id, translator.Name, translator.IsConfigured,
+                translator.Id, ShortEngineName(translator.Name), translator.IsConfigured,
                 selected.Contains(translator.Id), OnCompareSelectionChanged));
         }
 
@@ -371,6 +423,7 @@ public partial class SettingsViewModel
 
     private void UpdateCompareMessage()
     {
+        RefreshCompareEngineTags();
         var configured = CompareEngineOptions.Where(o => o.IsSelected && o.IsEnabled).ToArray();
         var missing = CompareEngineOptions.Where(o => o.IsSelected && !o.IsEnabled).ToArray();
 
@@ -412,11 +465,101 @@ public partial class SettingsViewModel
     }
 
     /// <summary>任一密钥/标识字段变更后：刷新引擎下拉可用性，并保证当前引擎仍然可用。</summary>
+    /// <summary>
+    /// 工作台右栏「引擎」列表（设计稿 .wb-list）：目录里每个引擎一行，
+    /// 显示当下能不能用（在线 / 未配置 / 需代理）与近 7 天 P50。
+    /// 与「引擎」页的卡片不同：那里只列需要填 Key 的，这里要能一眼看完所有通道。
+    /// </summary>
+    public ObservableCollection<WorkbenchEngineRow> WorkbenchEngineRows { get; } = [];
+
+    /// <summary>工作台条上那枚朱砂标签：当前引擎 + 现在能不能用 + 它的 P50。</summary>
+    public string WorkbenchEngineTag { get; private set; } = "";
+
+    /// <summary>工作台右列只放得下三行（设计稿 .wb-side）：当前引擎排第一，其余按目录顺序补足。</summary>
+    private const int WorkbenchEngineLimit = 3;
+
+    /// <summary>重建工作台引擎行（切到工作台时调用）；顺带刷各卡统计，把 P50 取回来。</summary>
+    public void RefreshWorkbenchEngineRows()
+    {
+        RefreshEngineStats();
+        WorkbenchEngineRows.Clear();
+
+        var current = _catalog.Resolve(_settings.Engine);
+        foreach (var translator in _catalog.All
+                     .OrderByDescending(t => t.Id == current.Id)
+                     .Take(WorkbenchEngineLimit))
+        {
+            WorkbenchEngineRows.Add(CreateWorkbenchEngineRow(translator));
+        }
+
+        RefreshWorkbenchEngineTag();
+    }
+
+    private WorkbenchEngineRow CreateWorkbenchEngineRow(ITranslator translator)
+    {
+        // AI 是「多档一引擎」，没有单卡看板：状态从供应商区取（当前档是否配置好）
+        if (translator.Id == "llm" && AiProviders is { } ai)
+        {
+            return new WorkbenchEngineRow(
+                ShortEngineName(translator.Name),
+                ai.WorkbenchStatusText,
+                ai.IsOnline,
+                ai.LatencyText);
+        }
+
+        var card = EngineCards.FirstOrDefault(c => c.Id == translator.Id);
+        return new WorkbenchEngineRow(
+            ShortEngineName(translator.Name),
+            card?.WorkbenchStatusText ?? (translator.IsConfigured ? "在线" : "未配置"),
+            card?.IsOnline ?? translator.IsConfigured,
+            card?.LatencyText ?? "—");
+    }
+
+    /// <summary>列宽只有 292px：去掉「（非官方，零配置）」这类补充说明，只留引擎本名。</summary>
+    private static string ShortEngineName(string name)
+    {
+        return TranslationRecord.ShortEngineName(name);
+    }
+
+    /// <summary>当前引擎（Resolve 之后的那个）在引擎行里的样子。</summary>
+    private WorkbenchEngineRow? CurrentEngineRow()
+    {
+        var current = _catalog.Resolve(_settings.Engine);
+        return WorkbenchEngineRows.FirstOrDefault(row => row.Name == ShortEngineName(current.Name));
+    }
+
+    /// <summary>刷新工作台条上的引擎标签（外形对齐设计稿的「必应 · 在线 54ms」）。</summary>
+    private void RefreshWorkbenchEngineTag()
+    {
+        var row = CurrentEngineRow();
+        WorkbenchEngineTag = row is null
+            ? ShortEngineName(_catalog.Resolve(_settings.Engine).Name)
+            : row.IsOnline && row.LatencyText != "—"
+                ? $"{row.Name} · {row.StatusText} {row.LatencyText}"
+                : $"{row.Name} · {row.StatusText}";
+        OnPropertyChanged(nameof(WorkbenchEngineTag));
+    }
+
     private void OnEngineCardChanged()
     {
         RefreshEngineOptions();
         EnsureCurrentEngineConfigured();
         RefreshCompareOptions();
+    }
+
+    /// <summary>刷「当前引擎」标记：引擎页只在那一张印面上盖这枚朱砂标签。</summary>
+    private void RefreshCurrentEngineFlags()
+    {
+        foreach (var card in EngineCards)
+        {
+            card.IsCurrentEngine = string.Equals(card.Id, _settings.Engine, StringComparison.Ordinal);
+        }
+
+        // AI 不套单卡模板，单独盖一枚「当前引擎」（否则切到 AI 时没有任何印面亮起）
+        if (AiProviders is { } ai)
+        {
+            ai.IsCurrentEngine = string.Equals("llm", _settings.Engine, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
@@ -428,7 +571,10 @@ public partial class SettingsViewModel
         foreach (var translator in _catalog.All)
         {
             var configured = translator.IsConfigured;
-            var display = configured ? translator.Name : $"{translator.Name}（未配置）";
+            // 下拉与工作台引擎行用同一套短名（设计稿那一列只写「Bing」）；
+            // 「非官方 / 零配置」这类说明由印面下的提示行承担。
+            var shortName = ShortEngineName(translator.Name);
+            var display = configured ? shortName : $"{shortName}（未配置）";
 
             if (_engineOptionsById.TryGetValue(translator.Id, out var option))
             {
@@ -520,6 +666,9 @@ public partial class SettingsViewModel
 
 /// <summary>
 /// 「翻译」页引擎下拉项：未配置的引擎带「（未配置）」后缀且不可选。
+/// <summary>工作台右栏「引擎」列表的一行（设计稿 .wb-li）：名字 + 状态词 + 近 7 天 P50。</summary>
+public sealed record WorkbenchEngineRow(string Name, string StatusText, bool IsOnline, string LatencyText);
+
 /// 属性可写，便于密钥变更时就地刷新（避免重建集合导致下拉丢失当前选择）。
 /// </summary>
 public sealed partial class EngineOptionViewModel : ObservableObject

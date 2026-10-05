@@ -34,8 +34,10 @@ public sealed class JsonSettingsStore : ISettingsStore
                 return new AppSettings();
             }
 
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_filePath), JsonOptions)
-                   ?? new AppSettings();
+            // 旧版本配置先过一遍迁移，再交给调用方（新文件就是当前版本，迁移是幂等的）
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_filePath), JsonOptions)
+                           ?? new AppSettings();
+            return SettingsMigrations.Upgrade(settings);
         }
         catch (Exception)
         {

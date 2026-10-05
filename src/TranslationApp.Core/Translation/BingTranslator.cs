@@ -16,7 +16,9 @@ namespace TranslationApp.Core.Translation;
 public sealed class BingTranslator : ITranslator
 {
     private const string TranslatorPage = "https://cn.bing.com/translator";
-    private const string TranslateApi = "https://www.bing.com/ttranslatev3?isVertical=1";
+    // 2026-10-01：www.bing.com/ttranslatev3 开始返回 200 + 空响应（令牌有效也如此），
+    // 而 cn.bing.com 同端点仍正常，故与页面同域取值。
+    private const string TranslateApi = "https://cn.bing.com/ttranslatev3?isVertical=1";
     private const string AutoDetect = "auto-detect";
 
     /// <summary>单次请求文本上限（留余量，按句子边界切块）。</summary>

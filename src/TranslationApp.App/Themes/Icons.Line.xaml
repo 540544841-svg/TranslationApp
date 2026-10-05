@@ -1,0 +1,229 @@
+<!--
+  线性图标集（对齐 design-v4/inkseal-ui.html 内的内联 SVG）
+
+  设计稿的图标都是 24x24 viewBox 的描边图形（fill:none; stroke:currentColor; stroke-width:1.6）。
+  WPF 里逐字翻译成 GeometryGroup：<path> → PathGeometry，<rect rx> → RectangleGeometry，
+  <circle> → EllipseGeometry；描边宽度保持 1.6，缩放交给使用处的 Viewbox，
+  这样 Viewbox 会连同笔画一起缩放，视觉粗细与浏览器里一致。
+
+  用法（19px 导航图标）：
+      <Viewbox Width="19" Height="19"><Path Style="{StaticResource Icon.Line}"
+            Data="{StaticResource Glyph.Desk}"/></Viewbox>
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ==================== 印架导航（11 个分区） ==================== -->
+
+    <!-- 工作台：一块屏幕 + 分栏线 -->
+    <GeometryGroup x:Key="Glyph.Desk">
+        <RectangleGeometry Rect="3.5,4.5,17,15" RadiusX="2.5" RadiusY="2.5"/>
+        <PathGeometry Figures="M3.5 10.5h17M7 15.5h5"/>
+    </GeometryGroup>
+
+    <!-- 通用：三行滑杆 -->
+    <GeometryGroup x:Key="Glyph.General">
+        <PathGeometry Figures="M4 7h9M17 7h3M4 12h4M12 12h8M4 17h11M19 17h1"/>
+        <EllipseGeometry Center="15,7" RadiusX="2" RadiusY="2"/>
+        <EllipseGeometry Center="10,12" RadiusX="2" RadiusY="2"/>
+        <EllipseGeometry Center="17,17" RadiusX="2" RadiusY="2"/>
+    </GeometryGroup>
+
+    <!-- 更新：回转箭头 -->
+    <GeometryGroup x:Key="Glyph.Update">
+        <PathGeometry Figures="M20.5 12A8.5,8.5,0,1,1,18.1,6.1"/>
+        <PathGeometry Figures="M21 4v5h-5"/>
+    </GeometryGroup>
+
+    <!-- 诊断：心电图 -->
+    <PathGeometry x:Key="Glyph.Doctor" Figures="M3 12h4l2-5 3 10 2.5-5H21"/>
+
+    <!-- 热键：键盘 -->
+    <GeometryGroup x:Key="Glyph.Hotkey">
+        <RectangleGeometry Rect="2,6,20,12" RadiusX="2" RadiusY="2"/>
+        <PathGeometry Figures="M6.5 10h.01M10.5 10h.01M14.5 10h.01M18 10h.01M7 14h10"/>
+    </GeometryGroup>
+
+    <!-- 翻译：文 + 换写 -->
+    <GeometryGroup x:Key="Glyph.Translate">
+        <PathGeometry Figures="M3 5h8M7 5v1.8C7 10.5 5.6 13.4 3 15"/>
+        <PathGeometry Figures="M4.6 9.2c.4 2.8 3 5.4 6.4 6.4"/>
+        <PathGeometry Figures="M13 20l4-9 4 9M14.5 17h5"/>
+    </GeometryGroup>
+
+    <!-- 引擎：芯片 -->
+    <GeometryGroup x:Key="Glyph.Engine">
+        <RectangleGeometry Rect="7,7,10,10" RadiusX="2" RadiusY="2"/>
+        <PathGeometry Figures="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>
+    </GeometryGroup>
+
+    <!-- 印谱：条目 + 时钟 -->
+    <GeometryGroup x:Key="Glyph.History">
+        <PathGeometry Figures="M4 6h9M4 12h9M4 18h6"/>
+        <EllipseGeometry Center="17.5,16" RadiusX="4" RadiusY="4"/>
+        <PathGeometry Figures="M17.5 14.2v1.9l1.4.9"/>
+    </GeometryGroup>
+
+    <!-- 藏印：书签 -->
+    <PathGeometry x:Key="Glyph.Vocab" Figures="M6 3h12v18l-6-4.2L6 21V3z"/>
+
+    <!-- 定制印：吊牌 + 穿孔 -->
+    <GeometryGroup x:Key="Glyph.Glossary">
+        <PathGeometry Figures="M3.5 12.5L12 4h8.5v8.5L12 21l-8.5-8.5z"/>
+        <EllipseGeometry Center="16.6,7.6" RadiusX="1.3" RadiusY="1.3"/>
+    </GeometryGroup>
+
+    <!-- 高级：锥形瓶 -->
+    <GeometryGroup x:Key="Glyph.Advanced">
+        <PathGeometry Figures="M9 3h6M10 3v6l-5 8.2A2 2 0 007 20h10a2 2 0 001.7-3L13 9V3"/>
+        <PathGeometry Figures="M8.4 15h7.2"/>
+    </GeometryGroup>
+
+    <!-- ==================== 动作图标 ==================== -->
+
+    <!-- 朗读（原文：两层声波；译文：三层） -->
+    <GeometryGroup x:Key="Glyph.Speak">
+        <PathGeometry Figures="M11 5L6 9H3v6h3l5 4V5z"/>
+        <PathGeometry Figures="M15.5 8.5a5 5 0 010 7"/>
+    </GeometryGroup>
+    <GeometryGroup x:Key="Glyph.SpeakWave">
+        <PathGeometry Figures="M11 5L6 9H3v6h3l5 4V5z"/>
+        <PathGeometry Figures="M15.5 8.5a5 5 0 010 7"/>
+        <PathGeometry Figures="M18.5 6a8 8 0 010 12"/>
+    </GeometryGroup>
+
+    <!-- 复制：两张错开的纸 -->
+    <GeometryGroup x:Key="Glyph.Copy">
+        <RectangleGeometry Rect="9,9,11,11" RadiusX="2" RadiusY="2"/>
+        <PathGeometry Figures="M5 15V6a2 2 0 012-2h9"/>
+    </GeometryGroup>
+
+    <!-- 收进藏印：星 -->
+    <PathGeometry x:Key="Glyph.Star" Figures="M12 3l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.3l6-.8L12 3z"/>
+
+    <!-- 对比引擎：分栏印面 -->
+    <GeometryGroup x:Key="Glyph.Compare">
+        <RectangleGeometry Rect="3,5,18,14" RadiusX="2.5" RadiusY="2.5"/>
+        <PathGeometry Figures="M12 5v14"/>
+        <PathGeometry Figures="M6 9.5h2.5M15.5 9.5H18"/>
+    </GeometryGroup>
+
+    <!-- 落印：带方框的对勾 -->
+    <GeometryGroup x:Key="Glyph.SealCheck">
+        <RectangleGeometry Rect="4,4,16,16" RadiusX="4" RadiusY="4"/>
+        <PathGeometry Figures="M9 12l2.2 2.2L15.5 10"/>
+    </GeometryGroup>
+
+    <!-- 收起 / 清空 -->
+    <PathGeometry x:Key="Glyph.Close" Figures="M6 6l12 12M18 6L6 18"/>
+
+    <!-- 互换语言 -->
+    <PathGeometry x:Key="Glyph.Swap" Figures="M4 8h13l-3-3M20 16H7l3 3"/>
+
+    <!-- 语言下拉箭头 -->
+    <PathGeometry x:Key="Glyph.ChevronDown" Figures="M6 9l6 6 6-6"/>
+    <PathGeometry x:Key="Glyph.ChevronUp" Figures="M6 15l6-6 6 6"/>
+
+    <!-- 截图翻译：取景框 + 框内选区 -->
+    <GeometryGroup x:Key="Glyph.Capture">
+        <PathGeometry Figures="M4 8V5.5A1.5 1.5 0 015.5 4H8M16 4h2.5A1.5 1.5 0 0120 5.5V8M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16M8 20H5.5A1.5 1.5 0 014 18.5V16"/>
+        <PathGeometry Figures="M9.5 9.5h5v5h-5z"/>
+    </GeometryGroup>
+
+    <!-- 划词翻译：指针 -->
+    <PathGeometry x:Key="Glyph.SelectCursor" Figures="M5 3l6 16 2.2-6.2L19.5 10 5 3z"/>
+
+    <!-- 钉住截图（骑缝印）：图钉 -->
+    <GeometryGroup x:Key="Glyph.Pin">
+        <PathGeometry Figures="M12 17v5M9 3h6l-1 6 3 3H7l3-3-1-6z"/>
+    </GeometryGroup>
+
+    <!-- 打开印谱：同「印谱」 -->
+    <!-- 搜索：放大镜 -->
+    <GeometryGroup x:Key="Glyph.Search">
+        <EllipseGeometry Center="10.5,10.5" RadiusX="6.5" RadiusY="6.5"/>
+        <PathGeometry Figures="M15.4 15.4L20.5 20.5"/>
+    </GeometryGroup>
+
+    <!-- 导出：落到托盘里的向下箭头 -->
+    <GeometryGroup x:Key="Glyph.Export">
+        <PathGeometry Figures="M12 3.5v11M7.8 10.3L12 14.5l4.2-4.2"/>
+        <PathGeometry Figures="M4.5 20.5h15"/>
+    </GeometryGroup>
+
+    <!-- 刷新：回转箭头 -->
+    <GeometryGroup x:Key="Glyph.Refresh">
+        <PathGeometry Figures="M20.5 12A8.5,8.5,0,1,1,18.1,6.1"/>
+        <PathGeometry Figures="M21 4v5h-5"/>
+    </GeometryGroup>
+
+    <!-- 编辑：笔 -->
+    <GeometryGroup x:Key="Glyph.Edit">
+        <PathGeometry Figures="M4 20h4.2L19.3 8.9a2.4 2.4 0 00-3.2-3.2L5 16.8V20z"/>
+        <PathGeometry Figures="M13.8 6.9l3.3 3.3"/>
+    </GeometryGroup>
+
+    <!-- 已校对：对勾 -->
+    <PathGeometry x:Key="Glyph.Check" Figures="M5 12.6l4.4 4.4L19 7.2"/>
+
+    <!-- 加入定制印：加号 -->
+    <PathGeometry x:Key="Glyph.Add" Figures="M12 5.2v13.6M5.2 12h13.6"/>
+
+    <!-- 删除：印钮 + 筒身 -->
+    <GeometryGroup x:Key="Glyph.Delete">
+        <PathGeometry Figures="M4.5 7h15"/>
+        <PathGeometry Figures="M10 4.5h4V7h-4z"/>
+        <PathGeometry Figures="M6.8 7l1 13h8.4l1-13"/>
+    </GeometryGroup>
+
+    <!-- ==================== 标题栏帽檐（设计稿 .win-caps，12x12 viewBox）====================
+         设计稿里这三枚是 11px 的内联 SVG、stroke-width 1，所以单独用 12 格坐标系，
+         不要和上面那批 24 格正文图标混用（混用会让笔画粗一倍）。 -->
+    <PathGeometry x:Key="Glyph.WinMin" Figures="M1 6h10"/>
+    <PathGeometry x:Key="Glyph.WinMax" Figures="M1.5 1.5h9v9h-9z"/>
+    <PathGeometry x:Key="Glyph.WinRestore" Figures="M3.5 1.5h7v7M1.5 3.5h7v7h-7z"/>
+    <PathGeometry x:Key="Glyph.WinClose" Figures="M1.5 1.5l9 9M10.5 1.5l-9 9"/>
+
+    <!-- ==================== 使用样式 ==================== -->
+
+    <!-- 描边图标本体：24x24 坐标系，套在 Viewbox 里缩放 -->
+    <Style x:Key="Icon.Line" TargetType="Path">
+        <Setter Property="Fill" Value="{x:Null}"/>
+        <Setter Property="Stroke" Value="{DynamicResource Brush.TextSecondary}"/>
+        <Setter Property="StrokeThickness" Value="1.6"/>
+        <Setter Property="Width" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Stretch" Value="None"/>
+    </Style>
+
+    <!-- 正文级前景（悬停 / 活性态） -->
+    <Style x:Key="Icon.Line.Ink" TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+        <Setter Property="Stroke" Value="{DynamicResource Brush.TextPrimary}"/>
+    </Style>
+
+    <!-- 标题栏帽檐：12 格坐标系、笔画 1，交给 11px 的 Viewbox 摆放 -->
+    <Style x:Key="Icon.Caption" TargetType="Path">
+        <Setter Property="Fill" Value="{x:Null}"/>
+        <Setter Property="Stretch" Value="None"/>
+        <Setter Property="StrokeThickness" Value="1"/>
+        <Setter Property="StrokeStartLineCap" Value="Round"/>
+        <Setter Property="StrokeEndLineCap" Value="Round"/>
+        <Setter Property="StrokeLineJoin" Value="Round"/>
+    </Style>
+
+    <!-- 朱砂文字级（强调 / 已落印） -->
+    <Style x:Key="Icon.Line.Primary" TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+        <Setter Property="Stroke" Value="{DynamicResource Brush.PrimaryText}"/>
+    </Style>
+
+    <!-- 朱砂面（落在朱砂底上的实心图标，如导航选中项） -->
+    <Style x:Key="Icon.Line.On" TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+        <Setter Property="Stroke" Value="{DynamicResource Brush.OnPrimary}"/>
+    </Style>
+
+    <!-- 禁用级 -->
+    <Style x:Key="Icon.Line.Disabled" TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+        <Setter Property="Stroke" Value="{DynamicResource Brush.TextDisabled}"/>
+    </Style>
+
+</ResourceDictionary>

@@ -175,7 +175,7 @@ public sealed class LocalApiServer : IDisposable
                 case ("GET", "/api/status"):
                     await WriteJsonAsync(response, 200, new
                     {
-                        app = "速译",
+                        app = "译印",
                         api = 1,
                         engines = _configuredEngineIds(),
                     });

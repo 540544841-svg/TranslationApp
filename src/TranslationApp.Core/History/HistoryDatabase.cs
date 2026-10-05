@@ -67,6 +67,7 @@ public sealed class HistoryDatabase
                     ,Reviewed       INTEGER NOT NULL DEFAULT 0
                     ,Rejected       INTEGER NOT NULL DEFAULT 0
                     ,EditedAtMs     INTEGER NULL
+                    ,Pinned         INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS IX_History_CreatedAt ON History(CreatedAtMs DESC);
 
@@ -115,10 +116,17 @@ public sealed class HistoryDatabase
             EnsureColumn(connection, "History", "Reviewed", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(connection, "History", "Rejected", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(connection, "History", "EditedAtMs", "INTEGER NULL");
+            EnsureColumn(connection, "History", "Pinned", "INTEGER NOT NULL DEFAULT 0");
             using (var index = connection.CreateCommand())
             {
                 index.CommandText =
                     "CREATE INDEX IF NOT EXISTS IX_History_TmQuality ON History(TargetLanguage, Rejected, Reviewed);";
+                index.ExecuteNonQuery();
+            }
+            using (var index = connection.CreateCommand())
+            {
+                index.CommandText =
+                    "CREATE INDEX IF NOT EXISTS IX_History_Pinned ON History(Pinned DESC, Id DESC);";
                 index.ExecuteNonQuery();
             }
             IsAvailable = true;

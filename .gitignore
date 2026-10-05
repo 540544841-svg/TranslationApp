@@ -10,6 +10,9 @@ build/secrets/
 # 界面验收截图（由 build/verify-ui.ps1 生成）
 artifacts/
 
+# 离屏渲染 / 比对用的临时产物
+out/
+
 # IDE / 用户配置
 *.user
 .vs/

@@ -63,13 +63,6 @@ public sealed class GlossaryTranslator : ITranslator, IPromptDirectiveTranslator
         string targetLanguage,
         CancellationToken cancellationToken = default)
     {
-        if (_inner is IPromptDirectiveTranslator directable)
-        {
-            return RunAsync(
-                () => directable.TranslateAsync(text, sourceLanguage, targetLanguage, TranslationDirective.None, cancellationToken),
-                text, sourceLanguage, targetLanguage, cancellationToken);
-        }
-
         return RunAsync(
             () => _inner.TranslateAsync(text, sourceLanguage, targetLanguage, cancellationToken),
             text, sourceLanguage, targetLanguage, cancellationToken);

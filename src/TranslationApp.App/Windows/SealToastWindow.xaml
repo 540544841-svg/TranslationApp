@@ -1,0 +1,62 @@
+<Window x:Class="TranslationApp.Windows.SealToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="译印"
+        Width="368" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowActivated="False" ShowInTaskbar="False" Focusable="False" Topmost="True"
+        ResizeMode="NoResize"
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
+        SnapsToDevicePixels="True" UseLayoutRounding="True">
+    <!--
+      右下角印讯（取代系统气泡）：一枚印面卡，左边一道朱砂竖痕，底部一道刻痕收在方菱形上。
+      窗口本身是 WS_EX_NOACTIVATE + WS_EX_TRANSPARENT（见 code-behind），
+      所以它不会抢焦点、也不吃鼠标——用户正在别处打字时弹出来也不会打断。
+    -->
+    <Border Margin="18" CornerRadius="{StaticResource Brand.Radius.Window}"
+            Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+            Effect="{StaticResource Shadow.Popup}">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 朱砂竖痕：与工作台信条卡同一道 -->
+            <Border Width="3" Background="{DynamicResource Brush.Primary}"/>
+
+            <StackPanel Grid.Column="1" Margin="14,12,16,0">
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource BrandMark}" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="译印" Margin="7,0,6,0" FontSize="12.5"
+                                   FontWeight="{StaticResource Weight.Semibold}" VerticalAlignment="Center"/>
+                        <TextBlock Text="INKSEAL" Margin="0,1,0,0" FontFamily="{StaticResource Font.Mono}"
+                                   FontSize="9" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Brush.TextTertiary}"/>
+                    </StackPanel>
+                    <Border x:Name="SeverityTag" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="SeverityText" Text="提示" FontSize="11"/>
+                    </Border>
+                </Grid>
+
+                <TextBlock x:Name="TitleText" Margin="0,9,0,0" FontSize="13.5"
+                           FontWeight="{StaticResource Weight.Semibold}" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Brush.TextPrimary}"/>
+                <TextBlock x:Name="MessageText" Margin="0,4,0,0" FontSize="12.5" TextWrapping="Wrap"
+                           LineHeight="19" Foreground="{DynamicResource Brush.TextSecondary}"/>
+
+                <!-- 刻痕收方菱形：全站的签名收尾 -->
+                <Grid Margin="0,12,0,0" Height="7">
+                    <Border Height="1" VerticalAlignment="Center" Margin="0,0,8,0"
+                            Background="{DynamicResource Brush.Border}"/>
+                    <Border Style="{StaticResource GroupDiamond}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+                <Border Height="12"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

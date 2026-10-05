@@ -170,6 +170,7 @@ public sealed partial class EngineCardViewModel : ObservableObject
     internal void RefreshStats()
     {
         var s = _stats?.GetSummary(Id) ?? new TranslationApp.Core.History.EngineStatsSummary(0, 0, 0, 0, 0, 0, "");
+        P50Ms = s.P50Ms;
         if (s.IsEmpty)
         {
             StatsText = "";
@@ -192,17 +193,23 @@ public sealed partial class EngineCardViewModel : ObservableObject
         if (s.LastError.Length > 0 && s.FailTotal > 0) parts.Add($"最近失败：{s.LastError}");
 
         StatsText = string.Join(" · ", parts);
-        return;
-
-        static string FormatLatency(double ms) =>
-            ms < 1000 ? $"{ms:0}ms" : $"{ms / 1000:0.#}s";
     }
+
+    private static string FormatLatency(double ms) =>
+        ms < 1000 ? $"{ms:0}ms" : $"{ms / 1000:0.#}s";
 
     /// <summary>是否显示端点不可达提示条。</summary>
     public bool HasReachabilityWarning => ReachabilityWarning.Length > 0;
 
-    partial void OnReachabilityWarningChanged(string value) =>
+    partial void OnReachabilityWarningChanged(string value)
+    {
         OnPropertyChanged(nameof(HasReachabilityWarning));
+        OnPropertyChanged(nameof(FooterTagText));
+        OnPropertyChanged(nameof(FooterTagPositive));
+        OnPropertyChanged(nameof(FooterTagCaution));
+        OnPropertyChanged(nameof(FooterHint));
+        OnPropertyChanged(nameof(HasFooterHint));
+    }
 
     /// <summary>是否显示「免费端点」开关（仅 DeepL）。</summary>
     public bool HasFreeEndpointToggle { get; internal set; }
@@ -213,11 +220,62 @@ public sealed partial class EngineCardViewModel : ObservableObject
 
     public string StatusText => IsConfigured ? "已配置" : "未配置";
 
+    /// <summary>是否当前引擎：设计稿在那一张印面上盖一枚朱砂「当前引擎」。</summary>
+    [ObservableProperty]
+    private bool _isCurrentEngine;
+
+    /// <summary>近 7 天 P50 耗时（毫秒）；无样本为 null。由 <see cref="RefreshStats"/> 回填。</summary>
+    internal double? P50Ms { get; private set; }
+
+    /// <summary>工作台右栏「引擎」列表的耗时列（设计稿 .wb-li .ms）；无样本显示破折号。</summary>
+    public string LatencyText => P50Ms is { } ms ? FormatLatency(ms) : "—";
+
+    /// <summary>
+    /// 工作台右栏「引擎」列表的状态词（设计稿 .wb-li .tag）：在线 / 未配置 / 需代理。
+    /// 与「引擎」页的 StatusText（已配置/未配置）不同：那里说的是 **Key 填了没**，
+    /// 这里说的是 **现在能不能用**，所以还要看端点探活的结果。
+    /// </summary>
+    public string WorkbenchStatusText =>
+        !IsConfigured ? "未配置" : HasReachabilityWarning ? "需代理" : "在线";
+
+    /// <summary>是否处于「在线」态（决定工作台列表里那枚徽标用朱砂还是灰）。</summary>
+    public bool IsOnline => IsConfigured && !HasReachabilityWarning;
+
+    /// <summary>
+    /// 免密钥引擎标记（无字段、不需密钥）。由工厂在创建时设置，
+    /// 底部功能栏据此换文案：免密钥报连通性，官方引擎报密钥填了没。
+    /// </summary>
+    internal bool IsKeyless { get; set; }
+
+    /// <summary>印面底部「功能栏」的状态标签（设计稿 .eng 底部那一行）。</summary>
+    public string FooterTagText => IsKeyless
+        ? HasReachabilityWarning ? "需代理" : Id == "bing" ? "国内直连" : "多 client 依次尝试"
+        : StatusText;
+
+    /// <summary>功能栏标签取「可用」配色（朱砂淡底）。</summary>
+    public bool FooterTagPositive => IsKeyless
+        ? !HasReachabilityWarning && Id == "bing"
+        : IsConfigured;
+
+    /// <summary>功能栏标签取「注意」配色（警示淡底）。</summary>
+    public bool FooterTagCaution => IsKeyless && HasReachabilityWarning;
+
+    /// <summary>功能栏里标签后面那句补充说明（无内容时整句隐藏）。</summary>
+    public string FooterHint => IsKeyless
+        ? HasReachabilityWarning
+            ? "端点不可达，可在「高级」页开启代理"
+            : Id == "bing" ? "无需代理、无需密钥" : ""
+        : Host.Length > 0 ? Host : "填好密钥后点右侧「测试连接」验证";
+
+    public bool HasFooterHint => FooterHint.Length > 0;
+
     internal ITranslator Translator => _translator;
 
     partial void OnIsConfiguredChanged(bool value)
     {
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(FooterTagText));
+        OnPropertyChanged(nameof(FooterTagPositive));
         TestCommand.NotifyCanExecuteChanged();
     }
 

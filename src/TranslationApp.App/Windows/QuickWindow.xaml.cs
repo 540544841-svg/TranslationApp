@@ -51,15 +51,47 @@ public partial class QuickWindow : Window
     /// </summary>
     private const int ResultDebounceMs = 120;
 
-    /// <summary>FR-026：高度缓动动画时长（14.2.4 第 2 点，120~140 ms 取上限）。</summary>
-    private const int AdaptiveAnimationMs = 140;
+    /// <summary>
+    /// FR-026：**生长动画**时长（14.2.4 第 2 点）。取品牌「落印」时长 260 ms（Brand.Duration.Stamp）。
+    /// 只驱动**高度**：宽度瞬时到位（逐帧改宽会让中文逐帧重折行，见 <see cref="ApplyIntentSize"/>），
+    /// 高度只决定「下方多露出几行」——顶对齐的正文行位置不动，整段生长期间零次重折行。
+    /// 缓动曲线用 QuinticEase/EaseOut：尾部几乎不动，视觉上「稳稳落定」。
+    /// </summary>
+    private const int AdaptiveAnimationMs = 260;
 
     /// <summary>
-    /// FR-026：程序写入尺寸后的「屏蔽窗口」。自适应改宽高、其 140 ms 动画、以及随后的物理摆放
+    /// FR-026：程序写入尺寸后的「屏蔽窗口」。自适应改宽高、其 260 ms 动画、以及随后的物理摆放
     /// 都会触发 <see cref="OnWindowSizeChanged"/>（SizeChanged 是异步的，单纯的 bool 标志盖不住动画的每一帧），
     /// 在此期间不回写意图尺寸（否则会把动画的中间帧当成真实尺寸）。
+    /// 取动画时长 + 一帧布局 + 收尾物理摆放的余量（动画 260 ms → 屏蔽 560 ms）。
     /// </summary>
-    private const int AdaptiveGuardMs = 400;
+    private const int AdaptiveGuardMs = 560;
+
+    /// <summary>
+    /// 译文正文的排版参数：必须与 QuickWindow.xaml 里 ResultBox / MeasureShadow 逐字一致，
+    /// 否则量影子的字号比真实排版的字号小，窗口会按「矮一行」生长，最后一行被挤掉。
+    /// 设计稿 .dst-text 原值：19px / line-height 1.55。
+    /// </summary>
+    private const double ResultFontSize = 19;
+    private const double ResultLineHeight = 29.5;
+
+    /// <summary>落印总时长（设计稿 @keyframes land 260ms）。</summary>
+    private const double StampMs = 260;
+    private static readonly TimeSpan StampDuration = TimeSpan.FromMilliseconds(StampMs);
+
+    /// <summary>
+    /// 落纸时刻（毫秒）：悬印只占这 82ms（下压越快越重），到这一刻硬压在纸面、同时炸开墨爆与卡片反震；
+    /// 飞溅墨点 / 冲击闪光 / 墨气三层观效都以此为 <c>BeginTime</c>。
+    /// </summary>
+    private const double ImpactMs = 82;
+
+    /// <summary>墨爆的 6 粒飞溅墨点（角度单位度：0=正右、90=正下；距离单位 DIP）。印面标在右上角，
+    /// 所以整体往卡片内侧偏：向右只留一粒短程，避免飞出去被卡片右缘裁掉。</summary>
+    private static readonly (double AngleDeg, double Distance)[] SealDrops =
+        [(85, 62), (128, 78), (175, 86), (212, 60), (248, 38), (35, 22)];
+
+    /// <summary>墨气扩散时长（设计稿 @keyframes inkmist 460ms）。</summary>
+    private static readonly TimeSpan InkMistDuration = TimeSpan.FromMilliseconds(460);
 
     private readonly QuickTranslateViewModel _vm;
     private readonly AppSettings _settings;
@@ -86,6 +118,24 @@ public partial class QuickWindow : Window
     /// 用户点一下按钮窗口就跟着鼠标跳走（实测反馈）。换一次呼出才重置。
     /// </summary>
     private NativeMethods.POINT? _placementAnchor;
+
+    /// <summary>
+    /// 本次呼出的贴边方向（右/左、下/上）：FR-025 的越界翻转只在首次摆放判一次，之后沿用同一侧。
+    /// 译文到达后窗口会长高长宽，若每次按新尺寸重判，越过工作区下沿/右沿的那一刻就会整窗翻到
+    /// 另一侧——用户看到的就是「执行翻译时小窗位置变换」。换一次呼出才重置。
+    /// </summary>
+    private PlacementSide _placementSide;
+
+    /// <summary>
+    /// 本次呼出锁定的窗口**顶边物理 Y**（物理像素，含阴影留白的窗口外框）：首次物理摆放落地时采信，
+    /// 之后任何尺寸变化（译文到达、对比增高、动画收尾）都只向下生长，顶边一动不动。
+    ///
+    /// 为什么必须有：<see cref="WindowPlacement.Compute"/> 在「窗口放不下」时会把 y 往上钳制，
+    /// 于是译文越长、顶边被顶得越高——用户看到的就是「拉长跳变」。配合
+    /// <see cref="AvailableWindowHeightDip"/> 限高（目标高度永远在「顶边到工作区下沿」以内），
+    /// 钳制永远不会触发，顶边全程不动。换一次呼出（<see cref="ShowInternal"/>）才重置。
+    /// </summary>
+    private int? _pinnedTopPhysical;
 
     /// <summary>已安排过一次 DispatcherPriority.Loaded 重摆放（防重入，参照遮罩窗口的 _dpiHopPending）。</summary>
     private bool _dpiHopPending;
@@ -115,9 +165,22 @@ public partial class QuickWindow : Window
     /// <summary>FR-026：输入/错误行变化的 400 ms 防抖计时器（避免每敲一个字符就改窗口尺寸）。</summary>
     private readonly DispatcherTimer _adaptiveTimer;
 
-    /// <summary>小窗内点击「截图翻译」：由 App 订阅并启动截图流程（FR-021）。</summary>
-    public event EventHandler? CaptureRequested;
+    /// <summary>当前挂起的防抖时长（毫秒），<c>0</c> 表示没有挂起。用于「更早的到期时间赢」的合并，
+    /// 防止同一批属性变更里后到的长防抖把译文返回的短防抖顶掉（见 <see cref="WindowSizePolicy.MergeDebounceMs"/>）。</summary>
+    private int _adaptivePendingMs;
 
+    /// <summary>动画期间译文框被临时关掉的滚动条可见性（原值）。</summary>
+    private ScrollBarVisibility? _frozenResultScrollBar;
+
+    /// <summary>
+    /// 译文已落定、但还没到播放时机（用户要求「弹窗大小与文字排版全部执行完后再落印」）。
+    /// <see cref="OnViewModelPropertyChanged"/> 收到 ResultText 时置位，由 <see cref="FlushPendingSeal"/>
+    /// 在「尺寸无需变化」与「生长动画收尾」两条出口消费；隐藏小窗 / 重新呼出时清零。
+    /// </summary>
+    private bool _pendingSeal;
+
+    // 注：小窗顶栏不放「截图翻译」入口。设计稿 .qw-strip-r 只有朗读原文 / 固定常显 /
+    // 收起三枚 btn-seal；截图走全局热键与托盘菜单，与小窗「呼出即用」的定位无关。
     /// <summary>FR-040：小窗内 Ctrl+V 请求「粘贴即译」（参数 = 剪贴板文本，可能为 null）；由 App 接清洗与翻译。</summary>
     public event EventHandler<string?>? PasteTranslateRequested;
 
@@ -148,6 +211,7 @@ public partial class QuickWindow : Window
         _vm.PropertyChanged += OnViewModelPropertyChanged;
         Activated += OnWindowActivated;
         SizeChanged += OnWindowSizeChanged;
+        LocationChanged += OnWindowLocationChanged; // 用户挪窗后把顶边重钉到用户放的位置（见该方法的说明）
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -194,6 +258,18 @@ public partial class QuickWindow : Window
         }));
     }
 
+    /// <summary>印面条来源标签（设计稿 .qw-tag）的四个取值，与设计稿小窗状态机一致。</summary>
+    public const string OriginManual = "手动";
+
+    /// <summary>划词取词链路（FR-005）。</summary>
+    public const string OriginSelection = "划词";
+
+    /// <summary>剪贴板链路（FR-017 监听 / FR-040 粘贴即译）。</summary>
+    public const string OriginClipboard = "剪贴板";
+
+    /// <summary>截图翻译链路（FR-021）。</summary>
+    public const string OriginDocument = "文档";
+
     /// <summary>
     /// 输入翻译热键（FR-004）：窗口已可见时再次触发 = 收起，否则呼出。
     /// 收起逻辑只用于输入热键；划词失败提示等需要「总是显示」的场景请用 ShowForInput。
@@ -214,12 +290,14 @@ public partial class QuickWindow : Window
     /// 划词取词失败降级、划词结果展示都走这里，避免「窗口已打开时提示反被收起」。
     /// </summary>
     public void ShowForInput(string? notice = null) =>
-        ShowInternal(inputText: "", notice: notice, autoTranslate: false);
+        ShowInternal(inputText: "", notice: notice, autoTranslate: false, origin: OriginManual);
 
     /// <summary>呼出小窗（划词翻译模式，FR-005）：带入取到的文本并立即翻译；cleaned 标记本次文本经过阅读清洗。</summary>
-    public void ShowForSelection(string capturedText, string? notice = null, bool cleaned = false)
+    /// <param name="origin">来源标签：划词链路默认「划词」，剪贴板链路传 <see cref="OriginClipboard"/>。</param>
+    public void ShowForSelection(string capturedText, string? notice = null, bool cleaned = false,
+        string origin = OriginSelection)
     {
-        ShowInternal(inputText: capturedText, notice: notice, autoTranslate: true, selectionSource: true);
+        ShowInternal(inputText: capturedText, notice: notice, autoTranslate: true, selectionSource: true, origin: origin);
         if (cleaned)
         {
             _vm.MarkCleaned();
@@ -246,7 +324,8 @@ public partial class QuickWindow : Window
                             && !skipTranslation
                             && !string.IsNullOrWhiteSpace(ocrText);
 
-        ShowInternal(inputText: combined, notice: notice, autoTranslate: autoTranslate, sourceLanguage: sourceLanguage);
+        ShowInternal(inputText: combined, notice: notice, autoTranslate: autoTranslate,
+            sourceLanguage: sourceLanguage, origin: OriginDocument);
 
         if (skipTranslation && !string.IsNullOrWhiteSpace(ocrText))
         {
@@ -273,13 +352,14 @@ public partial class QuickWindow : Window
     }
 
     private void ShowInternal(
-        string inputText, string? notice, bool autoTranslate, string? sourceLanguage = null,
+        string inputText, string? notice, bool autoTranslate,
+        string? sourceLanguage = null, string origin = OriginManual,
         bool selectionSource = false)
     {
         _previousForeground = NativeMethods.GetForegroundWindow();
         Log.Debug("小窗显示：原前台={Previous}，自动翻译={Auto}", _previousForeground, autoTranslate);
 
-        _vm.ResetForShow(notice, _settings.TargetLanguage, inputText, sourceLanguage);
+        _vm.ResetForShow(notice, _settings.TargetLanguage, inputText, sourceLanguage, origin);
         // FR-016：仅划词会话在翻译成功后自动朗读原文；手动输入/OCR 会话不朗读
         _vm.SetSelectionSession(selectionSource);
         // FR-058：告诉 VM 用户当时在哪个程序里（只给进程名）；必须在 ResetForShow 之后，
@@ -288,14 +368,20 @@ public partial class QuickWindow : Window
         // FR-026（14.2.4 时机 1）：**每次呼出都回到设置的默认宽高**（清掉上次会话的拖拽结果），
         // 并在**定位之前**按当前内容算一次尺寸，否则这次定位用的还是上一次会话的旧尺寸
         // （这是与 FR-025 的耦合点）。呼出时不做动画：窗口尚未显示，动画可能不计时导致尺寸落不到目标值。
+        // 会话级定位状态一律在「按内容算尺寸之前」重置：锚点决定这次摆在哪、贴边方向决定往哪边长、
+        // 顶边锁定决定这次能长多高，任何一项残留都会把本次的尺寸上限算错（包括呼出这一次）。
+        _placementAnchor = null;             // 重新按当前鼠标位置锚定一次，之后本次会话内不再变
+        _placementSide = PlacementSide.Auto; // 贴边方向重新判一次
+        _pinnedTopPhysical = null;           // 顶边锁定交给本次呼出的首次物理摆放落地
+
         _sessionHeightDip = DefaultWindowSizeDip().Height;
+        _pendingSeal = false; // 新会话：上一会话残留下来的落印登记一律作废
         ApplyAdaptiveSize("呼出", animate: false);
 
         // FR-026 缺陷修复：Show 期由 WPF 触发的 SizeChanged 一律视为程序行为——
         // ① 首次物理摆放完成前不回写意图尺寸（见 _firstPlacementDone）；
         // ② 尺寸屏蔽窗口从这里开始计时（applyAdaptiveSize 因「尺寸无变化」提前返回时，
         //    它是唯一能盖住 Show 期那次 SizeChanged 的守卫）。
-        _placementAnchor = null; // 新的一次呼出：重新按当前鼠标位置锚定一次，之后本次会话内不再变
         _firstPlacementDone = false;
         _adaptiveGuardUntil = Environment.TickCount64 + AdaptiveGuardMs;
 
@@ -460,7 +546,13 @@ public partial class QuickWindow : Window
         // 步骤 8 的复核会传入窗口实际 DPI：只影响物理尺寸的换算，位置仍以鼠标所在屏为准
         var dpi = dpiOverride ?? monitorDpi;
         var rect = ComputePhysicalRect(cursor, work, dpi);
-        PlaceAndVerify(hwnd, rect, dpi);
+        var placed = PlaceAndVerify(hwnd, rect, dpi);
+        if (dpiOverride is null && _pinnedTopPhysical is null)
+        {
+            // 本次呼出的首次物理摆放已落地 → 顶边就此钉住（后续尺寸变化只向下生长）
+            _pinnedTopPhysical = placed.Top;
+            Log.Debug("顶边锁定：本次呼出顶边 = {Top} px（物理）", placed.Top);
+        }
 
         if (dpiOverride.HasValue)
         {
@@ -549,11 +641,33 @@ public partial class QuickWindow : Window
             WindowPlacement.ToPhysicalLength(SafeMin(MinHeight) + ShadowMarginDip * 2, scale));
 
         var gapPhysical = WindowPlacement.ToPhysicalLength(WindowPlacement.CursorGapDip, scale);
-        return WindowPlacement.Compute(cursor.X, cursor.Y, workRect, fitted, gapPhysical);
+        // 首次摆放定下本次呼出的贴边方向；之后（译文到达、对比增高、动画收尾）只钳制、不翻边
+        if (_placementSide.IsAuto)
+        {
+            _placementSide = WindowPlacement.DecideSide(cursor.X, cursor.Y, workRect, fitted, gapPhysical);
+        }
+        var placed = WindowPlacement.Compute(cursor.X, cursor.Y, workRect, fitted, gapPhysical, _placementSide);
+        if (_pinnedTopPhysical is not { } pinnedTop)
+        {
+            return placed; // 本次呼出还没落过盘：顶边以首次摆放为准（见 RepositionCore）
+        }
+
+        // 锁上边沿（14.1.3 补充）：顶边已被本次呼出钉住，尺寸变化只改宽高、顶边一概不动（只向下生长）
+        var locked = WindowPlacement.PinTopEdge(placed, workRect, pinnedTop);
+        if (locked.Top != pinnedTop)
+        {
+            // 只有「顶边 + 高度」确实装不下才让步：新位置就是新锚点，避免下次又弹回去
+            _pinnedTopPhysical = locked.Top;
+            Log.Debug(
+                "顶边锁定让位：{Pinned} → {Locked} px（高度 {Height} 放不下）", pinnedTop, locked.Top, locked.Height);
+        }
+
+        return locked;
     }
 
     /// <summary>步骤 6~7：SetWindowPos 摆放 → GetWindowRect 校验，不一致按差值纠正一次（只允许一次，避免死循环）。</summary>
-    private void PlaceAndVerify(IntPtr hwnd, PhysicalRect rect, uint targetDpi)
+    /// <returns>最终交给 <c>SetWindowPos</c> 的那个矩形（顶边锁定以它为准）。</returns>
+    private PhysicalRect PlaceAndVerify(IntPtr hwnd, PhysicalRect rect, uint targetDpi)
     {
         var scale = targetDpi / 96.0;
 
@@ -579,7 +693,7 @@ public partial class QuickWindow : Window
         {
             Log.Warning("GetWindowRect 校验小窗矩形失败，Win32 错误码 {Error}",
                 System.Runtime.InteropServices.Marshal.GetLastWin32Error());
-            return;
+            return rect;
         }
 
         var actualWidth = actual.Right - actual.Left;
@@ -590,7 +704,7 @@ public partial class QuickWindow : Window
             // 供真机复验（AC 1~5）：每屏连续呼出 5 次的这行日志应当逐像素一致
             Log.Debug("小窗物理摆放完成：({Left},{Top},{Width},{Height}) px（缩放 {Scale}，DPI {Dpi}）",
                 rect.Left, rect.Top, rect.Width, rect.Height, scale, targetDpi);
-            return;
+            return rect;
         }
 
         Log.Debug(
@@ -610,6 +724,8 @@ public partial class QuickWindow : Window
             Log.Debug("纠正后仍不一致（实际 {AL},{AT},{AW},{AH}）——只纠正一次，避免死循环",
                 after.Left, after.Top, after.Right - after.Left, after.Bottom - after.Top);
         }
+
+        return rect;
     }
 
     private static void Place(IntPtr hwnd, PhysicalRect rect) =>
@@ -645,6 +761,26 @@ public partial class QuickWindow : Window
     }
 
     /// <summary>
+    /// 用户把窗挪走后（拖拽顶栏、拖拽边缘）把顶边重钉到他放的位置：
+    /// 下一次按内容生长就从「他放的地方」继续向下长，而不是弹回呼出时那个顶边。
+    /// 程序自身的物理摆放与 Show 期 WPF 恢复位置也会发 WM_MOVE，用
+    /// <c>_repositioning</c> / <c>_firstPlacementDone</c> / 尺寸屏蔽窗口（<see cref="AdaptiveGuardMs"/>）排除。
+    /// </summary>
+    private void OnWindowLocationChanged(object? sender, EventArgs e)
+    {
+        if (_repositioning || !_firstPlacementDone || Environment.TickCount64 < _adaptiveGuardUntil)
+        {
+            return;
+        }
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero && ScreenInterop.GetWindowRect(hwnd, out var actual))
+        {
+            _pinnedTopPhysical = actual.Top;
+        }
+    }
+
+    /// <summary>
     /// FR-026：把当前窗口尺寸写入默认宽高设置（小窗空白处右键菜单）——
     /// 下次呼出即以该尺寸为基准，自适应仍只会在此基础上按内容增大。
     /// </summary>
@@ -666,6 +802,7 @@ public partial class QuickWindow : Window
     private void OnAdaptiveTimerTick(object? sender, EventArgs e)
     {
         _adaptiveTimer.Stop();
+        _adaptivePendingMs = 0;
         RecomputeAdaptiveSize("内容变化（防抖后）");
     }
 
@@ -677,6 +814,7 @@ public partial class QuickWindow : Window
     {
         if (!IsVisible)
         {
+            _pendingSeal = false; // 已隐藏：本次会话作废，落印不再补播
             return; // 已隐藏：留到下次呼出按默认值与新内容重算
         }
 
@@ -692,6 +830,7 @@ public partial class QuickWindow : Window
     {
         if (_vm.IsComparing)
         {
+            _pendingSeal = false; // 对比模式不播落印（分栏结果各有各的落定）
             return; // 对比模式下暂停自适应（结果区已是分栏，不参与测量），尺寸由 ExpandForComparison 负责
         }
 
@@ -707,12 +846,20 @@ public partial class QuickWindow : Window
                 // 不限宽宽度按「目标行数」折算成宽度需求：直接用不限宽宽度会让稍长文本立刻顶到上限，
                 // 变成两档跳；折算后宽度随内容量渐进增长（见 WindowSizePolicy.RequiredWidthForLineTarget）。
                 var neededWidth = WindowSizePolicy.RequiredWidthForLineTarget(MeasureNeededWidthDip());
-                targetWidth = WindowSizePolicy.ResolveWidth(defaultWidth, neededWidth, adaptToContent: true);
+                // 再按「顶边锁定后剩下的空间」收口：宽度与高度都不能越出本次呼出的锚定边，
+                // 否则加宽/加高后会被 Compute 猛地钳回工作区内 —— 那就是用户看到的跳变。
+                targetWidth = CapByAvailableSpan(
+                    WindowSizePolicy.ResolveWidth(defaultWidth, neededWidth, adaptToContent: true),
+                    defaultWidth,
+                    AvailableWindowWidthDip());
 
                 // 宽度先定下来，高度按「新宽度下的内容」测量，避免用旧宽度测出的高度
                 var neededHeight = MeasureContentHeightDip(ContentWidthFor(targetWidth));
-                targetHeight = WindowSizePolicy.ResolveHeight(
-                    defaultHeight, neededHeight, _sessionHeightDip, adaptToContent: true, CurrentWorkAreaHeightDip());
+                targetHeight = CapByAvailableSpan(
+                    WindowSizePolicy.ResolveHeight(
+                        defaultHeight, neededHeight, _sessionHeightDip, adaptToContent: true, CurrentWorkAreaHeightDip()),
+                    defaultHeight,
+                    AvailableWindowHeightDip());
                 _sessionHeightDip = targetHeight; // 单调不减的基线随之前移
             }
             else
@@ -725,6 +872,7 @@ public partial class QuickWindow : Window
         {
             // 14.2.4 第 5 点：测量失败保持当前尺寸，不缩小、不抛异常
             Log.Debug(ex, "自适应尺寸计算失败（{Reason}），保持当前尺寸", reason);
+            FlushPendingSeal(); // 尺寸保持现状：译文已排版，不必把落印也一起丢掉
             return;
         }
 
@@ -732,6 +880,7 @@ public partial class QuickWindow : Window
         var intentHeight = ToIntentHeight(targetHeight);
         if (Math.Abs(intentWidth - _intentWidthDip) < 0.5 && Math.Abs(intentHeight - _intentHeightDip) < 0.5)
         {
+            FlushPendingSeal(); // 尺寸无需变化：译文此刻已是终态排版，落印立即补上（短译文场景）
             return; // 尺寸无变化：保持现状（也避免无谓的物理摆放）
         }
 
@@ -746,32 +895,99 @@ public partial class QuickWindow : Window
     }
 
     /// <summary>
-    /// 把意图尺寸落到窗口上：宽度即时生效；高度按需做 140 ms 缓动动画（14.2.4「不能抖动」），
-    /// 动画结束后再物理摆放一次（动画期间 SetWindowPos 会与动画争尺寸）。
+    /// 把意图尺寸落到窗口上（14.2.4「不能抖动」）：**宽度瞬时到位、只对高度做动画**。
+    /// 宽度逐帧变化会让中文逐帧重折行（正是用户看到的「文字排版跳变」）；宽度瞬时到终态后，
+    /// 正文从第一帧起就是终态排版，动画只把「下方多出来的行」逐帧揭开 —— 顶对齐的正文一个像素都不动。
+    /// 动画期间窗口顶边由 <see cref="_pinnedTopPhysical"/> 锁住——WPF 改 Height 时保持 Top 不变，窗口只会向下长；
+    /// 动画期间不 SetWindowPos（会与动画争尺寸），播完再摆一次让物理像素与工作区对齐（14.1.2 第 11 步），
+    /// 并在这之后才补播落印（用户要求：尺寸与排版全部执行完再落印）。
     /// </summary>
     private void ApplyIntentSize(bool animate)
     {
-        var from = Height;
-        var target = ToWindowHeight(_intentHeightDip); // WPF 的 Height 是**含阴影留白的窗口 DIP**，不是卡片意图尺寸
-        SyncSizePropertiesFromIntent(); // 宽度不参与动画；高度基值先落到目标，动画只是视觉过渡
+        var fromWidth = Width;
+        var fromHeight = Height;
+        var targetWidth = ToWindowWidth(_intentWidthDip);   // WPF 的宽高是**含阴影留白的窗口 DIP**，不是卡片意图尺寸
+        var targetHeight = ToWindowHeight(_intentHeightDip);
 
-        if (!animate || !_settings.QuickWindowAdaptiveAnimation || double.IsNaN(from)
-            || Math.Abs(from - target) < 0.5)
+        // 基值先落到目标：动画只是视觉过渡，任何时刻撤掉动画都停在目标值
+        SyncSizePropertiesFromIntent();
+
+        var widthMoved = Math.Abs(fromWidth - targetWidth) >= 0.5;
+        var heightMoved = Math.Abs(fromHeight - targetHeight) >= 0.5;
+
+        // 宽度不做动画：撤掉可能残留的宽度动画，立即落到目标宽度（见方法说明的折行理由）。
+        if (widthMoved)
         {
-            BeginAnimation(HeightProperty, null); // 清掉可能残留的高度动画，回到上面的基值
+            BeginAnimation(WidthProperty, null);
+        }
+
+        // 只有「高度要变」才值得走动画；宽度单独变化没有可动画的连续量，落印就地补上。
+        if (!animate || !_settings.QuickWindowAdaptiveAnimation || double.IsNaN(fromWidth) || double.IsNaN(fromHeight)
+            || !heightMoved)
+        {
+            BeginAnimation(WidthProperty, null);  // 清掉可能残留的动画，回到上面的基值
+            BeginAnimation(HeightProperty, null);
+            ReleaseInnerLayout();                 // 瞬时落地：上一轮静音的滚动条也要一并还原
             Reposition();
+            FlushPendingSeal();                   // 尺寸已定：落印立即补上
             return;
         }
 
-        var animation = new DoubleAnimation(from, target, TimeSpan.FromMilliseconds(AdaptiveAnimationMs))
+        var duration = TimeSpan.FromMilliseconds(AdaptiveAnimationMs);
+        // 长高过程中译文框滚动条会「先出现、装下后消失」，每次显隐都改正文可用宽度、再折行一次。
+        MuteResultScrollBarForAnimation();
+        var topBefore = CurrentTopPhysical();
+        var height = new DoubleAnimation(fromHeight, targetHeight, duration)
         {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            EasingFunction = new QuinticEase { EasingMode = EasingMode.EaseOut },
         };
-        // 动画结束后再物理摆放：动画期间窗口顶部 Top 不变、由 WPF 按 DIP 向下生长，
-        // 此刻 SetWindowPos 会与动画争尺寸；播完再摆一次即满足「尺寸变化后必须重新摆放、不越界」（14.1.2 第 11 步）
-        animation.Completed += (_, _) => ScheduleDeferredReposition();
-        BeginAnimation(HeightProperty, animation);
+        height.Completed += (_, _) =>
+        {
+            ReleaseInnerLayout(); // 收尾还原滚动条：此刻窗口已是终态高度，装不下才会出现滚动条
+            // 这行是「锁住上边沿」的现场证据：两端的顶边必须一致（收尾摆放也只允许 ±1px 取整误差）。
+            // 用户在真机上报「又跳了」时，直接拿它对照，不必靠肉眼猜。
+            var topAfter = CurrentTopPhysical();
+            Log.Information(
+                "小窗尺寸动画 {Duration}ms：{FromW:F0}×{FromH:F0} → {ToW:F0}×{ToH:F0} DIP，顶边 {TopBefore} → {TopAfter} px（漂移 {Drift}）",
+                AdaptiveAnimationMs, fromWidth, fromHeight, targetWidth, targetHeight,
+                topBefore, topAfter,
+                topBefore == int.MinValue || topAfter == int.MinValue ? "未知" : (topAfter - topBefore).ToString());
+            ScheduleDeferredReposition();
+            FlushPendingSeal(); // 尺寸与排版全部收尾后才落印（用户要求的顺序）
+        };
+        BeginAnimation(HeightProperty, height);
     }
+
+    /// <summary>
+    /// 生长动画期间静音译文框滚动条（14.2.4「不抖动」）：长高过程中 `VerticalScrollBarVisibility="Auto"`
+    /// 会「先出现、装下后消失」，每次显隐都改正文可用宽度、触发一次重折行。
+    /// Disabled = 不显示也不占位，正文可用宽度在整段动画里恒定；动画结束由
+    /// <see cref="ReleaseInnerLayout"/> 按需恢复 Auto。宽度已改为瞬时到位，不再需要钉换行元素宽度。
+    /// </summary>
+    private void MuteResultScrollBarForAnimation()
+    {
+        ReleaseInnerLayout(); // 上一次动画还没收尾就又来一次：先按需恢复，再重新静音
+        _frozenResultScrollBar = ResultBox.VerticalScrollBarVisibility;
+        ResultBox.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
+    }
+
+    /// <summary>还原 <see cref="MuteResultScrollBarForAnimation"/> 静音的滚动条；重复调用安全。</summary>
+    private void ReleaseInnerLayout()
+    {
+        if (_frozenResultScrollBar is { } scrollBar)
+        {
+            ResultBox.VerticalScrollBarVisibility = scrollBar;
+            _frozenResultScrollBar = null;
+        }
+    }
+
+    /// <summary>
+    /// 把算好的目标尺寸再按「本次呼出还剩多少空间」收一次口：只收不放，且不低于默认尺寸
+    /// （默认值是用户偏好，宁可让顶边让位——见 <see cref="ComputePhysicalRect"/>——也不把窗口压小）。
+    /// 可用空间不可知（≤ 0）时原样返回。
+    /// </summary>
+    private static double CapByAvailableSpan(double resolvedDip, double baselineDip, double availableDip) =>
+        availableDip <= 0 ? resolvedDip : Math.Min(resolvedDip, Math.Max(baselineDip, availableDip));
 
     /// <summary>设置的默认宽高（窗口 DIP，含阴影留白），已按取值范围夹取。</summary>
     private (double Width, double Height) DefaultWindowSizeDip() =>
@@ -797,16 +1013,21 @@ public partial class QuickWindow : Window
     /// <param name="contentWidthDip">该宽度下的内容可用宽度（由 <see cref="ContentWidthFor"/> 算出）。</param>
     private double MeasureContentHeightDip(double contentWidthDip)
     {
-        var chrome = MeasureElementDip(LanguageRow, contentWidthDip)
-                     + MeasureElementDip(TitleRow, contentWidthDip)
+        // 语言栏量的是包在外面的 40px 固定高 Border：只量里面的 Grid 会漏掉那圈高度（实测矮 16px）
+        var chrome = MeasureElementDip(LanguageBar, contentWidthDip)
+                     + MeasureElementDip(SeamRow, contentWidthDip)
                      + MeasureElementDip(StyleRow, contentWidthDip)
                      + MeasureElementDip(ReviewCard, contentWidthDip)
                      + MeasureElementDip(StatusPanel, contentWidthDip)
                      + SurfaceBorder.Padding.Top + SurfaceBorder.Padding.Bottom
                      + SurfaceBorder.Margin.Top + SurfaceBorder.Margin.Bottom;
 
-        // 输入区：真实输入框自带 MinHeight 76 / MaxHeight 140 夹取，测它是安全的（不是只读结果区）
+        // 输入区：真实输入框自带 MinHeight 25 / MaxHeight 140 夹取，测它是安全的（不是只读结果区）
         var inputHeight = MeasureElementDip(InputBox, contentWidthDip);
+
+        // 影子必须与真实译文区同一套排版参数（XAML 里 ResultBox 是 19px / 29.5 行高）
+        MeasureShadow.FontSize = ResultFontSize;
+        MeasureShadow.LineHeight = ResultLineHeight;
 
         // 译文区：影子测量（14.2.1 第 2 点明确禁止直接测只读结果 TextBox）
         // FR-043（P0 批 4）：对照视图打开时按「原文段 + 译文段」逐对测量
@@ -816,6 +1037,7 @@ public partial class QuickWindow : Window
             var smallFont = (double)FindResource("FontSize.Small");
             var contentFont = (double)FindResource("FontSize.Content");
             MeasureShadow.Padding = ResultBox.Padding;
+            MeasureShadow.LineHeight = 21; // 与对照列表的行高一致
             foreach (var pair in _vm.AlignPairs)
             {
                 MeasureShadow.FontSize = smallFont;
@@ -830,13 +1052,17 @@ public partial class QuickWindow : Window
             }
 
             MeasureShadow.FontSize = contentFont;
-            return chrome + inputHeight + alignHeight + MeasureDictionaryCardHeightDip(contentWidthDip);
+            MeasureShadow.FontSize = ResultFontSize;
+            MeasureShadow.LineHeight = ResultLineHeight;
+            return chrome + inputHeight + alignHeight + SubLineHeightDip(contentWidthDip)
+                   + MeasureDictionaryCardHeightDip(contentWidthDip);
         }
 
         MeasureShadow.Text = _vm.ResultText ?? "";
         MeasureShadow.Padding = ResultBox.Padding; // 与真实结果区同一可用宽度（内边距一致）
         MeasureShadow.Measure(new Size(contentWidthDip, double.PositiveInfinity));
-        var resultHeight = MeasureShadow.DesiredSize.Height;
+        // 空译文时影子只有一行高，但真实结果区有 MinHeight，取二者较大值才是实际占用
+        var resultHeight = Math.Max(MeasureShadow.DesiredSize.Height, ResultArea.MinHeight);
 
         // FR-053：跟读模式每句独立成行且带行距，按句数补回这部分高度（否则会裁掉最后一句）
         if (_vm.IsShadowMode)
@@ -844,8 +1070,18 @@ public partial class QuickWindow : Window
             resultHeight += _vm.ShadowLines.Count * 8;
         }
 
-        return chrome + inputHeight + resultHeight + MeasureDictionaryCardHeightDip(contentWidthDip);
+        return chrome + inputHeight + resultHeight + SubLineHeightDip(contentWidthDip)
+               + MeasureDictionaryCardHeightDip(contentWidthDip);
     }
+
+    /// <summary>
+    /// 译文副行（设计稿 .dst-sub）所需高度（DIP）：没有副行时 0。它贴着译文区底边排版，
+    /// 不与正文抢高度，但必须算进窗口总高，否则它会把译文的最后一行压住。
+    /// </summary>
+    private double SubLineHeightDip(double availableWidth) =>
+        ResultSubText.Visibility == Visibility.Visible
+            ? MeasureElementDip(ResultSubText, availableWidth)
+            : 0;
 
     /// <summary>
     /// 词典卡所需高度（DIP）：卡片隐藏时 0；可见时 = 卡内 StackPanel 的排版高度 + 内边距 + 外边距。
@@ -923,6 +1159,62 @@ public partial class QuickWindow : Window
     }
 
     /// <summary>
+    /// 锁住顶边后本次会话还能长到多高（**窗口 DIP**，含阴影留白）：顶边到工作区下沿的距离。
+    /// 顶边尚未落地（呼出首帧）时退化为整个工作区高度——首次摆放会重新判方向与锚点。
+    /// 它是「顶边不跳」的前提：目标高度永远落在可用空间内，<see cref="WindowPlacement.PinTopEdge"/> 就永远不用让位。
+    /// </summary>
+    private double AvailableWindowHeightDip()
+    {
+        var (work, scale) = WorkContext();
+        return scale > 0 ? WindowPlacement.AvailableHeightBelow(_pinnedTopPhysical, work) / scale : 0;
+    }
+
+    /// <summary>
+    /// 光标所在贴边方向上还能容纳多宽（**窗口 DIP**，含阴影留白）：加宽到越界、再被向左钳制，
+    /// 就是横向的「拉宽跳变」，所以限宽与限高同理。方向未定（首次摆放前）按整个工作区宽。
+    /// </summary>
+    private double AvailableWindowWidthDip()
+    {
+        var (work, scale) = WorkContext();
+        if (scale <= 0)
+        {
+            return 0;
+        }
+
+        if (_placementSide.IsAuto || _placementAnchor is not { } anchor)
+        {
+            return work.Width / scale;
+        }
+
+        var gap = WindowPlacement.ToPhysicalLength(WindowPlacement.CursorGapDip, scale);
+        return WindowPlacement.AvailableWidthOnSide(_placementSide, anchor.X, work, gap) / scale;
+    }
+
+    /// <summary>鼠标所在屏工作区（物理像素）与目标缩放；取不到时 scale 返回 0，调用方退让。</summary>
+    private (PhysicalRect Work, double Scale) WorkContext()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !TryGetPlacementInput(hwnd, out _, out var work, out var dpi))
+        {
+            return (default, 0);
+        }
+
+        return (new PhysicalRect(work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top), dpi / 96.0);
+    }
+
+    /// <summary>
+    /// 窗口当前**物理顶边**（无 HWND 或取不到时返回 <see cref="int.MinValue"/>，只影响日志显示）。
+    /// 用作尺寸动画前后「顶边有没有动」的现场证据。
+    /// </summary>
+    private int CurrentTopPhysical()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        return hwnd != IntPtr.Zero && ScreenInterop.GetWindowRect(hwnd, out var actual)
+            ? actual.Top
+            : int.MinValue;
+    }
+
+    /// <summary>
     /// 把意图 DIP 尺寸同步到 WPF 属性：<c>Width/Height</c> 是**含阴影留白的窗口 DIP 尺寸**
     /// （= 意图尺寸 + 2×<see cref="ShadowMarginDip"/>），与设置项、物理摆放同一坐标系
     /// （14.1.2 第 4 步：物理尺寸 = round((意图 + 2 × 阴影留白) × scale)）。
@@ -976,6 +1268,9 @@ public partial class QuickWindow : Window
         Log.Debug("隐藏小窗（键盘焦点在本窗口内={FocusWithin}）", IsKeyboardFocusWithin);
         _hideTimer.Stop();
         _adaptiveTimer.Stop();
+        ReleaseInnerLayout(); // 动画没跑完就收起小窗时，别把静音的滚动条带进下一次呼出
+        _adaptivePendingMs = 0;
+        _pendingSeal = false; // 本会话作废：收起时还没播的落印不再补播
         UnhookForeground();
 
         // FR-020 AC 4：关窗即取消在途对比请求，不留后台任务
@@ -1035,7 +1330,8 @@ public partial class QuickWindow : Window
 
             case nameof(QuickTranslateViewModel.ResultText):
                 ScheduleAdaptiveRecompute(ResultDebounceMs);
-                PlaySignatureStreak();
+                // 用户要求：弹窗尺寸与文字排版全部执行完再落印。这里只登记，等尺寸出口（动画收尾 / 无需变化）消费。
+                _pendingSeal = true;
                 return;
 
             // FR-043（P0 批 4）：对照视图开合改变内容高度，按译文返回同档短防抖重算
@@ -1045,7 +1341,6 @@ public partial class QuickWindow : Window
         }
     }
 
-    /// <summary>FR-044：复制策略菜单——IconButton 无内建下拉，点击手动打开按钮自带的 ContextMenu。</summary>
     /// <summary>点词典卡任意处 = 展开 / 收起释义（FR-049：默认两行，长文不必占满小窗）。</summary>
     private void OnDictionaryCardClick(object sender, MouseButtonEventArgs e)
     {
@@ -1053,77 +1348,332 @@ public partial class QuickWindow : Window
         e.Handled = true;
     }
 
-    private void OnCopyMenuClick(object sender, RoutedEventArgs e)
+
+    /// <summary>
+    /// 落印（全界面唯一的签名动效，设计稿 @keyframes land / inkmist 的**力量强化版**）：
+    /// 译文落定那刻，右上角那枚印面标从**高处**沿透视砸下：起点 Y −78px / 放大 2.0 倍 / 纵向压成 1.42——
+    /// 「高处的印离眼睛更近，所以更大；越靠近纸面越小、越正」，这就是透视落印的读数依据；再配上它脚下的
+    /// 落点影（SealShadow）由小（0.35 倍、淡 0.08）到大（1.35 倍、实 0.36）——影小→大 = 离纸面由远及近，
+    /// 单靠缩放看不出「高」，有这层影高度才成立。
+    /// 落纸瞬间（82ms）同时打出这些重音（全部静止态不可见、不占排版）：
+    /// ① 卡片震荡（SurfaceShake）：Y 7.5 / −4.0 / +2.4 / −1.2 / +0.5 四次衰减来回，X −5.5 / +3.6 / −2.0 / +1.0 / −0.4
+    ///    错相横抖——不是一次回弹，而是余震；
+    /// ② 震痕 3 道（SealImpactLine/2/3）：横贯译文的 2px 骑缝细线自印面标向左展开，逐条晚 46ms、向下错开 6px，
+    ///    像纸面余波一圈圈往下荡开；横向铺满卡片，永远不会被卡片右缘裁掉；
+    /// ③ 6 粒飞溅墨点（画布 200×200，最远飞 86px，逐粒错开 16ms，460ms 淡尽）+ 墨气（扩到 3.4 倍）；
+    /// ④ 冲击闪光（200ms，峰值 1.0）。
+    /// 印面标自身落纸后也不止一次回弹：Y / 缩放 / 旋转各做 4 个衰减来回，落纸挤扁 X1.24 / Y0.74、手歪从 −12° 起。
+    /// 下压段用 ease-in（越接近纸面越快，像砸下去，不是飘下来）。
+    /// 注：旧版把墨点/闪光/墨气关在 22×22 的格子里（墨点最远 22px、闪光最大 53px），所以「加固」在真机上感知不到——
+    /// 力量感的第一来源是**幅度**，其次才是曲线。设计稿原是一条 ease-stamp 缓到底，位移与缩放同曲线，没有重量。
+    /// 落下之后印面标常驻实心朱砂（纸面上一枚红印，与设计稿渲染出的终态一致）。
+    /// 只在单结果成功落定时播放——没盖上不给奖赏（印面转成虚线空心印框）；
+    /// 系统关闭「在窗口内显示动画」（ClientAreaAnimation，reduced-motion 的 Windows 等效）时整段跳过。
+    /// 预算是「一瞬间的事」：总时长 260ms 不变，加重靠曲线、挤扁与反震，不靠拉长。
+    /// </summary>
+    private void PlaySealStamp()
     {
-        if (sender is not Button { ContextMenu: { } menu })
+        if (!BuildSealStamp())
         {
             return;
         }
 
-        menu.PlacementTarget = sender as UIElement;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
+        Log.Information("落印：译文落定，压印 {Stamp}ms（透视砸落 −78px；落纸 {Impact}ms 起卡片震荡 + 震痕 3 道 + 墨爆 6 粒 + 墨气 {Mist}ms）",
+            StampMs, ImpactMs, InkMistDuration.TotalMilliseconds);
+    }
+    /// <summary>
+    /// 构建并直接播放落印的完整动画；返回 <c>false</c> 表示这次不该落印：
+    /// 控件缺失 / 系统关了窗口内动画 / 没有译文 / 出错 / 对比模式。
+    /// 动画一律直接挂到 Transform / 元素本体上（见 <see cref="Attach"/>），不经 Storyboard。
+    /// </summary>
+    private bool BuildSealStamp()
+    {
+        if (SealMark is null || SealMarkScale is null || SealMarkShift is null
+            || SealMarkSpin is null || SealFlash is null || SealFlashScale is null
+            || SealHalo is null || SealHaloScale is null || SurfaceShake is null
+            || SealImpactLine is null || SealImpactLineScale is null
+            || SealImpactLine2 is null || SealImpactLine2Scale is null
+            || SealImpactLine3 is null || SealImpactLine3Scale is null
+            || SealShadow is null || SealShadowScale is null
+            || SealDropShift1 is null || SealDropShift2 is null || SealDropShift3 is null
+            || SealDropShift4 is null || SealDropShift5 is null || SealDropShift6 is null)
+        {
+            return false;
+        }
+
+        if (!SystemParameters.ClientAreaAnimation) return false;
+        if (string.IsNullOrEmpty(_vm.ResultText) || _vm.HasError || _vm.IsComparing) return false;
+
+        static KeyTime At(double ms) => KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(ms));
+
+        // 分段曲线：下压段 ease-in（越接近纸面越快，像砸下去）、回弹快出慢入、归位稳定收敛。
+        // 设计稿只用了一条 ease-stamp；力量感恰恰来自这三段曲线的对比。
+        var press = new KeySpline(0.55, 0, 1, 1);
+        var snap = new KeySpline(0.2, 0.9, 0.3, 1);
+        var settle = new KeySpline(0.25, 0, 0.4, 1);
+        var impact = TimeSpan.FromMilliseconds(ImpactMs);
+
+        // 印面标：从高处砸下（透视）。起点 Y −78px / 放大 2.0 倍 / 纵向压扜到 1.42——
+        // 「高处的印离眼睛更近，所以更大；越靠近纸面越小、越正」——这就是透视落印的读数依据。
+        // 落纸后不再是单次回弹，而是 4 个逐次衰减的来回（震荡感）；位移与挤扁分开驱动，才是「硬压」。
+        var drop = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(-78, At(0)));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(-38, At(55), press));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(3, At(ImpactMs), press));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(-3.4, At(118), snap));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(2.0, At(152), snap));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(-1.1, At(190), settle));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(0.5, At(226), settle));
+        drop.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(StampMs), settle));
+
+        var stretchX = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(2.00, At(0)));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(1.62, At(55), press));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(1.24, At(ImpactMs), press));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(0.93, At(118), snap));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(1.06, At(152), snap));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(0.98, At(190), settle));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(1.008, At(226), settle));
+        stretchX.KeyFrames.Add(new SplineDoubleKeyFrame(1, At(StampMs), settle));
+
+        var stretchY = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(1.42, At(0)));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(1.16, At(55), press));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(0.74, At(ImpactMs), press));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(1.11, At(118), snap));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(0.95, At(152), snap));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(1.03, At(190), settle));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(0.994, At(226), settle));
+        stretchY.KeyFrames.Add(new SplineDoubleKeyFrame(1, At(StampMs), settle));
+
+        // 手歪：从高处歪 12° 落下，落纸后左右补救地旋两个来回，落定后归 0（静止态不留倾斜）。
+        var spin = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(-12, At(0)));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(-8, At(55), press));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(-3, At(ImpactMs), press));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(1.5, At(118), snap));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(-0.8, At(152), snap));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(0.4, At(190), settle));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(226), settle));
+        spin.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(StampMs), settle));
+
+        // 印面标在悬印段半透（看得见印在头顶）→ 落纸那一瞬爆到实心；之后**保持**实心朱砂（HoldEnd）。
+        // 用 Stop 的话动画一完就回到 XAML 里的静止态 0.13 —— 印面标会当场变淡，看上去像“没落印”。
+        var appear = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.HoldEnd };
+        appear.KeyFrames.Add(new LinearDoubleKeyFrame(0, At(0)));
+        appear.KeyFrames.Add(new LinearDoubleKeyFrame(0.45, At(55)));
+        appear.KeyFrames.Add(new LinearDoubleKeyFrame(1, At(ImpactMs)));
+        appear.KeyFrames.Add(new LinearDoubleKeyFrame(1, At(StampMs)));
+
+        // 冲击闪光：落纸瞬间在印面标下方炸开一团实朱砂，200ms 内扩到 2.1 倍并淡尽。
+        var flashMs = TimeSpan.FromMilliseconds(200);
+        var flashEase = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var flashScale = new DoubleAnimation(0.4, 2.4, flashMs)
+        {
+            BeginTime = impact, EasingFunction = flashEase, FillBehavior = FillBehavior.Stop,
+        };
+        var flashFade = new DoubleAnimation(1.0, 0, flashMs)
+        {
+            BeginTime = impact, EasingFunction = flashEase, FillBehavior = FillBehavior.Stop,
+        };
+
+        // 墨气：从 0.45 倍扩到 2.6 倍，同时淡到看不见（460ms，比闪光慢，收尾留一层余韵）
+        var mistEase = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var mistScale = new DoubleAnimation(0.45, 3.4, InkMistDuration)
+        {
+            BeginTime = impact, EasingFunction = mistEase, FillBehavior = FillBehavior.Stop,
+        };
+        var mistFade = new DoubleAnimation(0.45, 0, InkMistDuration)
+        {
+            BeginTime = impact, EasingFunction = mistEase, FillBehavior = FillBehavior.Stop,
+        };
+
+        // 落点影（透视落印的「高度锚」）：印在高处时影小而淡，越接近纸面越大越实，砸到纸面那刻达到最大，
+        // 随后淡尽。影子由小到大 = 离纸面由远及近——这是让「高」被看见的关键，单靠缩放不够。
+        var shadowScale = new DoubleAnimation(0.35, 1.35, TimeSpan.FromMilliseconds(340))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }, FillBehavior = FillBehavior.Stop,
+        };
+        var shadowFade = new DoubleAnimationUsingKeyFrames
+        {
+            Duration = TimeSpan.FromMilliseconds(430), FillBehavior = FillBehavior.Stop,
+        };
+        shadowFade.KeyFrames.Add(new LinearDoubleKeyFrame(0.08, At(0)));
+        shadowFade.KeyFrames.Add(new LinearDoubleKeyFrame(0.16, At(55)));
+        shadowFade.KeyFrames.Add(new SplineDoubleKeyFrame(0.36, At(ImpactMs), press));
+        shadowFade.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(ImpactMs + 330), settle));
+
+        // 落纸反震：落纸瞬间整张卡片被砸得向下一顿，横向再抖两下，然后收敛回原位。
+        // 这是「力量感」的重音——只有印面标在动、卡片不动时，看上去只是一枚标记飘下来，没有重量。
+        // 同样以 impact 为起点，结尾归 0（不参与排版、不改设计稿静态观感）。
+        var recoilY = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(0)));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(ImpactMs), press));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(7.5, At(ImpactMs + 22), snap));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(-4.0, At(ImpactMs + 54), snap));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(2.4, At(ImpactMs + 86), snap));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(-1.2, At(ImpactMs + 120), settle));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(0.5, At(ImpactMs + 156), settle));
+        recoilY.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(StampMs), settle));
+
+        var recoilX = new DoubleAnimationUsingKeyFrames { Duration = StampDuration, FillBehavior = FillBehavior.Stop };
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(0)));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(ImpactMs), press));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(-5.5, At(ImpactMs + 18), snap));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(3.6, At(ImpactMs + 48), snap));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(-2.0, At(ImpactMs + 80), snap));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(1.0, At(ImpactMs + 114), settle));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(-0.4, At(ImpactMs + 148), settle));
+        recoilX.KeyFrames.Add(new SplineDoubleKeyFrame(0, At(StampMs), settle));
+
+        // 震痕 / 余震：三条横贯译文的骑缝细线自印面标向左展开并淡去，各向下错开 6px、逐条晚 46ms 起播——
+        // 像纸面被砸出的余波一圈圈往下荡开。横向铺满整张卡片，所以永远不会被卡片右缘裁掉。
+        static void AttachRipple(ScaleTransform lineScale, UIElement line, double beginMs, double peak)
+        {
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            var ms = TimeSpan.FromMilliseconds(300);
+            var begin = TimeSpan.FromMilliseconds(beginMs);
+            Attach(new DoubleAnimation(0.02, 1, ms)
+            {
+                BeginTime = begin, EasingFunction = ease, FillBehavior = FillBehavior.Stop,
+            }, lineScale, ScaleTransform.ScaleXProperty);
+            Attach(new DoubleAnimation(peak, 0, ms)
+            {
+                BeginTime = begin, EasingFunction = ease, FillBehavior = FillBehavior.Stop,
+            }, line, UIElement.OpacityProperty);
+        }
+
+        // 墨爆：6 粒墨点各按自己的角度飞出去（最远 86px），逐粒错开 16ms，460ms 内淡尽（错位形成方向感）
+        var drops = new[] { SealDropShift1, SealDropShift2, SealDropShift3, SealDropShift4, SealDropShift5, SealDropShift6 };
+        var dots = new[] { SealDrop1, SealDrop2, SealDrop3, SealDrop4, SealDrop5, SealDrop6 };
+        var burst = TimeSpan.FromMilliseconds(460);
+        var flyEase = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+        // 清掉上一轮可能残留的动画（连按两次落印时，这一印必须从头顶重来）
+        SealMark.BeginAnimation(OpacityProperty, null);
+        SealMarkScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealMarkScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        SealMarkShift.BeginAnimation(TranslateTransform.YProperty, null);
+        SealMarkSpin.BeginAnimation(RotateTransform.AngleProperty, null);
+        SealFlash.BeginAnimation(OpacityProperty, null);
+        SealFlashScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealFlashScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        SealHalo.BeginAnimation(OpacityProperty, null);
+        SealHaloScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealHaloScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        SurfaceShake.BeginAnimation(TranslateTransform.XProperty, null);
+        SurfaceShake.BeginAnimation(TranslateTransform.YProperty, null);
+        SealImpactLine.BeginAnimation(OpacityProperty, null);
+        SealImpactLineScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealImpactLine2.BeginAnimation(OpacityProperty, null);
+        SealImpactLine2Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealImpactLine3.BeginAnimation(OpacityProperty, null);
+        SealImpactLine3Scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealShadow.BeginAnimation(OpacityProperty, null);
+        SealShadowScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+        SealShadowScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+        foreach (var shift in drops)
+        {
+            shift.BeginAnimation(TranslateTransform.XProperty, null);
+            shift.BeginAnimation(TranslateTransform.YProperty, null);
+        }
+
+        foreach (var dot in dots)
+        {
+            dot.BeginAnimation(OpacityProperty, null);
+        }
+
+        Attach(drop, SealMarkShift, TranslateTransform.YProperty);
+        Attach(stretchX, SealMarkScale, ScaleTransform.ScaleXProperty);
+        Attach(stretchY, SealMarkScale, ScaleTransform.ScaleYProperty);
+        Attach(spin, SealMarkSpin, RotateTransform.AngleProperty);
+        Attach(appear, SealMark, UIElement.OpacityProperty);
+        Attach(flashScale, SealFlashScale, ScaleTransform.ScaleXProperty);
+        Attach(flashScale, SealFlashScale, ScaleTransform.ScaleYProperty);
+        Attach(flashFade, SealFlash, UIElement.OpacityProperty);
+        Attach(mistScale, SealHaloScale, ScaleTransform.ScaleXProperty);
+        Attach(mistScale, SealHaloScale, ScaleTransform.ScaleYProperty);
+        Attach(mistFade, SealHalo, UIElement.OpacityProperty);
+        Attach(recoilX, SurfaceShake, TranslateTransform.XProperty);
+        Attach(recoilY, SurfaceShake, TranslateTransform.YProperty);
+        AttachRipple(SealImpactLineScale, SealImpactLine, ImpactMs, 0.72);
+        AttachRipple(SealImpactLine2Scale, SealImpactLine2, ImpactMs + 46, 0.42);
+        AttachRipple(SealImpactLine3Scale, SealImpactLine3, ImpactMs + 96, 0.24);
+        Attach(shadowScale, SealShadowScale, ScaleTransform.ScaleXProperty);
+        Attach(shadowScale, SealShadowScale, ScaleTransform.ScaleYProperty);
+        Attach(shadowFade, SealShadow, UIElement.OpacityProperty);
+
+        for (var i = 0; i < drops.Length; i++)
+        {
+            var (angleDeg, distance) = SealDrops[i];
+            var radians = angleDeg * Math.PI / 180;
+            var delay = impact + TimeSpan.FromMilliseconds(i * 16);
+            Attach(new DoubleAnimation(0, Math.Cos(radians) * distance, burst)
+            {
+                BeginTime = delay, EasingFunction = flyEase, FillBehavior = FillBehavior.Stop,
+            }, drops[i], TranslateTransform.XProperty);
+            Attach(new DoubleAnimation(0, Math.Sin(radians) * distance, burst)
+            {
+                BeginTime = delay, EasingFunction = flyEase, FillBehavior = FillBehavior.Stop,
+            }, drops[i], TranslateTransform.YProperty);
+            Attach(new DoubleAnimation(1, 0, burst)
+            {
+                BeginTime = delay, EasingFunction = flyEase, FillBehavior = FillBehavior.Stop,
+            }, dots[i], UIElement.OpacityProperty);
+        }
+
+        return true;
     }
 
     /// <summary>
-    /// 动效签名「译光闪落」（已退役的 v2.0 琥珀品牌资产）：
-    /// 译文落定瞬间一道琥珀光痕沿译文区扫过（Duration.Signature = 420ms，减速收尾），
-    /// 与进度条流光、导航指示条共用同一母题。只在单结果成功落定时播放——
-    /// 失败/对比模式不给奖赏，重复落定才形成条件反射；
-    /// 系统关闭「在窗口内显示动画」（ClientAreaAnimation，reduced-motion 的 Windows 等效）时直接跳过。
+    /// 消费 <see cref="_pendingSeal"/> 并播放落印：**只在尺寸与排版全部收尾之后**调用
+    /// （用户要求「弹窗大小和文字排版全部执行完后再落印」）。
+    /// 用 <see cref="DispatcherPriority.Loaded"/> 排一帧：此时动画收尾的滚动条恢复与收尾摆放都已进入渲染树，
+    /// 印面标压下去时译文已是最终排版，不会再被重排冲掉。
     /// </summary>
-    private void PlaySignatureStreak()
+    private void FlushPendingSeal()
     {
-        if (SignatureStreak is null || SignatureStreakShift is null) return;
-        if (!SystemParameters.ClientAreaAnimation) return;
-        if (string.IsNullOrEmpty(_vm.ResultText) || _vm.HasError || _vm.IsComparing) return;
-
-        var travel = Math.Max(ResultArea.ActualWidth, 120) + 80;
-        var signature = (Duration)FindResource("Duration.Signature");
-
-        // 同一 Storyboard 内两个 Opacity 子动画先后接管：0→1 亮起（80ms），260ms 起熄灭（160ms），
-        // 与 420ms 位移并行构成「亮起 → 扫过 → 熄灭」的完整光痕
-        var appear = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(80));
-        var vanish = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(160))
+        if (!_pendingSeal)
         {
-            BeginTime = TimeSpan.FromMilliseconds(260)
-        };
-        var sweep = new DoubleAnimation(-80, travel, signature)
-        {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        Storyboard.SetTarget(appear, SignatureStreak);
-        Storyboard.SetTargetProperty(appear, new PropertyPath("Opacity"));
-        Storyboard.SetTarget(vanish, SignatureStreak);
-        Storyboard.SetTargetProperty(vanish, new PropertyPath("Opacity"));
-        Storyboard.SetTarget(sweep, SignatureStreakShift);
-        Storyboard.SetTargetProperty(sweep, new PropertyPath("X"));
+            return;
+        }
 
-        // 清掉上一轮可能残留的动画（快速连续翻译时光痕要从头开始）
-        SignatureStreak.BeginAnimation(OpacityProperty, null);
-        SignatureStreakShift.BeginAnimation(TranslateTransform.XProperty, null);
-        SignatureStreak.Opacity = 0;
-
-        var storyboard = new Storyboard();
-        storyboard.Children.Add(appear);
-        storyboard.Children.Add(vanish);
-        storyboard.Children.Add(sweep);
-        storyboard.Begin(this);
-        Log.Debug("译光闪落：译文落定，光痕扫过 {Travel:F0} DIP", travel);
+        _pendingSeal = false;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(PlaySealStamp));
     }
 
-    /// <summary>14.2.4 时机 3/5：输入变化与错误行变化共用 400ms 防抖（译文返回用 120ms，自适应关闭时无需测量）。</summary>
+    /// <summary>
+    /// 把一段动画直接挂到某个可动对象（Transform / 元素）的依赖属性上。
+    /// **不走 Storyboard.SetTarget**：实测那样指向 Freezable（TranslateTransform / ScaleTransform /
+    /// RotateTransform）时是**静默失效**的——时钟照建、日志照打，属性值却一动不动，
+    /// 界面上只能看到直接挂在元素上的不透明度在变。
+    /// （2026-10-03 由 --seal-probe 仪表读回实测确认：Opacity 在动，所有 Transform 属性恒为初值。）
+    /// BeginTime 由动画自己携带，所以错峰起播不需要 Storyboard。
+    /// 同一段曲线要同时驱动 ScaleX/ScaleY 时必须各克隆一份（一个动画实例只能被一个时钟驱动）。
+    /// </summary>
+    private static void Attach(AnimationTimeline animation, IAnimatable owner, DependencyProperty property)
+    {
+        owner.BeginAnimation(property, (AnimationTimeline)animation.Clone());
+    }
+
+    /// <summary>14.2.4 时机 3/5：输入变化与错误行变化共用 400ms 防抖（译文返回用 120ms，自适应关闭时无需测量）。
+    /// 同一批属性变更里按「更早的到期时间赢」合并（<see cref="WindowSizePolicy.MergeDebounceMs"/>）。</summary>
     private void ScheduleAdaptiveRecompute(int debounceMs = AdaptiveDebounceMs)
     {
         if (WindowSizePolicy.IsManual(_settings.QuickWindowSizeMode))
         {
             // manual 模式下自适应整体停用：留一条 Debug 日志，便于以后诊断「为什么窗口没有按内容变大」
             Log.Debug("小窗自适应已关闭（manual），忽略尺寸重算（防抖 {Debounce} ms）", debounceMs);
+            FlushPendingSeal(); // 自适应关闭：尺寸不变，落印不必等
             return;
         }
 
         _adaptiveTimer.Stop();
-        _adaptiveTimer.Interval = TimeSpan.FromMilliseconds(debounceMs);
+        // 同一批属性变更里「更早的到期时间赢」：翻译成功收尾是 ResultText(120ms) → StatusText / IsBusy(400ms)，
+        // 照单全收就会把译文到达的生长一路推到 400ms（用户看到的是「译文先出现、窗口停一下再长」）。
+        var effectiveMs = WindowSizePolicy.MergeDebounceMs(_adaptivePendingMs, debounceMs);
+        _adaptiveTimer.Interval = TimeSpan.FromMilliseconds(effectiveMs);
+        _adaptivePendingMs = effectiveMs;
         _adaptiveTimer.Start();
     }
 
@@ -1138,7 +1688,11 @@ public partial class QuickWindow : Window
         {
             _intentHeightDip = requiredCard;
             _adaptiveGuardUntil = Environment.TickCount64 + AdaptiveGuardMs;
+            // 对比增高是即时落地：先撤掉可能还在跑的自适应宽高动画，否则两边同时写尺寸会打架
+            BeginAnimation(WidthProperty, null);
+            BeginAnimation(HeightProperty, null);
             SyncSizePropertiesFromIntent();
+            ReleaseInnerLayout(); // 自适应动画被即时落地顶掉：静音的滚动条一并还原
         }
 
         Log.Debug("进入对比模式：{Columns} 栏，窗口高度 {Height}（进入前 {Original}）",
@@ -1297,10 +1851,6 @@ public partial class QuickWindow : Window
             _hideTimer.Stop();
         }
     }
-
-    /// <summary>按小窗「截图翻译」按钮：请求 App 启动截图流程（FR-021 / 13.5.2）。</summary>
-    private void OnCaptureClick(object sender, RoutedEventArgs e) =>
-        CaptureRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => HideWindow();
 

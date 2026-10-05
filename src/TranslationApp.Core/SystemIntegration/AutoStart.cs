@@ -81,6 +81,30 @@ public sealed class AutoStart
 
         var exePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("无法获取当前 EXE 路径");
-        _registry.Set(RunKeyPath, _valueName, $"\"{exePath}\" --minimized");
+        _registry.Set(RunKeyPath, _valueName, FormatCommand(exePath));
     }
+
+    /// <summary>
+    /// 自愈：已启用、但注册的路径不是当前 EXE 时改写。自包含单文件被挪过位置后，
+    /// 旧路径会让开机自启**静默失效**（Windows 直接忽略指向不存在文件的 Run 项），
+    /// 用户只会觉得「怎么不自动启动了」——所以每次启动顺手校正一次。
+    /// 未启用时什么都不做：关掉就是关掉，不自作主张帮用户打开。
+    /// </summary>
+    public void RepairIfEnabled()
+    {
+        var registered = RegisteredCommand;
+        var exePath = Environment.ProcessPath;
+        if (registered is null || exePath is null)
+        {
+            return;
+        }
+
+        var expected = FormatCommand(exePath);
+        if (!string.Equals(registered, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            _registry.Set(RunKeyPath, _valueName, expected);
+        }
+    }
+
+    private static string FormatCommand(string exePath) => $"\"{exePath}\" --minimized";
 }

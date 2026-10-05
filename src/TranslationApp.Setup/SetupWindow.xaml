@@ -1,0 +1,757 @@
+<Window x:Class="TranslationApp.Setup.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="译印 · 立契" Width="760" Height="500"
+        WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="True" Background="{DynamicResource Brush.Surface}"
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
+        SnapsToDevicePixels="True" UseLayoutRounding="True">
+    <!--
+      立契 · 安装窗口（设计稿 inkseal-motion-v2.html 第 04 节，1:1 落地）。
+      一屏一个决定：启封 → 落址 → 接引擎 → 盖印 → 契成。
+      取法：Apple Setup Assistant（固定窗口、一屏一件事）、Windows 11 OOBE（顶部进度脊）、
+            Linear/Raycast（键盘提示行、单一强调色）、真实安装器（列出真实工作项）。
+      配色随安装时刻：早六点到晚六点为纸，其余为墨。
+    -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="40" ResizeBorderThickness="0"
+                            GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- 点阵纸底：设计稿 .wb-pad / .contract 的 radial-gradient 点阵，7px 一格 -->
+        <DrawingBrush x:Key="Setup.Dots" TileMode="Tile" Stretch="None"
+                      Viewport="0,0,7,7" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <GeometryDrawing Brush="{StaticResource Brush.Border}">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="0.6,0.6" RadiusX="0.7" RadiusY="0.7"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <!-- 45° 方菱形：进度脊与工作清单共用，状态由使用方改 Stroke/Fill -->
+        <Style x:Key="Setup.Diamond" TargetType="Rectangle">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="RadiusX" Value="3"/>
+            <Setter Property="RadiusY" Value="3"/>
+            <Setter Property="StrokeThickness" Value="1.5"/>
+            <Setter Property="Stroke" Value="{StaticResource Brush.BorderStrong}"/>
+            <Setter Property="StrokeDashArray" Value="1.6 1.2"/>
+            <Setter Property="RenderTransformOrigin" Value=".5,.5"/>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <RotateTransform Angle="45"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 印面：核对格 / 引擎侧栏的底座（设计稿 .rev div / .eng-side，纸色内衬） -->
+        <Style x:Key="Setup.Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Brush.Window}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="9"/>
+        </Style>
+
+        <!-- 表单行（设计稿 .field） -->
+        <Style x:Key="Setup.Field" TargetType="Border" BasedOn="{StaticResource Setup.Card}">
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Padding" Value="12,0"/>
+        </Style>
+
+        <!-- 落址 / 引擎小标签（设计稿 .fld-l / .side-k / .rev span） -->
+        <Style x:Key="Setup.Label" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Font.Mono}"/>
+            <Setter Property="FontSize" Value="9.5"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextTertiary}"/>
+        </Style>
+
+        <Style x:Key="Setup.RevLabel" TargetType="TextBlock" BasedOn="{StaticResource Setup.Label}">
+            <Setter Property="FontSize" Value="9"/>
+        </Style>
+
+        <Style x:Key="Setup.RevValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+
+        <!-- 为什么问你（设计稿 .why） -->
+        <Style x:Key="Setup.Why" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="LineHeight" Value="17.5"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextTertiary}"/>
+        </Style>
+
+        <!-- 引擎印面：左列可选引擎（设计稿 .eng button） -->
+        <Style x:Key="Setup.EngineItem" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Root" CornerRadius="9" BorderThickness="1" Padding="12,0"
+                                MinHeight="42" SnapsToDevicePixels="True"
+                                Background="{StaticResource Brush.Surface}"
+                                BorderBrush="{StaticResource Brush.Border}">
+                            <Grid>
+                                <Border x:Name="Bar" Width="3" Height="16" Margin="-13,0,0,0"
+                                        HorizontalAlignment="Left" VerticalAlignment="Center"
+                                        CornerRadius="0,2,2,0" Visibility="Collapsed"
+                                        Background="{StaticResource Brush.Primary}"/>
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock x:Name="Badge" DockPanel.Dock="Right" Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontFamily="{StaticResource Font.Mono}" FontSize="9"
+                                               Foreground="{StaticResource Brush.TextTertiary}"
+                                               Text="{Binding Badge}"/>
+                                    <TextBlock x:Name="Name" VerticalAlignment="Center"
+                                               FontSize="11.5" TextTrimming="CharacterEllipsis"
+                                               Foreground="{StaticResource Brush.TextSecondary}"
+                                               Text="{Binding Name}"/>
+                                </DockPanel>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Brush.PrimaryContainer}"/>
+                                <Setter TargetName="Bar" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="Name" Property="Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+                                <Setter TargetName="Name" Property="FontWeight" Value="{StaticResource Weight.Semibold}"/>
+                                <Setter TargetName="Badge" Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource Brush.BorderStrong}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 开关（设计稿 .tg）：整个按钮就是开关，点一下切换 -->
+        <Style x:Key="Setup.Toggle" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Root" CornerRadius="9" BorderThickness="1" Padding="12,8"
+                                Background="{StaticResource Brush.Surface}"
+                                BorderBrush="{StaticResource Brush.Border}">
+                            <StackPanel Orientation="Horizontal">
+                                <Border x:Name="Track" Width="26" Height="15" CornerRadius="99"
+                                        VerticalAlignment="Center"
+                                        Background="{StaticResource Brush.BorderStrong}">
+                                    <Border x:Name="Knob" Width="11" Height="11" CornerRadius="99"
+                                            HorizontalAlignment="Left" Margin="2,0,0,0"
+                                            Background="White">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="2" ShadowDepth="1" Direction="270" Opacity="0.2"/>
+                                        </Border.Effect>
+                                    </Border>
+                                </Border>
+                                <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
+                                                  TextBlock.FontSize="11.5"
+                                                  TextBlock.Foreground="{StaticResource Brush.TextSecondary}"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Brush.PrimaryContainer}"/>
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource Brush.Primary}"/>
+                                <Setter TargetName="Knob" Property="Margin" Value="13,0,0,0"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource Brush.BorderStrong}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 收印：幽灵按钮（设计稿 .btn-ghost） -->
+        <Style x:Key="Setup.Ghost" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" CornerRadius="9" Padding="{TemplateBinding Padding}"
+                                Background="Transparent">
+                            <ContentPresenter x:Name="Cp" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextBlock.FontSize="12"
+                                              TextBlock.Foreground="{StaticResource Brush.TextTertiary}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Brush.Hover}"/>
+                                <Setter TargetName="Cp" Property="TextBlock.Foreground" Value="{StaticResource Brush.TextPrimary}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 帽檐关闭键（设计稿 .iw-x） -->
+        <Style x:Key="Setup.Close" TargetType="Button">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root" CornerRadius="6" Background="Transparent">
+                            <Path x:Name="Glyph" Width="10" Height="10" Stretch="Uniform"
+                                  Stroke="{StaticResource Brush.TextTertiary}" StrokeThickness="1.4"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Data="M0,0 L12,12 M12,0 L0,12"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource Brush.SurfaceSubtle}"/>
+                                <Setter TargetName="Glyph" Property="Stroke" Value="{StaticResource Brush.TextPrimary}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 键盘提示（设计稿 .kbs） -->
+        <Style x:Key="Setup.Key" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="5,1"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="Root">
+        <Border Background="{StaticResource Brush.Surface}"
+                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="40"/>
+                    <RowDefinition Height="68"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="58"/>
+                </Grid.RowDefinitions>
+
+                <!-- ============ 帽檐：印面标 + 译印 · 立契 + 第 N / 4 步 ============ -->
+                <Grid Grid.Row="0" Margin="16,0,10,0" Background="Transparent">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path Style="{StaticResource BrandMark}" Width="15" Height="15"/>
+                        <TextBlock Text="译印 · 立契" Margin="9,0,0,0" FontSize="11.5"
+                                   VerticalAlignment="Center"
+                                   FontWeight="{StaticResource Weight.Semibold}"
+                                   Foreground="{StaticResource Brush.TextSecondary}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="StepText" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Margin="0,0,34,0" FontFamily="{StaticResource Font.Mono}" FontSize="10.5"
+                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                    <Button x:Name="CloseButton" Style="{StaticResource Setup.Close}"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            ToolTip="先不立契，关掉窗口；想装随时再双击安装包"
+                            Click="OnCloseClick"/>
+                </Grid>
+
+                <!-- ============ 进度脊：四枚方菱形落在一条线上，做完一格，墨就浸过一格 ============ -->
+                <Grid Grid.Row="1" Margin="34,0">
+                    <Grid Height="1.5" VerticalAlignment="Top" Margin="0,24,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="Seg0" Grid.Column="0" Opacity="0.42" Background="{StaticResource Brush.BorderStrong}"/>
+                        <Border x:Name="Seg1" Grid.Column="1" Opacity="0.42" Background="{StaticResource Brush.BorderStrong}"/>
+                        <Border x:Name="Seg2" Grid.Column="2" Opacity="0.42" Background="{StaticResource Brush.BorderStrong}"/>
+                        <Border x:Name="Seg3" Grid.Column="3" Opacity="0.42" Background="{StaticResource Brush.BorderStrong}"/>
+                    </Grid>
+                    <UniformGrid Columns="4" VerticalAlignment="Center">
+                        <StackPanel HorizontalAlignment="Center">
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center">
+                                <Rectangle x:Name="SlotHalo0" Width="20" Height="20" RadiusX="4" RadiusY="4"
+                                           Fill="{StaticResource Brush.PrimaryContainer}" Opacity="0"
+                                           RenderTransformOrigin=".5,.5">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <Rectangle x:Name="SlotDot0" Style="{StaticResource Setup.Diamond}"/>
+                            </Grid>
+                            <TextBlock x:Name="SlotText0" Text="启封" Margin="0,3,0,0" FontSize="11"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextTertiary}"/>
+                        </StackPanel>
+                        <StackPanel HorizontalAlignment="Center">
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center">
+                                <Rectangle x:Name="SlotHalo1" Width="20" Height="20" RadiusX="4" RadiusY="4"
+                                           Fill="{StaticResource Brush.PrimaryContainer}" Opacity="0"
+                                           RenderTransformOrigin=".5,.5">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <Rectangle x:Name="SlotDot1" Style="{StaticResource Setup.Diamond}"/>
+                            </Grid>
+                            <TextBlock x:Name="SlotText1" Text="落址" Margin="0,3,0,0" FontSize="11"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextTertiary}"/>
+                        </StackPanel>
+                        <StackPanel HorizontalAlignment="Center">
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center">
+                                <Rectangle x:Name="SlotHalo2" Width="20" Height="20" RadiusX="4" RadiusY="4"
+                                           Fill="{StaticResource Brush.PrimaryContainer}" Opacity="0"
+                                           RenderTransformOrigin=".5,.5">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <Rectangle x:Name="SlotDot2" Style="{StaticResource Setup.Diamond}"/>
+                            </Grid>
+                            <TextBlock x:Name="SlotText2" Text="接引擎" Margin="0,3,0,0" FontSize="11"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextTertiary}"/>
+                        </StackPanel>
+                        <StackPanel HorizontalAlignment="Center">
+                            <Grid Width="20" Height="20" HorizontalAlignment="Center">
+                                <Rectangle x:Name="SlotHalo3" Width="20" Height="20" RadiusX="4" RadiusY="4"
+                                           Fill="{StaticResource Brush.PrimaryContainer}" Opacity="0"
+                                           RenderTransformOrigin=".5,.5">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <Rectangle x:Name="SlotDot3" Style="{StaticResource Setup.Diamond}"/>
+                            </Grid>
+                            <TextBlock x:Name="SlotText3" Text="盖印" Margin="0,3,0,0" FontSize="11"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{StaticResource Brush.TextTertiary}"/>
+                        </StackPanel>
+                    </UniformGrid>
+                </Grid>
+
+                <!-- ============ 一屏一个决定 ============ -->
+                <Grid Grid.Row="2" ClipToBounds="True">
+                    <!-- 0 · 启封 -->
+                    <Grid x:Name="Pane0" Margin="34,24,34,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.02*"/>
+                            <ColumnDefinition Width="30"/>
+                            <ColumnDefinition Width="1*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" CornerRadius="12" BorderThickness="1"
+                                BorderBrush="{StaticResource Brush.Border}"
+                                Background="{StaticResource Setup.Dots}">
+                            <Grid>
+                                <Rectangle Width="104" Height="104" RadiusX="12" RadiusY="12"
+                                           StrokeThickness="1" Opacity="0.75"
+                                           Stroke="{StaticResource Brush.BorderStrong}"
+                                           StrokeDashArray="3 2"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           RenderTransformOrigin=".5,.5">
+                                    <Rectangle.RenderTransform>
+                                        <RotateTransform Angle="45"/>
+                                    </Rectangle.RenderTransform>
+                                </Rectangle>
+                                <!-- 飞印的起点：印面归位的那块空槽 -->
+                                <Grid x:Name="AnchorWelcome" Width="96" Height="96"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="印 面 归 位" HorizontalAlignment="Center"
+                                           VerticalAlignment="Bottom" Margin="0,0,0,9"
+                                           FontFamily="{StaticResource Font.Mono}" FontSize="9.5"
+                                           Foreground="{StaticResource Brush.TextTertiary}"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <TextBlock Text="INKSEAL" FontFamily="{StaticResource Font.Mono}" FontSize="9.5"
+                                       Foreground="{StaticResource Brush.PrimaryText}"/>
+                            <TextBlock x:Name="WelcomeTitle" Text="把这方印，请进这台机器" Margin="0,8,0,0"
+                                       FontSize="20" TextWrapping="Wrap"
+                                       FontWeight="{StaticResource Weight.Semibold}"
+                                       Foreground="{StaticResource Brush.TextPrimary}"/>
+                            <TextBlock x:Name="WelcomeBody" Margin="0,9,0,0" FontSize="12" LineHeight="21"
+                                       TextWrapping="Wrap"
+                                       Foreground="{StaticResource Brush.TextSecondary}"/>
+                            <StackPanel x:Name="WelcomeFacts" Margin="0,12,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 1 · 落址 -->
+                    <Grid x:Name="Pane1" Margin="34,24,34,14" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                            <TextBlock Text="01" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                       LineHeight="20" Margin="0,0,11,0"
+                                       Foreground="{StaticResource Brush.PrimaryText}"/>
+                            <StackPanel>
+                                <TextBlock Text="落址" FontSize="17"
+                                           FontWeight="{StaticResource Weight.Semibold}"/>
+                                <TextBlock Text="印放在哪，数据就放在哪" Margin="0,3,0,0" FontSize="11.5"
+                                           Foreground="{StaticResource Brush.TextTertiary}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="1" Text="安装位置" Style="{StaticResource Setup.Label}"
+                                   Margin="0,14,0,5"/>
+
+                        <Border Grid.Row="2" Style="{StaticResource Setup.Field}">
+                            <Grid>
+                                <TextBlock x:Name="PathText" VerticalAlignment="Center"
+                                           FontFamily="{StaticResource Font.Mono}" FontSize="11.5"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{StaticResource Brush.TextSecondary}"/>
+                                <Button x:Name="BrowseButton" Content="浏览…" HorizontalAlignment="Right"
+                                        Style="{StaticResource Button.Link}" Height="24" Padding="8,0"
+                                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                        Click="OnBrowseClick"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+                            <ToggleButton x:Name="AutoStartToggle" Style="{StaticResource Setup.Toggle}"
+                                          Content="开机自启 · 仅托盘" IsChecked="True"/>
+                            <ToggleButton x:Name="DesktopToggle" Style="{StaticResource Setup.Toggle}"
+                                          Margin="8,0,0,0" Content="桌面快捷方式" IsChecked="True"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="4" x:Name="WhyText" Style="{StaticResource Setup.Why}"
+                                   Margin="0,12,0,0"/>
+
+                        <Grid Grid.Row="5" VerticalAlignment="Bottom">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Style="{StaticResource Setup.Card}" Padding="11,8">
+                                <StackPanel>
+                                    <TextBlock Text="预计占用" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="SizeText" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource Setup.Card}" Padding="11,8">
+                                <StackPanel>
+                                    <TextBlock Text="印谱落址" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="PortableText" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Grid>
+
+                    <!-- 2 · 接引擎 -->
+                    <Grid x:Name="Pane2" Margin="34,24,34,14" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                            <TextBlock Text="02" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                       LineHeight="20" Margin="0,0,11,0"
+                                       Foreground="{StaticResource Brush.PrimaryText}"/>
+                            <StackPanel>
+                                <TextBlock Text="接引擎" FontSize="17"
+                                           FontWeight="{StaticResource Weight.Semibold}"/>
+                                <TextBlock Text="先用免密钥的那方，随时能换" Margin="0,3,0,0" FontSize="11.5"
+                                           Foreground="{StaticResource Brush.TextTertiary}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Grid Grid.Row="1" Margin="0,11,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.12*"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="1*"/>
+                            </Grid.ColumnDefinitions>
+                            <ListBox x:Name="EngineList" Grid.Column="0" BorderThickness="0" Padding="0"
+                                     Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource Setup.EngineItem}">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="2"/>
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                            </ListBox>
+
+                            <Border Grid.Column="2" Style="{StaticResource Setup.Card}" Padding="14,13">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="引擎配置" Style="{StaticResource Setup.Label}"/>
+                                    <TextBlock x:Name="EngineNote" Grid.Row="1" Style="{StaticResource Setup.Why}"
+                                               Margin="0,9,0,0"/>
+                                    <StackPanel x:Name="EngineRows" Grid.Row="2" Margin="0,6,0,0"/>
+                                    <TextBlock Grid.Row="3" x:Name="EngineHint" VerticalAlignment="Bottom"
+                                               Style="{StaticResource Setup.Why}" Margin="0,10,0,0"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+
+                    <!-- 3 · 盖印 -->
+                    <Grid x:Name="Pane3" Margin="34,24,34,14" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal">
+                            <TextBlock Text="03" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                       LineHeight="20" Margin="0,0,11,0"
+                                       Foreground="{StaticResource Brush.PrimaryText}"/>
+                            <StackPanel>
+                                <TextBlock Text="盖印" FontSize="17"
+                                           FontWeight="{StaticResource Weight.Semibold}"/>
+                                <TextBlock Text="核对一遍，然后落章" Margin="0,3,0,0" FontSize="11.5"
+                                           Foreground="{StaticResource Brush.TextTertiary}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <UniformGrid Grid.Row="1" Columns="4" Margin="0,13,0,0">
+                            <Border Style="{StaticResource Setup.Card}" Padding="11,8" Margin="0,0,8,0">
+                                <StackPanel>
+                                    <TextBlock Text="落址" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="RevPath" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource Setup.Card}" Padding="11,8" Margin="0,0,8,0">
+                                <StackPanel>
+                                    <TextBlock Text="引擎" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="RevEngine" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource Setup.Card}" Padding="11,8" Margin="0,0,8,0">
+                                <StackPanel>
+                                    <TextBlock Text="热键" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="RevHotkey" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource Setup.Card}" Padding="11,8">
+                                <StackPanel>
+                                    <TextBlock Text="常驻" Style="{StaticResource Setup.RevLabel}"/>
+                                    <TextBlock x:Name="RevResident" Style="{StaticResource Setup.RevValue}"/>
+                                </StackPanel>
+                            </Border>
+                        </UniformGrid>
+
+                        <Border Grid.Row="2" Height="4" CornerRadius="2" Margin="0,13,0,0"
+                                Background="{StaticResource Brush.SurfaceMuted}">
+                            <Border x:Name="ProgressFill" Width="0" HorizontalAlignment="Left"
+                                    CornerRadius="2" Background="{StaticResource Brush.Primary}"/>
+                        </Border>
+
+                        <StackPanel Grid.Row="3" x:Name="WorkList" Margin="0,12,0,0"/>
+
+                        <StackPanel Grid.Row="4">
+                            <TextBlock x:Name="SealMessage" FontFamily="{StaticResource Font.Mono}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       Foreground="{StaticResource Brush.TextTertiary}"/>
+                            <Border x:Name="ErrorBanner" Visibility="Collapsed" Margin="0,8,0,0"
+                                    Style="{StaticResource Banner.Error}">
+                                <TextBlock x:Name="ErrorText" TextWrapping="Wrap" FontSize="11.5"
+                                           Foreground="{StaticResource Brush.Error}"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 4 · 契成 -->
+                    <Grid x:Name="Pane4" Margin="34,24,34,14" Visibility="Collapsed">
+                        <Border CornerRadius="12" BorderThickness="1" Padding="20,18"
+                                BorderBrush="{StaticResource Brush.Border}"
+                                Background="{StaticResource Setup.Dots}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                    <TextBlock Text="契 · 译印" FontSize="14"
+                                               FontWeight="{StaticResource Weight.Semibold}"/>
+                                    <TextBlock Text="INKSEAL" Margin="10,0,0,2" VerticalAlignment="Bottom"
+                                               FontFamily="{StaticResource Font.Mono}" FontSize="9.5"
+                                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                                </StackPanel>
+                                <Border Grid.Row="1" Height="1" Margin="0,9,0,8"
+                                        Background="{StaticResource Brush.Border}"/>
+                                <StackPanel Grid.Row="2" x:Name="ContractRows"/>
+                                <TextBlock Grid.Row="2" Text="印落，字才算数" HorizontalAlignment="Left"
+                                           VerticalAlignment="Bottom" Margin="0,0,0,2" FontSize="11"
+                                           Foreground="{StaticResource Brush.TextTertiary}"/>
+                                <Grid Grid.Row="2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                      Width="76" Height="76">
+                                    <Rectangle x:Name="SignSpot" RadiusX="10" RadiusY="10"
+                                               StrokeThickness="1"
+                                               Stroke="{StaticResource Brush.BorderStrong}"
+                                               StrokeDashArray="3 2"/>
+                                    <TextBlock x:Name="SignSpotText" Text="落款处" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               FontFamily="{StaticResource Font.Mono}" FontSize="9"
+                                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                                    <Grid x:Name="GhostSeal" Opacity="0" RenderTransformOrigin=".5,.5">
+                                        <Grid.RenderTransform>
+                                            <RotateTransform Angle="-1.6"/>
+                                        </Grid.RenderTransform>
+                                        <Path Style="{StaticResource BrandMark}" Width="66" Height="66"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Opacity="0.92"/>
+                                        <Canvas x:Name="GhostRings" Width="76" Height="76"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- 5 · 收印 -->
+                    <Grid x:Name="Pane5" Margin="34,24,34,14" Visibility="Collapsed">
+                        <Border CornerRadius="12" BorderThickness="1" Padding="20,18"
+                                BorderBrush="{StaticResource Brush.Border}"
+                                Background="{StaticResource Setup.Dots}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                    <TextBlock Text="收印" FontSize="14"
+                                               FontWeight="{StaticResource Weight.Semibold}"/>
+                                    <TextBlock Text="UNSEAL" Margin="10,0,0,2" VerticalAlignment="Bottom"
+                                               FontFamily="{StaticResource Font.Mono}" FontSize="9.5"
+                                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                                </StackPanel>
+                                <Border Grid.Row="1" Height="1" Margin="0,9,0,8"
+                                        Background="{StaticResource Brush.Border}"/>
+                                <StackPanel Grid.Row="2" x:Name="UnsealRows"/>
+                                <!-- 收印的落印位：飞印停在这里，收完再抬走 -->
+                                <Grid Grid.Row="2" x:Name="UnsealSealSlot" Width="76" Height="76"
+                                      HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Rectangle RadiusX="10" RadiusY="10" StrokeThickness="1"
+                                               Stroke="{StaticResource Brush.BorderStrong}"
+                                               StrokeDashArray="3 2"/>
+                                    <TextBlock x:Name="UnsealSlotText" Text="印 面 待 收"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontFamily="{StaticResource Font.Mono}" FontSize="9"
+                                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                                </Grid>
+                                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Margin="0,10,0,0">
+                                    <Button x:Name="UnsealKeepButton" Content="只收程序" MinWidth="88" Height="32"
+                                            Margin="0,0,8,0" shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                            Style="{StaticResource Button.Outline}" Click="OnUnsealKeepClick"/>
+                                    <Button x:Name="UnsealAllButton" Content="一并抹去" MinWidth="88" Height="32"
+                                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                            Style="{StaticResource Button.Primary}" Click="OnUnsealAllClick"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- ============ 底部固定操作区 ============ -->
+                <Grid Grid.Row="3" Margin="34,0,18,0" Background="Transparent">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="HintText" Grid.Column="0" VerticalAlignment="Center"
+                               FontFamily="{StaticResource Font.Mono}" FontSize="10.5"
+                               TextTrimming="CharacterEllipsis"
+                               Foreground="{StaticResource Brush.TextTertiary}"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="0,0,10,0">
+                        <Border Style="{StaticResource Setup.Key}">
+                            <TextBlock Text="↵" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                       Foreground="{StaticResource Brush.TextSecondary}"/>
+                        </Border>
+                        <TextBlock Text="继续" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                   Foreground="{StaticResource Brush.TextTertiary}"/>
+                        <Border Style="{StaticResource Setup.Key}">
+                            <TextBlock Text="Esc" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                       Foreground="{StaticResource Brush.TextSecondary}"/>
+                        </Border>
+                        <TextBlock Text="上一步" FontFamily="{StaticResource Font.Mono}" FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource Brush.TextTertiary}"/>
+                    </StackPanel>
+                    <Button x:Name="UnsealButton" Grid.Column="2" Content="收印" MinWidth="72" Height="32"
+                            VerticalAlignment="Center" Margin="0,0,8,0"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource Setup.Ghost}" Click="OnUnsealClick"/>
+                    <Button x:Name="BackButton" Grid.Column="3" Content="上一步" MinWidth="72" Height="32"
+                            VerticalAlignment="Center" Margin="0,0,8,0"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource Button.Outline}" Click="OnBackClick"/>
+                    <Button x:Name="NextButton" Grid.Column="4" Content="继续" MinWidth="92" Height="32"
+                            VerticalAlignment="Center"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource Button.Primary}" Click="OnNextClick"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 飞印：在启封的大印槽、进度脊的方菱形、契书的落款处之间飞；落印时抬起再砸下 -->
+        <Canvas x:Name="FlyLayer" IsHitTestVisible="False">
+            <Grid x:Name="Fly" Width="64" Height="64" Opacity="0">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="FlyMove"/>
+                </Grid.RenderTransform>
+                <Grid x:Name="FlySpin" Width="64" Height="64" RenderTransformOrigin=".5,.5">
+                    <Grid.RenderTransform>
+                        <RotateTransform x:Name="FlyRotate"/>
+                    </Grid.RenderTransform>
+                    <Path x:Name="FlySeal" Style="{StaticResource BrandMark}" Width="64" Height="64"
+                          RenderTransformOrigin=".5,.5">
+                        <Path.RenderTransform>
+                            <ScaleTransform x:Name="FlyScale"/>
+                        </Path.RenderTransform>
+                    </Path>
+                </Grid>
+            </Grid>
+        </Canvas>
+    </Grid>
+</Window>

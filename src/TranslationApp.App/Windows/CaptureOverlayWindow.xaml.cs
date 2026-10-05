@@ -22,14 +22,26 @@ namespace TranslationApp.Windows;
 /// </summary>
 public partial class CaptureOverlayWindow : Window
 {
-    private const double HandleSize = 6;    // 8 个手柄 6×6 DIP（13.2.4）
-    private const double SelectionStroke = 2;
-    private const double ChipGap = 6;
-    private const double HintMargin = 16;
+    // 以下尺寸全部照设计稿 inkseal-ui.html 的 05 截图（.cap-* 一节）取值。
+    private const double CornerSize = 16;      // 四角印角 16×16（.cap-corner）
+    private const double CornerOverhang = 2;   // 印角向选区外溢 2px（left/right/top/bottom:-2px）
+    private const double DiamondSize = 7;      // 边中点方菱形 7×7（.cap-dia）
+    private const double LoupeWidth = 86;      // 放大镜宽 86（.cap-loupe width）
+    private const double LoupeGap = 12;        // 放大镜与选区之间留 12px（.cap-loupe left:-98px）
+    private const int LoupeCells = 5;          // 5×5 取色格
+    private const int LoupeScale = 8;          // 每格代表 8×8 物理像素（读数 ×8）
+    private const int LoupeCenter = 12;        // 5×5 的中心格（0 基，设计稿 .c）
+    private const double ChipGap = 1;          // 尺寸牌相对选区右下角外溢 1px（.cap-size right/bottom:-1px）
+    private const double HudMargin = 16;       // 顶部 HUD 距屏幕顶 16（.cap-hud top:16px）
+    private const double HintMargin = 16;      // 底部提示距屏幕底 16（.cap-hint bottom:16px）
 
     private readonly int _maxImageDimension;
     private readonly NativeMethods.RECT _monitor;
-    private readonly List<Rectangle> _handles = [];
+    private readonly Rectangle[] _loupeCells = new Rectangle[LoupeCells * LoupeCells];
+    private readonly SolidColorBrush[] _loupeBrushes = new SolidColorBrush[LoupeCells * LoupeCells];
+
+    private byte[] _pixelBuffer = [];
+    private Point _cursor;
 
     private Point? _dragStart;
     private Rect _selection;
@@ -50,7 +62,7 @@ public partial class CaptureOverlayWindow : Window
 
         Backdrop.Source = screenshot;
         ApplyScrimOpacity(scrimOpacity);
-        CreateHandles();
+        CreateLoupeCells();
 
         Loaded += OnWindowLoaded;
         SizeChanged += OnWindowSizeChanged;
@@ -65,6 +77,13 @@ public partial class CaptureOverlayWindow : Window
 
     /// <summary>确认后的选区内 DIP 矩形（取消时为 null）。</summary>
     public DipRect? ConfirmedSelection { get; private set; }
+
+    /// <summary>首次触达时替换顶部提示文案；确认后由调用方把提示状态落盘。</summary>
+    internal void SetCaptureHint(string text)
+    {
+        HintText.Text = text;
+        UpdateHintChip();
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -90,6 +109,7 @@ public partial class CaptureOverlayWindow : Window
             UpdateScaleFromActualSize();
             UpdateScrimGeometry();
             UpdateHintChip();
+            UpdateCapHint();
             UpdateSelectionVisuals();
         }));
     }
@@ -150,6 +170,7 @@ public partial class CaptureOverlayWindow : Window
         UpdateScaleFromActualSize();
         UpdateScrimGeometry();
         UpdateHintChip();
+        UpdateCapHint();
         Keyboard.Focus(this);
         Log.Debug("遮罩窗口就绪：ActualSize={Width}x{Height}，Scale=({ScaleX},{ScaleY})",
             ActualWidth, ActualHeight, ScaleX, ScaleY);
@@ -160,6 +181,7 @@ public partial class CaptureOverlayWindow : Window
         UpdateScaleFromActualSize();
         UpdateScrimGeometry();
         UpdateHintChip();
+        UpdateCapHint();
         UpdateSelectionVisuals();
     }
 
@@ -179,19 +201,26 @@ public partial class CaptureOverlayWindow : Window
         Scrim.Fill = brush;
     }
 
-    private void CreateHandles()
+    /// <summary>
+    /// 放大镜的 5×5 取色格（设计稿 .cap-loupe .grid）：每格 0.5 DIP 外边距，
+    /// 相邻两格之间自然让出 1px 缝（衬在 UniformGrid 的底色上）；中心格描一圈朱砂。
+    /// </summary>
+    private void CreateLoupeCells()
     {
-        for (var i = 0; i < 8; i++)
+        var baseColor = (Color)FindResource("Color.Capture.LoupeCell");
+        for (var i = 0; i < _loupeCells.Length; i++)
         {
-            var handle = new Rectangle
+            var brush = new SolidColorBrush(baseColor);
+            var cell = new Rectangle { Margin = new Thickness(0.5), Fill = brush };
+            if (i == LoupeCenter)
             {
-                Width = HandleSize,
-                Height = HandleSize,
-                Fill = (Brush)FindResource("Brush.Capture.Selection"),
-                Visibility = Visibility.Collapsed,
-            };
-            _handles.Add(handle);
-            HandleLayer.Children.Add(handle);
+                cell.Stroke = (Brush)FindResource("Brush.Capture.Selection");
+                cell.StrokeThickness = 1;
+            }
+
+            _loupeBrushes[i] = brush;
+            _loupeCells[i] = cell;
+            LoupeGrid.Children.Add(cell);
         }
     }
 
@@ -215,6 +244,7 @@ public partial class CaptureOverlayWindow : Window
         }
 
         var current = e.GetPosition(this);
+        _cursor = current;
         var normalized = CaptureGeometry.NormalizeDipRect(start.X, start.Y, current.X, current.Y);
         _selection = new Rect(normalized.X, normalized.Y, normalized.Width, normalized.Height);
         _hasSelection = true;
@@ -332,62 +362,97 @@ public partial class CaptureOverlayWindow : Window
     private void UpdateSelectionVisuals()
     {
         var visible = _hasSelection && !_selection.IsEmpty;
-        SelectionBorder.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        SizeChip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var state = visible ? Visibility.Visible : Visibility.Collapsed;
+
+        SelectionFill.Visibility = state;
+        SelectionBorder.Visibility = state;
+        SelectionInner.Visibility = state;
+        SizeChip.Visibility = state;
+        Loupe.Visibility = state;
+        DiamondLeft.Visibility = state;
+        DiamondRight.Visibility = state;
+        GuideTop.Visibility = state;
+        GuideBottom.Visibility = state;
+        GuideLeft.Visibility = state;
+        GuideRight.Visibility = state;
+        CornerTL.Visibility = state;
+        CornerTR.Visibility = state;
+        CornerBL.Visibility = state;
+        CornerBR.Visibility = state;
 
         if (!visible)
         {
-            foreach (var handle in _handles)
-            {
-                handle.Visibility = Visibility.Collapsed;
-            }
-
             UpdateScrimGeometry();
             return;
         }
 
-        // 描边向内收 1 DIP，避免 2 DIP 描边被窗口边缘裁掉一半
-        SelectionBorder.Width = Math.Max(0, _selection.Width - SelectionStroke);
-        SelectionBorder.Height = Math.Max(0, _selection.Height - SelectionStroke);
-        Canvas.SetLeft(SelectionBorder, _selection.X + SelectionStroke / 2);
-        Canvas.SetTop(SelectionBorder, _selection.Y + SelectionStroke / 2);
+        var left = _selection.Left;
+        var top = _selection.Top;
+        var right = _selection.Right;
+        var bottom = _selection.Bottom;
+        var width = ActualWidth > 0 ? ActualWidth : _monitor.Right - _monitor.Left;
+        var height = ActualHeight > 0 ? ActualHeight : _monitor.Bottom - _monitor.Top;
 
-        var points = HandlePoints(_selection);
-        for (var i = 0; i < _handles.Count; i++)
-        {
-            _handles[i].Visibility = Visibility.Visible;
-            Canvas.SetLeft(_handles[i], points[i].X - HandleSize / 2);
-            Canvas.SetTop(_handles[i], points[i].Y - HandleSize / 2);
-        }
+        // 选区本体（设计稿 .cap-sel）：淡朱砂填充 + 1px 朱砂描边 + 内侧 1px 白线（inset 阴影的等价画法）
+        Place(SelectionFill, left, top, _selection.Width, _selection.Height);
+        Place(SelectionBorder, left, top, _selection.Width, _selection.Height);
+        Place(
+            SelectionInner, left + 1, top + 1,
+            Math.Max(0, _selection.Width - 2), Math.Max(0, _selection.Height - 2));
+
+        // 四角印角（设计稿 .cap-corner）：16×16、向选区外溢 2px，各只画两条边
+        PlaceAt(CornerTL, left - CornerOverhang, top - CornerOverhang);
+        PlaceAt(CornerTR, right + CornerOverhang - CornerSize, top - CornerOverhang);
+        PlaceAt(CornerBL, left - CornerOverhang, bottom + CornerOverhang - CornerSize);
+        PlaceAt(CornerBR, right + CornerOverhang - CornerSize, bottom + CornerOverhang - CornerSize);
+
+        // 左右边中点方菱形（设计稿 .cap-dia left/right:-4px）：中心正好落在描边上
+        var diamondTop = top + (_selection.Height - DiamondSize) / 2;
+        PlaceAt(DiamondLeft, left - DiamondSize / 2 - 0.5, diamondTop);
+        PlaceAt(DiamondRight, right + 0.5 - DiamondSize / 2, diamondTop);
+
+        // 贯穿辅助线（设计稿 .cap-guide）：选区的四条边一直拉到屏幕边缘
+        GuideTop.X1 = 0;
+        GuideTop.X2 = width;
+        GuideTop.Y1 = GuideTop.Y2 = top + 0.5;
+        GuideBottom.X1 = 0;
+        GuideBottom.X2 = width;
+        GuideBottom.Y1 = GuideBottom.Y2 = bottom + 0.5;
+        GuideLeft.Y1 = 0;
+        GuideLeft.Y2 = height;
+        GuideLeft.X1 = GuideLeft.X2 = left + 0.5;
+        GuideRight.Y1 = 0;
+        GuideRight.Y2 = height;
+        GuideRight.X1 = GuideRight.X2 = right + 0.5;
 
         UpdateSizeChip();
+        UpdateLoupe(_cursor);
         UpdateScrimGeometry();
     }
 
-    /// <summary>4 角 + 4 边中点，居中对齐在描边上（13.2.4）。</summary>
-    private static Point[] HandlePoints(Rect rect)
+    private static void Place(FrameworkElement element, double x, double y, double width, double height)
     {
-        var centerX = rect.X + rect.Width / 2;
-        var centerY = rect.Y + rect.Height / 2;
-        return
-        [
-            new Point(rect.Left, rect.Top),
-            new Point(centerX, rect.Top),
-            new Point(rect.Right, rect.Top),
-            new Point(rect.Right, centerY),
-            new Point(rect.Right, rect.Bottom),
-            new Point(centerX, rect.Bottom),
-            new Point(rect.Left, rect.Bottom),
-            new Point(rect.Left, centerY),
-        ];
+        element.Width = Math.Max(0, width);
+        element.Height = Math.Max(0, height);
+        Canvas.SetLeft(element, x);
+        Canvas.SetTop(element, y);
     }
 
-    /// <summary>尺寸提示条：物理像素（用户关心截图分辨率）+ 超限缩放说明（13.2.4 / AC 7）。</summary>
+    private static void PlaceAt(UIElement element, double x, double y)
+    {
+        Canvas.SetLeft(element, x);
+        Canvas.SetTop(element, y);
+    }
+
+    /// <summary>
+    /// 尺寸牌（设计稿 .cap-size）：朱砂底白字，贴在选区右下角外侧；
+    /// 文案是物理像素（用户关心截图分辨率），超过识别上限时追加缩放说明（13.2.4 / AC 7）。
+    /// </summary>
     private void UpdateSizeChip()
     {
         var physicalWidth = (int)Math.Round(_selection.Width * ScaleX);
         var physicalHeight = (int)Math.Round(_selection.Height * ScaleY);
-        var text = $"{physicalWidth} × {physicalHeight} px";
+        var text = $"{physicalWidth} × {physicalHeight} · 已冻结";
 
         var fit = CaptureGeometry.FitToMaxDimension(physicalWidth, physicalHeight, _maxImageDimension);
         if (fit.Downscaled)
@@ -397,27 +462,140 @@ public partial class CaptureOverlayWindow : Window
 
         SizeText.Text = text;
         SizeText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var chipWidth = SizeText.DesiredSize.Width + 14;
+        var chipWidth = SizeText.DesiredSize.Width + 16;
         var chipHeight = SizeText.DesiredSize.Height + 6;
 
-        // 默认放在选区右上；越界时改到右下（13.2.4）
-        var left = Math.Clamp(_selection.Right - chipWidth, 0, Math.Max(0, ActualWidth - chipWidth));
-        var top = _selection.Top - chipHeight - ChipGap;
-        if (top < 0)
+        var width = ActualWidth > 0 ? ActualWidth : _monitor.Right - _monitor.Left;
+        var height = ActualHeight > 0 ? ActualHeight : _monitor.Bottom - _monitor.Top;
+
+        // 设计稿把牌子钉在选区右下角外侧（right/bottom:-1px + translateY(100%)）；越界时翻到选区上方
+        var left = Math.Clamp(_selection.Right + ChipGap - chipWidth, 0, Math.Max(0, width - chipWidth));
+        var top = _selection.Bottom + ChipGap;
+        if (top + chipHeight > height)
         {
-            top = Math.Min(_selection.Bottom + ChipGap, Math.Max(0, ActualHeight - chipHeight));
+            top = Math.Max(0, _selection.Top - ChipGap - chipHeight);
         }
 
-        Canvas.SetLeft(SizeChip, left);
-        Canvas.SetTop(SizeChip, top);
+        PlaceAt(SizeChip, left, top);
     }
 
+    /// <summary>
+    /// 放大镜（设计稿 .cap-loupe）：挂在选区左侧 12px、顶端与选区齐平；
+    /// 左侧放不下时翻到选区右侧。格子里是光标处真实像素（每格 8×8 物理像素取均值）。
+    /// </summary>
+    private void UpdateLoupe(Point dipPosition)
+    {
+        var width = ActualWidth > 0 ? ActualWidth : _monitor.Right - _monitor.Left;
+        var height = ActualHeight > 0 ? ActualHeight : _monitor.Bottom - _monitor.Top;
+
+        Loupe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var loupeHeight = Loupe.DesiredSize.Height;
+
+        var left = _selection.Left - LoupeWidth - LoupeGap;
+        if (left < 0)
+        {
+            left = _selection.Right + LoupeGap;
+        }
+
+        PlaceAt(
+            Loupe,
+            Math.Clamp(left, 0, Math.Max(0, width - LoupeWidth)),
+            Math.Clamp(_selection.Top, 0, Math.Max(0, height - loupeHeight)));
+
+        SampleLoupe(dipPosition);
+    }
+
+    /// <summary>把光标处 5×5 个 8×8 物理像素块取均值填进格子，并刷新十六进制读数。</summary>
+    private void SampleLoupe(Point dipPosition)
+    {
+        if (Backdrop.Source is not BitmapSource source || source.Format.BitsPerPixel != 32)
+        {
+            return;
+        }
+
+        var block = LoupeCells * LoupeScale;
+        var offsetX = (int)Math.Round(dipPosition.X * ScaleX) - block / 2;
+        var offsetY = (int)Math.Round(dipPosition.Y * ScaleY) - block / 2;
+        var x0 = Math.Clamp(offsetX, 0, Math.Max(0, source.PixelWidth - block));
+        var y0 = Math.Clamp(offsetY, 0, Math.Max(0, source.PixelHeight - block));
+        var sampleWidth = Math.Min(block, source.PixelWidth - x0);
+        var sampleHeight = Math.Min(block, source.PixelHeight - y0);
+        if (sampleWidth <= 0 || sampleHeight <= 0)
+        {
+            return;
+        }
+
+        var stride = sampleWidth * 4;
+        var length = stride * sampleHeight;
+        if (_pixelBuffer.Length < length)
+        {
+            _pixelBuffer = new byte[length];
+        }
+
+        source.CopyPixels(new Int32Rect(x0, y0, sampleWidth, sampleHeight), _pixelBuffer, stride, 0);
+
+        for (var row = 0; row < LoupeCells; row++)
+        {
+            for (var column = 0; column < LoupeCells; column++)
+            {
+                FillLoupeCell(
+                    row * LoupeCells + column,
+                    column * LoupeScale,
+                    row * LoupeScale,
+                    sampleWidth,
+                    sampleHeight,
+                    stride);
+            }
+        }
+
+        var center = (sampleHeight / 2 * stride) + (sampleWidth / 2 * 4);
+        LoupeHex.Text = $"#{_pixelBuffer[center + 2]:X2}{_pixelBuffer[center + 1]:X2}{_pixelBuffer[center]:X2}";
+    }
+
+    private void FillLoupeCell(int index, int x, int y, int width, int height, int stride)
+    {
+        var endX = Math.Min(x + LoupeScale, width);
+        var endY = Math.Min(y + LoupeScale, height);
+        if (x >= endX || y >= endY)
+        {
+            return;
+        }
+
+        var blue = 0;
+        var green = 0;
+        var red = 0;
+        var count = 0;
+        for (var row = y; row < endY; row++)
+        {
+            var offset = (row * stride) + (x * 4);
+            for (var column = x; column < endX; column++)
+            {
+                blue += _pixelBuffer[offset];
+                green += _pixelBuffer[offset + 1];
+                red += _pixelBuffer[offset + 2];
+                offset += 4;
+                count++;
+            }
+        }
+
+        _loupeBrushes[index].Color = Color.FromRgb((byte)(red / count), (byte)(green / count), (byte)(blue / count));
+    }
+
+    /// <summary>顶部 HUD（设计稿 .cap-hud）：水平居中，距屏幕顶 16px。</summary>
     private void UpdateHintChip()
     {
         HintChip.Visibility = Visibility.Visible;
-        HintText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var chipWidth = HintText.DesiredSize.Width + 14;
-        Canvas.SetLeft(HintChip, Math.Max(0, (ActualWidth - chipWidth) / 2));
-        Canvas.SetTop(HintChip, HintMargin);
+        HintChip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(HintChip, Math.Max(0, (ActualWidth - HintChip.DesiredSize.Width) / 2));
+        Canvas.SetTop(HintChip, HudMargin);
+    }
+
+    /// <summary>底部提示（设计稿 .cap-hint）：水平居中，距屏幕底 16px。</summary>
+    private void UpdateCapHint()
+    {
+        CapHint.Visibility = Visibility.Visible;
+        CapHint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(CapHint, Math.Max(0, (ActualWidth - CapHint.DesiredSize.Width) / 2));
+        Canvas.SetTop(CapHint, Math.Max(0, ActualHeight - CapHint.DesiredSize.Height - HintMargin));
     }
 }

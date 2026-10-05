@@ -16,6 +16,10 @@
       FR-021 截图遮罩（13.2.3 / 13.2.4）：
       窗口以物理像素摆放在鼠标所在单屏上（SetWindowPos），尺寸与截图 1:1；
       背景是「显示遮罩之前」抓取的整屏截图，因此截图中不含遮罩自身（AC 8）。
+      版面照设计稿 inkseal-ui.html 的 05 截图逐项落地：
+        贯穿辅助线 → 选区（淡红填充 + 1px 朱砂 + 内侧 1px 白）→ 四角 16×16 印角
+        → 左右边中点 7×7 方菱形 → 右下角朱砂尺寸牌 → 左侧 86px 放大镜
+        → 顶部 HUD 胶囊 → 底部提示胶囊。
       遮罩与提示条全部走固定色令牌（Color.Capture.*，两套主题同值），不随应用主题变化。
     -->
     <Grid Background="Transparent">
@@ -24,23 +28,104 @@
         <Path x:Name="Scrim" IsHitTestVisible="False" Fill="{DynamicResource Brush.Capture.Scrim}"/>
         <!-- 遮罩层与所有提示元素不参与命中测试，避免抢走框选的鼠标事件（13.2.4） -->
         <Canvas x:Name="Overlay" IsHitTestVisible="False">
-            <!-- 选区描边 2 DIP（1 DIP 在高 DPI 下过细） -->
-            <Rectangle x:Name="SelectionBorder" Visibility="Collapsed"
-                       Stroke="{DynamicResource Brush.Capture.Selection}" StrokeThickness="2"/>
-            <!-- 8 个 6x6 手柄（4 角 + 4 边中点）由代码放置 -->
-            <Canvas x:Name="HandleLayer"/>
-            <!-- 顶部操作提示条（FontSize.Small） -->
-            <Border x:Name="HintChip" Background="{DynamicResource Brush.Capture.LabelBackground}"
-                    CornerRadius="{StaticResource Radius.Chip}" Padding="7,3" Visibility="Collapsed">
-                <TextBlock x:Name="HintText" Text="拖动鼠标框选要识别的区域 · Esc 或右键取消"
-                           FontSize="{StaticResource FontSize.Small}"
-                           Foreground="{DynamicResource Brush.Capture.LabelText}"/>
+            <!-- 贯穿辅助线：选区的四条边一直延伸到屏幕边缘（设计稿 .cap-guide） -->
+            <Line x:Name="GuideTop" Stroke="{DynamicResource Brush.Capture.Guide}" StrokeThickness="1"
+                  StrokeDashArray="3 3" Visibility="Collapsed"/>
+            <Line x:Name="GuideBottom" Stroke="{DynamicResource Brush.Capture.Guide}" StrokeThickness="1"
+                  StrokeDashArray="3 3" Visibility="Collapsed"/>
+            <Line x:Name="GuideLeft" Stroke="{DynamicResource Brush.Capture.Guide}" StrokeThickness="1"
+                  StrokeDashArray="3 3" Visibility="Collapsed"/>
+            <Line x:Name="GuideRight" Stroke="{DynamicResource Brush.Capture.Guide}" StrokeThickness="1"
+                  StrokeDashArray="3 3" Visibility="Collapsed"/>
+
+            <!-- 选区（设计稿 .cap-sel）：淡红填充 + 1px 朱砂外框 + 内侧 1px 白线 -->
+            <Rectangle x:Name="SelectionFill" Fill="{DynamicResource Brush.Capture.Selection}"
+                       Opacity="0.04" Visibility="Collapsed"/>
+            <Rectangle x:Name="SelectionBorder" Stroke="{DynamicResource Brush.Capture.Selection}"
+                       StrokeThickness="1" Visibility="Collapsed"/>
+            <Rectangle x:Name="SelectionInner" Stroke="{DynamicResource Brush.Capture.OnSelection}"
+                       Opacity="0.22" StrokeThickness="1" Visibility="Collapsed"/>
+
+            <!-- 四角 16×16 印角（设计稿 .cap-corner）：各只画两条边，16×16 坐标系、笔画 2 -->
+            <Canvas x:Name="CornerLayer">
+                <Path x:Name="CornerTL" Data="M1,15 L1,1 L15,1" Visibility="Collapsed"
+                      Stroke="{DynamicResource Brush.Capture.Selection}" StrokeThickness="2"
+                      StrokeStartLineCap="Square" StrokeEndLineCap="Square" StrokeLineJoin="Miter"/>
+                <Path x:Name="CornerTR" Data="M15,15 L15,1 L1,1" Visibility="Collapsed"
+                      Stroke="{DynamicResource Brush.Capture.Selection}" StrokeThickness="2"
+                      StrokeStartLineCap="Square" StrokeEndLineCap="Square" StrokeLineJoin="Miter"/>
+                <Path x:Name="CornerBL" Data="M1,1 L1,15 L15,15" Visibility="Collapsed"
+                      Stroke="{DynamicResource Brush.Capture.Selection}" StrokeThickness="2"
+                      StrokeStartLineCap="Square" StrokeEndLineCap="Square" StrokeLineJoin="Miter"/>
+                <Path x:Name="CornerBR" Data="M15,1 L15,15 L1,15" Visibility="Collapsed"
+                      Stroke="{DynamicResource Brush.Capture.Selection}" StrokeThickness="2"
+                      StrokeStartLineCap="Square" StrokeEndLineCap="Square" StrokeLineJoin="Miter"/>
+            </Canvas>
+            <Canvas x:Name="DiamondLayer">
+                <Rectangle x:Name="DiamondLeft" Width="7" Height="7" Visibility="Collapsed"
+                           Fill="{DynamicResource Brush.Capture.Selection}" RenderTransformOrigin=".5,.5">
+                    <Rectangle.RenderTransform>
+                        <RotateTransform Angle="45"/>
+                    </Rectangle.RenderTransform>
+                </Rectangle>
+                <Rectangle x:Name="DiamondRight" Width="7" Height="7" Visibility="Collapsed"
+                           Fill="{DynamicResource Brush.Capture.Selection}" RenderTransformOrigin=".5,.5">
+                    <Rectangle.RenderTransform>
+                        <RotateTransform Angle="45"/>
+                    </Rectangle.RenderTransform>
+                </Rectangle>
+            </Canvas>
+
+            <!-- 尺寸牌（设计稿 .cap-size）：朱砂底 + 白字等宽，挂在选区右下角外 -->
+            <Border x:Name="SizeChip" Background="{DynamicResource Brush.Capture.Selection}"
+                    Padding="8,3" CornerRadius="0,0,4,4" Visibility="Collapsed">
+                <TextBlock x:Name="SizeText" FontFamily="{StaticResource Font.Mono}"
+                           FontSize="{StaticResource FontSize.Caption}"
+                           Foreground="{DynamicResource Brush.Capture.OnSelection}"/>
             </Border>
-            <!-- 尺寸提示条（FontSize.Caption；单位 px，做过缩放时追加倍数） -->
-            <Border x:Name="SizeChip" Background="{DynamicResource Brush.Capture.LabelBackground}"
-                    CornerRadius="{StaticResource Radius.Chip}" Padding="7,3" Visibility="Collapsed">
-                <TextBlock x:Name="SizeText" FontSize="{StaticResource FontSize.Caption}"
-                           Foreground="{DynamicResource Brush.Capture.LabelText}"/>
+
+            <!-- 放大镜（设计稿 .cap-loupe）：86px 宽，5×5 取色格 + 等宽读数 -->
+            <Border x:Name="Loupe" Width="86" Padding="7" CornerRadius="8" Visibility="Collapsed"
+                    Background="{DynamicResource Brush.Capture.LoupeBackground}"
+                    BorderBrush="{DynamicResource Brush.Capture.LoupeBorder}" BorderThickness="1">
+                <StackPanel>
+                    <UniformGrid x:Name="LoupeGrid" Rows="5" Columns="5" Height="70"
+                                 Background="{DynamicResource Brush.Capture.LoupeGrid}"/>
+                    <Grid Margin="0,6,0,0">
+                        <TextBlock x:Name="LoupeHex" FontFamily="{StaticResource Font.Mono}"
+                                   FontSize="10" Opacity="0.7"
+                                   Foreground="{DynamicResource Brush.Capture.LabelText}"/>
+                        <TextBlock x:Name="LoupeZoom" Text="×8" HorizontalAlignment="Right"
+                                   FontFamily="{StaticResource Font.Mono}" FontSize="10" Opacity="0.7"
+                                   Foreground="{DynamicResource Brush.Capture.LabelText}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 顶部 HUD（设计稿 .cap-hud）：朱砂方菱形 + 一句状态 -->
+            <Border x:Name="HintChip" Background="{DynamicResource Brush.Capture.LabelBackground}"
+                    BorderBrush="{DynamicResource Brush.Capture.HudBorder}" BorderThickness="1"
+                    CornerRadius="14" Padding="14,6" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="6" Height="6" Margin="0,0,9,0" VerticalAlignment="Center"
+                            Background="{DynamicResource Brush.Capture.Selection}"
+                            RenderTransformOrigin=".5,.5">
+                        <Border.RenderTransform>
+                            <RotateTransform Angle="45"/>
+                        </Border.RenderTransform>
+                    </Border>
+                    <TextBlock x:Name="HintText" Text="屏幕已冻结 · 拖拽框选 · Esc 取消"
+                               FontSize="{StaticResource FontSize.Small}"
+                               Foreground="{DynamicResource Brush.Capture.LabelText}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 底部提示（设计稿 .cap-hint）：误点阈值这类不必记的规则 -->
+            <Border x:Name="CapHint" Background="{DynamicResource Brush.Capture.HintBackground}"
+                    CornerRadius="12" Padding="13,5" Visibility="Collapsed">
+                <TextBlock Text="松开鼠标即识别并落印 · 选小于 4 × 4 视为误点，自动取消"
+                           FontSize="{StaticResource FontSize.Caption}"
+                           Foreground="{DynamicResource Brush.Capture.HintText}"/>
             </Border>
         </Canvas>
     </Grid>

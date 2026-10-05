@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    为速译发布 EXE 生成 RSA-PSS 签名更新清单。
+    为译印发布 EXE 生成 RSA-PSS 签名更新清单。
 
 .DESCRIPTION
     先校验 EXE 的 SHA-256 与 Authenticode 签名，再对清单 payload 做 RSA-PSS(SHA-256) 签名。

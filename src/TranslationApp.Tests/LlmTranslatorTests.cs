@@ -22,13 +22,38 @@ public class LlmTranslatorTests
         string prompt = "",
         double temperature = LlmTranslator.DefaultTemperature)
     {
+        return CreateTranslator(baseUrl, model, key, prompt, temperature, LlmWireApi.Chat, true, "");
+    }
+
+    private static LlmTranslator CreateTranslator(
+        string? baseUrl,
+        string model,
+        string? key,
+        string prompt,
+        double temperature,
+        LlmWireApi wireApi,
+        bool requiresAuth,
+        string extraHeaders)
+    {
         var settings = new AppSettings
         {
-            LlmBaseUrl = baseUrl ?? "",
-            LlmModel = model,
-            LlmApiKeyEncrypted = SecretStore.Protect(key ?? ""),
             LlmPrompt = prompt,
             LlmTemperature = temperature,
+            LlmActiveProviderId = "test",
+            LlmProviders =
+            [
+                new LlmProvider
+                {
+                    Id = "test",
+                    Name = "测试档",
+                    BaseUrl = baseUrl ?? "",
+                    Model = model,
+                    ApiKeyEncrypted = SecretStore.Protect(key ?? ""),
+                    WireApi = wireApi,
+                    RequiresAuth = requiresAuth,
+                    ExtraHeadersJson = extraHeaders,
+                },
+            ],
         };
 
         return new LlmTranslator(settings, new HttpClientProvider());
@@ -57,7 +82,7 @@ public class LlmTranslatorTests
         var translator = CreateTranslator();
 
         Assert.Equal("llm", translator.Id);
-        Assert.Equal("AI 翻译（OpenAI 兼容）", translator.Name);
+        Assert.Equal("AI 翻译（通用接口）", translator.Name);
     }
 
     // ==================== BaseURL 归一化（13.3.1）====================

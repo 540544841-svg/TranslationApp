@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Serilog;
 
@@ -15,6 +16,9 @@ public enum AppTheme
     Light,
 
     Dark,
+
+    /// <summary>按时间：落在纸时段用纸，其余用墨（分界可配置，见 ThemePaperFromHour/ToHour）。</summary>
+    Auto,
 }
 
 /// <summary>
@@ -36,15 +40,71 @@ public static class ThemeManager
     /// <summary>当前生效的是否为深色。</summary>
     public static bool IsDarkEffective { get; private set; }
 
+    /// <summary>
+    /// 生效深浅色真正发生变化时触发（手动切换、跟随系统变化、按时间档到点自动切换都算）。
+    /// 供界面刷新「此刻按时间 → 纸/墨」这类随主题变化的提示文案。
+    /// </summary>
+    public static event Action? EffectiveChanged;
+
+    /// <summary>按时间档的默认分界：早六点转纸、晚六点转墨。</summary>
+    public const int DefaultPaperFromHour = 6;
+    public const int DefaultPaperToHour = 18;
+
+    /// <summary>
+    /// 「按时间」档的纸时段起点 / 终点小时（来自设置，用户可在设置页改）。
+    /// Apply 是无状态的静态方法，时段只能放在静态属性上，由启动流程与设置页写入。
+    /// </summary>
+    public static int PaperFromHour { get; private set; } = DefaultPaperFromHour;
+    public static int PaperToHour { get; private set; } = DefaultPaperToHour;
+
+    /// <summary>从设置写入纸时段（越界/颠倒的值会被规整，见 NormalizePaperHours）。</summary>
+    public static void ConfigurePaperHours(int from, int to)
+    {
+        (PaperFromHour, PaperToHour) = NormalizePaperHours(from, to);
+    }
+
+    /// <summary>
+    /// 把设置里的时段规整成一对可用的 (起, 止)：越界或起点不早于终点一律退回默认，
+    /// 免得手改配置文件后整天反常。仅支持同日区间（不支持跨夜）。
+    /// </summary>
+    private static (int From, int To) NormalizePaperHours(int from, int to) =>
+        from is >= 0 and <= 23 && to is >= 1 and <= 23 && from < to
+            ? (from, to)
+            : (DefaultPaperFromHour, DefaultPaperToHour);
+
+    /// <summary>
+    /// 按设置里的小时算出「此刻是否纸」以及「下次翻转的小时」，供提示文案用。
+    /// 纯函数，不读静态状态，因此设置页改完时段立刻能算出新文案。
+    /// </summary>
+    public static (bool IsPaper, int FlipHour) ResolvePaperWindow(int from, int to, DateTime now)
+    {
+        var (f, t) = NormalizePaperHours(from, to);
+        var isPaper = now.Hour >= f && now.Hour < t;
+        return (isPaper, isPaper ? t : f);
+    }
+
+    /// <summary>该时刻是否落在「纸」的那一段。</summary>
+    public static bool IsPaperHour(DateTime now) =>
+        now.Hour >= PaperFromHour && now.Hour < PaperToHour;
+
     /// <summary>按设置应用主题，并刷新所有已打开窗口的标题栏。</summary>
     public static void Apply(AppTheme theme)
     {
+        // 记住旧值：按时间档每分钟重算，只在真正跨过切换点时才通知界面刷新提示文案
+        var wasDark = IsDarkEffective;
         IsDarkEffective = theme switch
         {
             AppTheme.Dark => true,
             AppTheme.Light => false,
+            AppTheme.Auto => !IsPaperHour(DateTime.Now),
             _ => IsSystemDark(),
         };
+        SyncClock(theme);
+
+        if (wasDark != IsDarkEffective)
+        {
+            EffectiveChanged?.Invoke();
+        }
 
         var resources = Application.Current?.Resources;
         if (resources is null)
@@ -78,6 +138,25 @@ public static class ThemeManager
 
         Log.Information("已切换主题：{Theme}（深色={IsDark}）", theme, IsDarkEffective);
         ApplyTitleBarToOpenWindows();
+    }
+
+    /// <summary>
+    /// 按时间档要自己到点换肤：挂一个每分钟醒一次的计时器，跨过六点/十八点就重算。
+    /// 只在该档下运行，换回手动或跟随系统时立刻停掉。
+    /// </summary>
+    private static void SyncClock(AppTheme theme)
+    {
+        if (theme != AppTheme.Auto)
+        {
+            _clock?.Stop();
+            return;
+        }
+
+        // DispatcherTimer 构造即开跑；重入时只是重新 Start，无副作用
+        _clock ??= new DispatcherTimer(
+            TimeSpan.FromMinutes(1), DispatcherPriority.Background,
+            (_, _) => Apply(AppTheme.Auto), Dispatcher.CurrentDispatcher);
+        _clock.Start();
     }
 
     /// <summary>给某个窗口应用/更新原生标题栏深浅色（窗口创建时调用）。</summary>
@@ -116,6 +195,9 @@ public static class ThemeManager
             ApplyTitleBar(window);
         }
     }
+
+    /// <summary>按时间档的到点换肤计时器，只在 AppTheme.Auto 下运行。</summary>
+    private static DispatcherTimer? _clock;
 
     /// <summary>读取系统「应用模式」是否为深色（注册表），失败按浅色处理。</summary>
     private static bool IsSystemDark()

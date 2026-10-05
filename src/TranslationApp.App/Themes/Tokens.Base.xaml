@@ -8,8 +8,10 @@
 
     <!-- ================= 字体 =================
          Latin 用 Segoe UI、中文回退 Microsoft YaHei UI，均为系统自带，不要求安装字体 -->
-    <FontFamily x:Key="Font.App">Segoe UI, Microsoft YaHei UI</FontFamily>
-    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+    <!-- 字体栈照搬设计稿的 font 变量：先 Segoe UI Variable（Win11）再回退 Segoe UI，中文落到雅黑/苹方。 -->
+    <!-- 字体栈与设计稿的 font / mono 变量一致：Inter 在前（装了就用），后面是各平台回退 -->
+    <FontFamily x:Key="Font.App">Inter, Segoe UI Variable Text, Segoe UI, PingFang SC, Microsoft YaHei UI, Noto Sans SC</FontFamily>
+    <FontFamily x:Key="Font.Mono">SF Mono, Cascadia Mono, Consolas, Liberation Mono, Microsoft YaHei UI</FontFamily>
     <!-- 图标字体：Windows 11 优先 Segoe Fluent Icons，Windows 10 回退 Segoe MDL2 Assets -->
     <FontFamily x:Key="Font.Icon">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
@@ -98,8 +100,6 @@
     <Duration x:Key="Duration.Normal">0:0:0.18</Duration>
     <Duration x:Key="Duration.WindowShow">0:0:0.16</Duration>
     <Duration x:Key="Duration.WindowHide">0:0:0.10</Duration>
-    <!-- 动效签名「译光闪落」：光痕扫过译文区（已退役的 v2.0 琥珀资产表，420ms 减速收尾） -->
-    <Duration x:Key="Duration.Signature">0:0:0.42</Duration>
 
     <!-- ================= 阴影（层级）================= -->
     <!-- 小窗：悬浮于桌面之上，需清晰但不脏 -->

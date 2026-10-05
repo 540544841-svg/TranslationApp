@@ -19,6 +19,7 @@
                 <ResourceDictionary Source="Themes/Tokens.Theme.Paper.xaml"/>
                 <ResourceDictionary Source="Themes/Tokens.Base.xaml"/>
                 <ResourceDictionary Source="Themes/Tokens.Brand.xaml"/>
+                <ResourceDictionary Source="Themes/Icons.Line.xaml"/>
                 <ResourceDictionary Source="Themes/Controls.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

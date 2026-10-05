@@ -8,7 +8,7 @@ namespace TranslationApp.Tests;
 public class AnkiRequestBuilderTests
 {
     private static AnkiNoteRequest Note(string front = "apple") => new(
-        "生词本", "基本", "正面", front, "背面", "苹果", ["速译", "en-zh-CN"]);
+        "生词本", "基本", "正面", front, "背面", "苹果", ["译印", "en-zh-CN"]);
 
     [Fact]
     public void VersionRequest_CarriesActionAndApiVersion()
@@ -31,7 +31,7 @@ public class AnkiRequestBuilderTests
         Assert.Equal("a\"b\nc", p.GetProperty("fields").GetProperty("正面").GetString());
         Assert.Equal("苹果", p.GetProperty("fields").GetProperty("背面").GetString());
         Assert.Equal(
-            ["速译", "en-zh-CN"],
+            ["译印", "en-zh-CN"],
             p.GetProperty("tags").EnumerateArray().Select(x => x.GetString()!).ToArray());
     }
 
@@ -53,7 +53,7 @@ public class AnkiRequestBuilderTests
             "生词本", "基本", "正面", "背面", "apple", "苹果", "en", "zh-CN");
         Assert.Equal("apple", note.Front);
         Assert.Equal("苹果", note.Back);
-        Assert.Equal(["速译", "en-zh-CN"], note.Tags);
+        Assert.Equal(["译印", "en-zh-CN"], note.Tags);
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class AnkiRequestBuilderTests
     {
         var note = AnkiRequestBuilder.FromVocabulary(
             "d", "m", "f", "b", "apple", "苹果", "", "zh-CN");
-        Assert.Equal(["速译"], note.Tags);
+        Assert.Equal(["译印"], note.Tags);
     }
 
     [Fact]

@@ -269,10 +269,18 @@ public sealed class Batch5aCoreTests : IDisposable
     private static LlmTranslator CreateTranslator(string prompt = "") =>
         new(new AppSettings
         {
-            LlmBaseUrl = LlmTranslator.DefaultBaseUrl,
-            LlmModel = LlmTranslator.DefaultModel,
-            LlmApiKeyEncrypted = SecretStore.Protect("sk-fixed-vector-0123456789"),
             LlmPrompt = prompt,
+            LlmProviders =
+            [
+                new LlmProvider
+                {
+                    Id = "test",
+                    Name = "测试档",
+                    BaseUrl = LlmTranslator.DefaultBaseUrl,
+                    Model = LlmTranslator.DefaultModel,
+                    ApiKeyEncrypted = SecretStore.Protect("sk-fixed-vector-0123456789"),
+                },
+            ],
         }, new HttpClientProvider());
 
     [Fact]

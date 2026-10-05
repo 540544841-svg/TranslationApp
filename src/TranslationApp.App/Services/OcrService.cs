@@ -65,7 +65,7 @@ public sealed class OcrService
             new WindowsOcrEngine(_availableLanguages),
             paddle,
             () => settings.OcrLocalEngine,
-            message => notifyFallback?.Invoke("速译 - 截图翻译", message),
+            message => notifyFallback?.Invoke("截图翻译", message),
             ex => Log.Warning(ex, "PaddleOCR 隔离进程失败，本进程内降级为系统识别引擎（OcrLocalEngine 设置保留不变）"));
     }
 

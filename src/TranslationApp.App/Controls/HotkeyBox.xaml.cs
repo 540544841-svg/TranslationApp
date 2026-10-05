@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Input;
 using TranslationApp.Core.Hotkey;
@@ -37,10 +39,15 @@ public partial class HotkeyBox : UserControl
         nameof(IsRecording), typeof(bool), typeof(HotkeyBox),
         new PropertyMetadata(false, OnIsRecordingChanged));
 
+    public static readonly DependencyProperty SuggestionsProperty = DependencyProperty.Register(
+        nameof(Suggestions), typeof(IEnumerable), typeof(HotkeyBox),
+        new PropertyMetadata(null, OnSuggestionsChanged));
+
     public HotkeyBox()
     {
         InitializeComponent();
         IsKeyboardFocusWithinChanged += OnIsKeyboardFocusWithinChanged;
+        RefreshSuggestions();
     }
 
     /// <summary>标准化热键字符串，如 "Alt+D"。</summary>
@@ -71,6 +78,13 @@ public partial class HotkeyBox : UserControl
         set => SetValue(IsRecordingProperty, value);
     }
 
+    /// <summary>冲突或占用时展示的可直接采用组合。</summary>
+    public IEnumerable? Suggestions
+    {
+        get => (IEnumerable?)GetValue(SuggestionsProperty);
+        set => SetValue(SuggestionsProperty, value);
+    }
+
     private static void OnTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((HotkeyBox)d).RefreshDisplay();
 
@@ -79,6 +93,9 @@ public partial class HotkeyBox : UserControl
 
     private static void OnStatusChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
         ((HotkeyBox)d).RefreshDisplay();
+
+    private static void OnSuggestionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e) =>
+        ((HotkeyBox)d).RefreshSuggestions();
 
     /// <summary>按当前状态刷新三种呈现：录制提示 / 按键帽 / 空值。</summary>
     private void RefreshDisplay()
@@ -100,6 +117,13 @@ public partial class HotkeyBox : UserControl
         }
 
         Keycaps.ItemsSource = string.IsNullOrEmpty(hotkey) ? null : SplitKeycaps(hotkey);
+    }
+
+    private void RefreshSuggestions()
+    {
+        var values = Suggestions?.Cast<object>().ToArray() ?? [];
+        SuggestionsList.ItemsSource = values.Length > 0 ? values : null;
+        SuggestionsPanel.Visibility = values.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>"Alt+Shift+D" → ["Alt","Shift","D"]，用于渲染成独立键帽。</summary>
@@ -131,8 +155,38 @@ public partial class HotkeyBox : UserControl
 
     private void OnRootMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.OriginalSource is DependencyObject source && FindAncestor<Button>(source) is not null)
+        {
+            return;
+        }
+
         Focus();
         BeginRecording();
+        e.Handled = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject source) where T : DependencyObject
+    {
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private void OnSuggestionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Content: string hotkey } || string.IsNullOrWhiteSpace(hotkey))
+        {
+            return;
+        }
+
+        SetCurrentValue(TextProperty, hotkey);
+        HotkeyCaptured?.Invoke(this, new HotkeyCapturedEventArgs(hotkey));
         e.Handled = true;
     }
 

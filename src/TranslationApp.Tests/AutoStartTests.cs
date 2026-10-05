@@ -95,6 +95,54 @@ public class AutoStartTests
         Assert.True(app.IsEnabled);
         Assert.False(other.IsEnabled);
     }
+
+    [Fact]
+    public void RepairIfEnabled_WhenDisabled_DoesNotRegister()
+    {
+        var registry = new InMemoryRegistry();
+        var autoStart = new AutoStart("TranslationApp.Tests", registry);
+
+        autoStart.RepairIfEnabled();
+
+        // 关掉就是关掉：自愈不能自作主张帮用户打开
+        Assert.Equal(0, registry.SetCount);
+        Assert.False(autoStart.IsEnabled);
+    }
+
+    [Fact]
+    public void RepairIfEnabled_WhenCommandMatches_DoesNotWrite()
+    {
+        var registry = new InMemoryRegistry();
+        var autoStart = new AutoStart("TranslationApp.Tests", registry);
+        autoStart.SetEnabled(true);
+        var before = registry.SetCount;
+
+        autoStart.RepairIfEnabled();
+
+        // 已经指向自己就不该再写注册表（每次启动都写是没必要的系统副作用）
+        Assert.Equal(before, registry.SetCount);
+    }
+
+    [Fact]
+    public void RepairIfEnabled_WhenPathIsStale_RewritesToCurrentExe()
+    {
+        var registry = new InMemoryRegistry();
+        var autoStart = new AutoStart("TranslationApp.Tests", registry);
+        autoStart.SetEnabled(true);
+        registry.Set(
+            @"Software\Microsoft\Windows\CurrentVersion\Run",
+            "TranslationApp.Tests",
+            "\"C:\\Old\\Inkseal.exe\" --minimized");
+        var before = registry.SetCount;
+
+        autoStart.RepairIfEnabled();
+
+        Assert.Equal(before + 1, registry.SetCount);
+        var command = autoStart.RegisteredCommand;
+        Assert.NotNull(command);
+        Assert.Contains(Environment.ProcessPath!, command);
+        Assert.Contains("--minimized", command);
+    }
 }
 
 /// <summary>真实注册表往返测试：默认跳过（需 TRANSLATIONAPP_LIVE_TESTS=1），测后清理。</summary>

@@ -73,14 +73,14 @@ public sealed class PinWindowManager
         {
             case PinBudgetKind.CountExceeded:
                 Log.Information("钉图被拒绝：张数已达上限 {Max}（当前 {Count}）", maxCount, _windows.Count);
-                _balloon("速译 - 钉图", $"钉图数量已达上限（{maxCount} 张），请先关闭部分钉图后再试");
+                _balloon("钉图", $"钉图数量已达上限（{maxCount} 张），请先关闭部分钉图后再试");
                 return false;
 
             case PinBudgetKind.TotalExceeded:
                 Log.Information(
                     "钉图被拒绝：像素总量将达到 {Total}（当前 {Current} + 新增 {New}），超过上限 {Max}",
                     TotalPixels + pixels, TotalPixels, pixels, maxTotalPixels);
-                _balloon("速译 - 钉图", "钉图占用内存已达上限，请先关闭部分钉图后再试");
+                _balloon("钉图", "钉图占用内存已达上限，请先关闭部分钉图后再试");
                 return false;
         }
 
@@ -95,7 +95,7 @@ public sealed class PinWindowManager
                 Log.Information("钉图选区超过 {Max} px，已按 {Scale:0.###} 倍缩小（{From} → {To}）",
                     _settings.PinMaxPixelsPerImage, shrink,
                     $"{imageRect.Width}x{imageRect.Height}", $"{width}x{height}");
-                _balloon("速译 - 钉图", $"选区过大，已按 {shrink:0.#} 倍缩小以节省内存");
+                _balloon("钉图", $"选区过大，已按 {shrink:0.#} 倍缩小以节省内存");
             }
 
             // 裁剪缓冲的 alpha 不可信（GDI 截屏常为 0），故用 Bgr32 得到不透明图（与遮罩显示的同一处理）
@@ -139,7 +139,7 @@ public sealed class PinWindowManager
         {
             // 创建/摆放失败绝不冒泡（需求 6 可靠性），只提示
             Log.Error(ex, "创建钉图窗口失败");
-            _balloon("速译 - 钉图", "钉图失败，请重试（详见日志）");
+            _balloon("钉图", "钉图失败，请重试（详见日志）");
             return false;
         }
     }

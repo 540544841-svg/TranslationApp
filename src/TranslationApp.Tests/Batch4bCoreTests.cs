@@ -111,7 +111,7 @@ public sealed class LocalApiServerTests : IDisposable
         var response = await _http.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("速译", doc.RootElement.GetProperty("app").GetString());
+        Assert.Equal("译印", doc.RootElement.GetProperty("app").GetString());
         Assert.Equal(2, doc.RootElement.GetProperty("engines").GetArrayLength());
     }
 

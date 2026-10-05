@@ -14,19 +14,23 @@ Windows 桌面划词 / 输入翻译工具：常驻系统托盘，全局热键呼
 ├── src/
 │   ├── TranslationApp.App/      # WPF 表示层（托盘、窗口、MVVM）
 │   ├── TranslationApp.Core/     # 核心逻辑层（无 UI 依赖，可单测）
+│   ├── TranslationApp.Setup/    # 安装器「立契」（独立 WPF 工程，载荷内嵌）
 │   └── TranslationApp.Tests/    # xUnit 单元测试
 ├── build/
 │   ├── publish.ps1              # 一键发布单文件 EXE
+│   ├── make-setup.ps1           # 一键出安装包 → publish\setup\译印-Setup-<版本>.exe
 │   ├── new-update-signing-key.ps1 # 生成离线更新签名密钥
 │   ├── make-update-manifest.ps1 # 签名并生成 latest.json
 │   ├── verify-ux-v3.ps1         # 真机验收：首次引导、Doctor、替换与撤销（artifacts/ux-v3/）
 │   ├── ux-replace-target.ps1    # 替换验收使用的隔离外部文本窗口
 │   ├── verify-ui.ps1            # 界面验收：浅/深主题 × 各状态截图（artifacts/ui/）
+│   ├── render-ui.ps1            # 离屏渲染：设置页各分区 + 小窗 + 弹层行，不抢焦点不出窗（out/render/）
 │   ├── verify-tray.ps1          # 托盘验收脚本（启动/单实例/优雅退出）
 │   ├── probe-engines.ps1        # 官方引擎端点可达性实测（Azure / DeepL，无需 Key）
-│   └── make-icon.ps1            # 生成占位托盘图标
+│   └── make-icon.py             # 生成应用图标 Assets/app.ico（译印朱砂印面，与界面同一个几何）
 ├── docs/                        # 需求文档、UI 设计规范（v2.0）、品牌资产清单
 └── publish/                     # 发布产物（脚本生成）
+    └── setup/                   # 安装包（build\make-setup.ps1 生成）
 ```
 
 ## 常用命令
@@ -36,6 +40,7 @@ dotnet build                              # 编译
 dotnet test                               # 单元测试（1298 项，离线确定性）
 publish\TranslationApp.exe --verbose      # 启动并输出 Debug 级日志（排障）
 powershell -ExecutionPolicy Bypass -File build\publish.ps1     # 发布单 EXE → publish\TranslationApp.exe
+powershell -ExecutionPolicy Bypass -File build\make-setup.ps1  # 发布 + 出安装包 → publish\setup\译印-Setup-<版本>.exe
 pwsh -File build\new-update-signing-key.ps1 -PrivateKeyPath D:\secure\translationapp-release-private.pem
 pwsh -File build\make-update-manifest.ps1 -ExePath publish\TranslationApp.exe -PrivateKeyPath D:\secure\translationapp-release-private.pem -Version 1.3.0 -DownloadUrl https://example.com/TranslationApp.exe
 pwsh -File build\verify-ux-v3.ps1                              # 真机验收：引导 / Doctor / 替换撤销
@@ -43,6 +48,22 @@ powershell -ExecutionPolicy Bypass -File build\verify-ui.ps1   # 界面验收：
 powershell -ExecutionPolicy Bypass -File build\probe-engines.ps1  # 官方引擎端点可达性实测
 powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/单实例/优雅退出验收
 ```
+
+## 安装与打包
+
+用户侧只有一个文件：`译印-Setup-<版本>.exe`。双击打开「立契」——四步一屏一个决定（启封 / 落址 / 接引擎 / 盖印），最后落印成契。
+
+- 主程序单 EXE 被嵌进安装器，**断网也能装**；安装全程只动当前用户范围（用户目录、HKCU、快捷方式），不弹 UAC。
+- 落址默认 `%LocalAppData%\Programs\Inkseal`；印谱（用户数据）装固定盘时落 `%AppData%\TranslationApp`，装进 U 盘就跟着程序走。
+- 收印（卸载）在「设置 → 应用 → 已安装的应用」里，或安装器左下角的「收印」；可以只收程序，也可以连印谱与藏印一并抹去。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build\make-setup.ps1                    # 主程序 + 安装包
+powershell -ExecutionPolicy Bypass -File build\make-setup.ps1 -SkipAppPublish   # 只重打安装包（调版面时用）
+```
+
+> `build\make-setup.ps1` 会先停掉正在跑的译印实例再打包——运行中的实例会锁住 `publish\TranslationApp.exe`，
+> 而单实例守卫会让用户双击新包时只唤出旧窗口，看着像「更新了」其实还是老界面。
 
 ## 界面设计
 
@@ -56,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File build\verify-tray.ps1 # 托盘启动/�
 
 - **配色「琥珀流光」（v2.0，已退役）**：翻译品类被蓝色垄断，
   独占色落位空档的**琥珀**——荧光笔划重点（= 划词）+「黄＝快」双重语义；
-  图标为**琥珀闪电**（`build/make-icon.ps1` 生成）；动效签名**「译光闪落」**——译文落定瞬间
+  图标为**琥珀闪电**；动效签名**「译光闪落」**——译文落定瞬间
   一道琥珀光痕扫过译文区（420ms 减速，失败/对比模式不播，系统关闭窗口动画时自动跳过）；
   形状语言「一道斜切的光」贯穿进度条 / 导航指示条 / 签名动效。
 - **琥珀三角色**：文字/图标级用 `PrimaryText`（AA 达标），填充与描边用 `Primary`，
@@ -93,8 +114,15 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 | 历史 / 生词本 | `%AppData%\TranslationApp\history.db`（SQLite，WAL 模式） |
 | 日志 | `%AppData%\TranslationApp\logs\`（按天滚动，保留 7 天） |
 
-开启「设置 → 更新与数据 → 便携模式」后，上述数据改写到 EXE 同目录的 `data\` 下；也可在 EXE
-同目录手动放置 `portable.flag`。备份包只包含 `settings.json` 与一致性 `history.db` 快照，恢复前会校验清单与 SHA-256。
+**便携模式自动推断，不拿选择题烦用户**（`src/TranslationApp.Core/Settings/AppPaths.cs`）：
+
+- EXE 在**可移动驱动器**上（U 盘 / 移动硬盘）且该目录可写 → 自动改写 EXE 同目录 `data\`，整个文件夹拷走即可迁移；
+- EXE 目录**不可写**（如 `Program Files`）→ 固定用 `%AppData%`，设置页开关置灰并说明原因；
+- 其余情况 → 用 `%AppData%`，放进 U 盘后下次启动自动切换。
+
+需要强制指定时：EXE 同目录放 `portable.flag`（内容非 `off` 视为开启；内容为 `off` 表示显式关闭并压住自动推断），
+或设环境变量 `TRANSLATIONAPP_PORTABLE=1`。切换后需重启生效。备份包只包含 `settings.json` 与一致性
+`history.db` 快照，恢复前会校验清单与 SHA-256。
 
 ### 让 Google 引擎可用（需要代理，且只开代理还不够）
 
@@ -255,7 +283,10 @@ $env:TRANSLATIONAPP_LIVE_TESTS = '1'; dotnet test
 
 - [x] 系统托盘：启动仅托盘 + 气泡、右键菜单（输入翻译/划词翻译/**截图翻译**/设置/退出）、双击打开设置
 - [x] 单实例：重复启动请求已有实例显形后自身立即退出（无阻塞对话框）
-- [x] 开机自启开关（HKCU Run，含 `--minimized`）
+- [x] 开机自启（HKCU Run，含 `--minimized`）：**首次运行默认打开一次**（译印的承诺是「Alt+D 随时呼出」，
+      重启后不启动等于承诺破产）；只在首启做这一次默认，之后完全听用户的——设置页开关与首启引导的
+      「不用」都能关，关掉后不再自动改回来；每次启动自愈注册表路径（单文件版挪了位置不会静默失效，
+      未启用时绝不自作主张帮用户打开）
 - [x] 单文件自包含发布（阶段 4 引入 WinRT 投影后 < 90MB；**FR-030 起体积门禁由用户决策放宽至 200MB**：
       默认路径实测 ≈ 70.5MB，启用 PaddleOCR 后 ≈ 102MB）；单元测试全绿
 

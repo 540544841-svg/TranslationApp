@@ -361,4 +361,150 @@ public sealed class WindowPlacementTests
 
         Assert.Equal(first, second);
     }
+
+    // ---------------- 会话内固定贴边：译文长高长宽不再整窗翻边 ----------------
+
+    [Fact]
+    public void DecideSide_下方放不下时_选光标上方()
+    {
+        // 水平放得下（400+16+444 = 860 ≤ 1920），垂直放不下（1000+16+344 > 1032）
+        var side = WindowPlacement.DecideSide(400, 1000, PrimaryWork, Window(444, 344), 16);
+
+        Assert.Equal(new PlacementSide(1, -1), side);
+    }
+
+    [Fact]
+    public void Compute_固定下方时_长高也只向上钳制不翻到光标上方()
+    {
+        // 首次（小窗）落在光标右下方
+        var side = WindowPlacement.DecideSide(400, 300, PrimaryWork, Window(444, 344), 16);
+        Assert.Equal(new PlacementSide(1, 1), side);
+
+        // 译文到达：窗口长到 900 高，光标下方放不下
+        var latched = WindowPlacement.Compute(400, 300, PrimaryWork, Window(744, 900), 16, side);
+        var auto = WindowPlacement.Compute(400, 300, PrimaryWork, Window(744, 900), 16);
+
+        Assert.Equal(new PhysicalRect(416, 132, 744, 900), latched); // 只上移到工作区下沿贴齐
+        Assert.Equal(0, auto.Top);                                   // 旧行为：整窗翻到工作区顶（300 → 0）
+    }
+
+    [Fact]
+    public void Compute_固定右方时_长宽也只向左钳制不翻到光标左侧()
+    {
+        var side = WindowPlacement.DecideSide(1000, 300, PrimaryWork, Window(520, 344), 16);
+        Assert.Equal(new PlacementSide(1, 1), side);
+
+        // 长句把窗口撑到 1000 宽，光标右侧放不下
+        var latched = WindowPlacement.Compute(1000, 300, PrimaryWork, Window(1000, 344), 16, side);
+        var auto = WindowPlacement.Compute(1000, 300, PrimaryWork, Window(1000, 344), 16);
+
+        Assert.Equal(920, latched.Left); // 只左移到工作区右沿贴齐
+        Assert.Equal(0, auto.Left);      // 旧行为：整窗翻到工作区左沿（1016 → 0）
+    }
+
+    [Fact]
+    public void Compute_方向为Auto时_与不传方向结果一致()
+    {
+        var auto = WindowPlacement.Compute(400, 1000, PrimaryWork, Window(444, 344), 16);
+        var explicitAuto = WindowPlacement.Compute(
+            400, 1000, PrimaryWork, Window(444, 344), 16, PlacementSide.Auto);
+
+        Assert.Equal(auto, explicitAuto);
+    }
+
+    [Theory]
+    [MemberData(nameof(SizeCombinations))]
+    public void Compute_先定方向再摆放_与自动翻转结果逐像素一致(
+        int cursorX, int cursorY, int windowW, int windowH, int workW, int workH)
+    {
+        // 固定方向不能改变首次摆放的落点——它只保证后续尺寸变化不再翻边
+        var work = new PhysicalRect(cursorX < 0 ? -workW : 0, 0, workW, workH);
+        var window = WindowPlacement.FitToWorkArea(Window(windowW, windowH), work, 320, 240);
+
+        var auto = WindowPlacement.Compute(cursorX, cursorY, work, window, 16);
+        var side = WindowPlacement.DecideSide(cursorX, cursorY, work, window, 16);
+        var latched = WindowPlacement.Compute(cursorX, cursorY, work, window, 16, side);
+
+        Assert.Equal(auto, latched);
+    }
+
+    // ---------------- 锁住上边沿：译文变长只向下生长 ----------------
+
+    [Fact]
+    public void PinTopEdge_下方放置译文变长_顶边锁死且不引入二次位移()
+    {
+        // 首次呼出（小窗）：光标下方放得下，顶边落在 316
+        var placed = WindowPlacement.Compute(400, 300, PrimaryWork, Window(444, 344), 16);
+        Assert.Equal(new PhysicalRect(416, 316, 444, 344), placed);
+        var pinned = placed.Top;
+
+        // 译文到达：窗口长到 700 高（316 + 700 = 1016 ≤ 1032，仍在「顶边到工作区下沿」以内——限高保证恒成立）
+        var grown = WindowPlacement.Compute(400, 300, PrimaryWork, Window(700, 700), 16, new PlacementSide(1, 1));
+        var locked = WindowPlacement.PinTopEdge(grown, PrimaryWork, pinned);
+
+        Assert.Equal(pinned, grown.Top);  // 放得下时 Compute 本来也不动顶边
+        Assert.Equal(pinned, locked.Top); // PinTopEdge 只锁不推：不会带来第二次位移
+        Assert.Equal(1016, locked.Bottom);
+    }
+
+    [Fact]
+    public void PinTopEdge_贴在光标上方时长高_顶边不动只向下生长()
+    {
+        // 光标靠下：下方放不下 344 高的小窗 → 贴光标上方
+        var side = WindowPlacement.DecideSide(400, 1000, PrimaryWork, Window(444, 344), 16);
+        Assert.Equal(new PlacementSide(1, -1), side);
+        var placed = WindowPlacement.Compute(400, 1000, PrimaryWork, Window(444, 344), 16, side);
+        Assert.Equal(640, placed.Top); // 1000 - 16 - 344
+
+        // 译文到达：长到 380 高。旧行为按「底边贴光标」重算，整条上移 36px（跳变本体）
+        var grown = WindowPlacement.Compute(400, 1000, PrimaryWork, Window(640, 380), 16, side);
+        Assert.Equal(604, grown.Top); // 1000 - 16 - 380
+
+        var locked = WindowPlacement.PinTopEdge(grown, PrimaryWork, placed.Top);
+        Assert.Equal(640, locked.Top); // 顶边锁死：只向下生长（640 + 380 = 1020 ≤ 1032）
+        Assert.Equal(1020, locked.Bottom);
+    }
+
+    [Fact]
+    public void PinTopEdge_顶边加高确实装不下时_按工作区下沿钳制顶边()
+    {
+        var grown = WindowPlacement.Compute(400, 300, PrimaryWork, Window(700, 900), 16, new PlacementSide(1, 1));
+        var locked = WindowPlacement.PinTopEdge(grown, PrimaryWork, 316);
+
+        Assert.Equal(132, locked.Top);   // 1032 - 900：宁肯把顶边抬上去，也不让窗口跑出工作区
+        Assert.Equal(PrimaryWork.Bottom, locked.Bottom);
+    }
+
+    [Fact]
+    public void PinTopEdge_顶边在工作区外时_钳回工作区上沿()
+    {
+        var rect = new PhysicalRect(100, 0, 444, 344);
+
+        var locked = WindowPlacement.PinTopEdge(rect, PrimaryWork, -500);
+
+        Assert.Equal(PrimaryWork.Top, locked.Top);
+        Assert.Equal(100, locked.Left); // 其余几何原样保留
+        Assert.Equal(444, locked.Width);
+    }
+
+    [Fact]
+    public void AvailableHeightBelow_顶边落地前后_分别取下方可用高与工作区高()
+    {
+        Assert.Equal(716, WindowPlacement.AvailableHeightBelow(316, PrimaryWork));
+        Assert.Equal(PrimaryWork.Height, WindowPlacement.AvailableHeightBelow(null, PrimaryWork));
+        Assert.Equal(0, WindowPlacement.AvailableHeightBelow(PrimaryWork.Bottom + 10, PrimaryWork));
+    }
+
+    [Fact]
+    public void AvailableWidthOnSide_按贴边方向扣除光标偏移()
+    {
+        // 光标右侧：从光标 + 偏移 到工作区右沿
+        Assert.Equal(1504, WindowPlacement.AvailableWidthOnSide(new PlacementSide(1, 1), 400, PrimaryWork, 16));
+        // 光标左侧：从工作区左沿 到 光标 - 偏移
+        Assert.Equal(384, WindowPlacement.AvailableWidthOnSide(new PlacementSide(-1, 1), 400, PrimaryWork, 16));
+        // 方向未定：按右侧算（首次摆放会重新判方向）
+        Assert.Equal(1504, WindowPlacement.AvailableWidthOnSide(PlacementSide.Auto, 400, PrimaryWork, 16));
+        // 负坐标副屏：右侧可用宽按虚拟桌面坐标算，不会被算成负值
+        Assert.Equal(144, WindowPlacement.AvailableWidthOnSide(new PlacementSide(1, 1), -160, LeftSecondaryWork, 16));
+    }
 }

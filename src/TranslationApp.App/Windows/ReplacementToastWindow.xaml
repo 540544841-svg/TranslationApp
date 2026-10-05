@@ -1,0 +1,23 @@
+<Window x:Class="TranslationApp.Windows.ReplacementToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="译印 · 替换状态"
+        Width="240" Height="40"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowActivated="False" ShowInTaskbar="False" Focusable="False"
+        IsHitTestVisible="False" Topmost="True" ResizeMode="NoResize"
+        SnapsToDevicePixels="True" UseLayoutRounding="True"
+        FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType">
+    <Border CornerRadius="8" Padding="12,8"
+            Background="{DynamicResource Brush.TextPrimary}">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <TextBlock Text="{StaticResource Icon.Check}" FontFamily="{StaticResource Font.Icon}"
+                       FontSize="12" Margin="0,0,7,0"
+                       Foreground="{DynamicResource Brush.Window}"/>
+            <TextBlock x:Name="MessageText" Text="已替换，Ctrl+Z 可撤销"
+                       FontSize="{StaticResource FontSize.Small}"
+                       Foreground="{DynamicResource Brush.Window}"/>
+        </StackPanel>
+    </Border>
+</Window>

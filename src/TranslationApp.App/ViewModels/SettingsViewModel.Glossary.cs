@@ -68,6 +68,49 @@ public partial class SettingsViewModel
         [ObservableProperty]
         private string _note = "";
 
+        /// <summary>行内展开完整编辑（语言对 / 匹配方式 / 备注），收起时一行就是一枚印。</summary>
+        [ObservableProperty]
+        private bool _editorOpen;
+
+        [RelayCommand]
+        private void ToggleEditor() => EditorOpen = !EditorOpen;
+
+        /// <summary>行内状态胶囊文案（设计稿 .tag ok）：启用 / 停用。</summary>
+        public string EnabledTag => Enabled ? "启用" : "停用";
+
+        partial void OnEnabledChanged(bool value) => OnPropertyChanged(nameof(EnabledTag));
+
+        /// <summary>
+        /// 行末那一列：有备注就是备注，否则说明这条的作用范围与匹配方式
+        /// （设计稿 `.word-item` 末列总有字，空着整行的节奏会垮）。
+        /// </summary>
+        public string Summary
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(Note))
+                {
+                    return Note;
+                }
+
+                var scope = SourceLanguage == "*" && TargetLanguage == "*"
+                    ? "全部语言"
+                    : $"{Short(SourceLanguage)} → {Short(TargetLanguage)}";
+                var mode = GlossaryMatchOptions.FirstOrDefault(o => o.Value == MatchMode)?.Display ?? MatchMode;
+                return $"{scope} · {mode}";
+            }
+        }
+
+        private static string Short(string code) => code == "*" ? "全部" : code;
+
+        partial void OnNoteChanged(string value) => OnPropertyChanged(nameof(Summary));
+
+        partial void OnSourceLanguageChanged(string value) => OnPropertyChanged(nameof(Summary));
+
+        partial void OnTargetLanguageChanged(string value) => OnPropertyChanged(nameof(Summary));
+
+        partial void OnMatchModeChanged(string value) => OnPropertyChanged(nameof(Summary));
+
         public GlossaryItem ToModel() => new(
             Source.Trim(),
             Target.Trim(),
@@ -80,6 +123,17 @@ public partial class SettingsViewModel
 
     /// <summary>术语词条（绑定术语表页 ItemsControl）。</summary>
     public ObservableCollection<GlossaryItemViewModel> GlossaryItems { get; } = [];
+
+    /// <summary>「词条」分组头上的「词条 · 42 / 500」（设计稿 .group-h）。</summary>
+    public string GlossaryGroupTitle => $"词条 · {GlossaryItems.Count} / {GlossaryReplacer.MaxItems}";
+
+    /// <summary>落印台：源词输入（设计稿 .word-item 下方那一行 input）。</summary>
+    [ObservableProperty]
+    private string _newGlossarySource = "";
+
+    /// <summary>落印台：目标译法输入。</summary>
+    [ObservableProperty]
+    private string _newGlossaryTarget = "";
 
     /// <summary>配置文件里的 GlossaryJson 损坏（手改），已按空表运行。</summary>
     [ObservableProperty]
@@ -116,6 +170,22 @@ public partial class SettingsViewModel
         HookGlossaryItemEvents();
     }
 
+    /// <summary>
+    /// 出图专用：摆几条样例词条，让「词条」区的真实行版面能上屏（不落库）。
+    /// 平时没有词条时该区就是空态，空态拍不出行高 / 胶囊 / 末列节奏。
+    /// </summary>
+    internal void SeedGlossaryForRender()
+    {
+        _suppressGlossarySave = true;
+        GlossaryItems.Clear();
+        GlossaryItems.Add(new GlossaryItemViewModel { Source = "inkseal", Target = "译印" });
+        GlossaryItems.Add(new GlossaryItemViewModel { Source = "re-ink", Target = "重新落印" });
+        GlossaryItems.Add(new GlossaryItemViewModel { Source = "prompt", Target = "提示词", Enabled = false });
+        GlossaryItems.Add(new GlossaryItemViewModel { Source = "token", Target = "令牌", Note = "术语库统一译法" });
+        _suppressGlossarySave = false;
+        OnPropertyChanged(nameof(GlossaryGroupTitle));
+    }
+
     private void OnGlossaryCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.OldItems is not null)
@@ -135,6 +205,9 @@ public partial class SettingsViewModel
         }
 
         SaveGlossary(quiet: true);
+
+        // 分组头的枚数不在 ItemsControl 的绑定链上，只能手动通知
+        OnPropertyChanged(nameof(GlossaryGroupTitle));
     }
 
     private void HookGlossaryItemEvents()
@@ -154,15 +227,24 @@ public partial class SettingsViewModel
     [RelayCommand]
     private void AddGlossary()
     {
+        var source = NewGlossarySource.Trim();
+        if (source.Length == 0)
+        {
+            GlossaryMessage = "源词不能为空";
+            return;
+        }
+
         if (GlossaryItems.Count >= GlossaryReplacer.MaxItems)
         {
             GlossaryMessage = $"已达 {GlossaryReplacer.MaxItems} 条上限，先删除旧词条";
             return;
         }
 
-        var item = new GlossaryItemViewModel();
+        var item = new GlossaryItemViewModel { Source = source, Target = NewGlossaryTarget.Trim() };
         GlossaryItems.Add(item); // CollectionChanged 里订阅事件并保存
-        GlossaryMessage = "新词条已添加；默认作用于全部语言、整词匹配";
+        NewGlossarySource = "";
+        NewGlossaryTarget = "";
+        GlossaryMessage = "已落印；默认作用于全部语言、整词匹配";
     }
 
     [RelayCommand]
@@ -221,7 +303,7 @@ public partial class SettingsViewModel
             summary.Append("是否继续导入？");
             var confirm = System.Windows.MessageBox.Show(
                 summary.ToString(),
-                "速译 · 导入术语表",
+                "译印 · 导入术语表",
                 System.Windows.MessageBoxButton.OKCancel,
                 System.Windows.MessageBoxImage.Information);
             if (confirm != System.Windows.MessageBoxResult.OK) return;
@@ -265,7 +347,7 @@ public partial class SettingsViewModel
             Title = "导出术语表",
             Filter = "CSV (*.csv)|*.csv|TSV (*.tsv)|*.tsv",
             DefaultExt = ".csv",
-            FileName = $"速译术语表-{DateTime.Now:yyyyMMdd}.csv",
+            FileName = $"译印术语表-{DateTime.Now:yyyyMMdd}.csv",
         };
         if (dialog.ShowDialog() != true) return;
 

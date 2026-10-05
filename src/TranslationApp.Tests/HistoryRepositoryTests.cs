@@ -32,7 +32,7 @@ public sealed class HistoryRepositoryTests : IDisposable
     {
         _history.Add("hello", "你好", "en", "zh-CN", "Bing");
 
-        var records = _history.Search(null);
+        var records = _history.Search(new HistoryQuery());
 
         var record = Assert.Single(records);
         Assert.Equal("hello", record.SourceText);
@@ -49,7 +49,7 @@ public sealed class HistoryRepositoryTests : IDisposable
         _history.Add("first", "第一", "en", "zh-CN", "Bing");
         _history.Add("second", "第二", "en", "zh-CN", "Bing");
 
-        var records = _history.Search(null);
+        var records = _history.Search(new HistoryQuery());
 
         Assert.Equal("second", records[0].SourceText);
         Assert.Equal("first", records[1].SourceText);
@@ -61,9 +61,9 @@ public sealed class HistoryRepositoryTests : IDisposable
         _history.Add("hello world", "你好世界", "en", "zh-CN", "Bing");
         _history.Add("goodbye", "再见", "en", "zh-CN", "Bing");
 
-        Assert.Single(_history.Search("hello"));
-        Assert.Single(_history.Search("再见"));
-        Assert.Empty(_history.Search("不存在的内容"));
+        Assert.Single(_history.Search(new HistoryQuery { Keyword = "hello" }));
+        Assert.Single(_history.Search(new HistoryQuery { Keyword = "再见" }));
+        Assert.Empty(_history.Search(new HistoryQuery { Keyword = "不存在的内容" }));
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class HistoryRepositoryTests : IDisposable
         _history.Add("plain", "普通", "en", "zh-CN", "Bing");
 
         // 未转义时 "%" 会匹配所有记录；转义后应只命中真正含 % 的那条
-        var records = _history.Search("%");
+        var records = _history.Search(new HistoryQuery { Keyword = "%" });
 
         Assert.Single(records);
         Assert.Equal("100% sure", records[0].SourceText);
@@ -84,24 +84,24 @@ public sealed class HistoryRepositoryTests : IDisposable
     {
         _history.Add("a", "甲", "en", "zh-CN", "Bing");
         _history.Add("b", "乙", "en", "zh-CN", "Bing");
-        var target = _history.Search("a").Single();
+        var target = _history.Search(new HistoryQuery { Keyword = "a" }).Single();
 
         _history.Delete(target.Id);
 
-        Assert.Single(_history.Search(null));
-        Assert.Equal("b", _history.Search(null)[0].SourceText);
+        Assert.Single(_history.Search(new HistoryQuery()));
+        Assert.Equal("b", _history.Search(new HistoryQuery())[0].SourceText);
     }
 
     [Fact]
     public void Update_ChangesTranslationAndQualityState()
     {
         _history.Add("hello", "你好", "en", "zh-CN", "Bing");
-        var record = _history.Search(null).Single();
+        var record = _history.Search(new HistoryQuery()).Single();
 
         var changed = _history.Update(record.Id, "您好", reviewed: true, rejected: false);
 
         Assert.Equal(1, changed);
-        var updated = _history.Search(null).Single();
+        var updated = _history.Search(new HistoryQuery()).Single();
         Assert.Equal("您好", updated.TranslatedText);
         Assert.True(updated.Reviewed);
         Assert.False(updated.Rejected);
@@ -114,7 +114,7 @@ public sealed class HistoryRepositoryTests : IDisposable
         _history.Add("same source", "普通译文", "en", "zh-CN", "Bing");
         _history.Add("same source", "校对译文", "en", "zh-CN", "Bing");
         _history.Add("same source", "禁用译文", "en", "zh-CN", "Bing");
-        var records = _history.Search(null);
+        var records = _history.Search(new HistoryQuery());
         _history.Update(records.Single(item => item.TranslatedText == "校对译文").Id,
             "校对译文", reviewed: true, rejected: false);
         _history.Update(records.Single(item => item.TranslatedText == "禁用译文").Id,
@@ -130,7 +130,7 @@ public sealed class HistoryRepositoryTests : IDisposable
     public void ContextSource_ExcludesRejectedRecord()
     {
         _history.Add("旧句", "旧译", "en", "zh-CN", "Bing");
-        var record = _history.Search(null).Single();
+        var record = _history.Search(new HistoryQuery()).Single();
         _history.Update(record.Id, record.TranslatedText, reviewed: false, rejected: true);
 
         Assert.Null(_history.ContextSource("zh-CN", "当前句"));
@@ -144,7 +144,7 @@ public sealed class HistoryRepositoryTests : IDisposable
 
         _history.Clear();
 
-        Assert.Empty(_history.Search(null));
+        Assert.Empty(_history.Search(new HistoryQuery()));
         Assert.Equal(0, _history.Count());
     }
 
@@ -159,8 +159,8 @@ public sealed class HistoryRepositoryTests : IDisposable
 
         Assert.Equal(HistoryRepository.MaxRecords, _history.Count());
         // 最旧的 5 条应已被清理
-        Assert.Empty(_history.Search("text-0"));
-        Assert.Single(_history.Search($"text-{HistoryRepository.MaxRecords + 4}"));
+        Assert.Empty(_history.Search(new HistoryQuery { Keyword = "text-0" }));
+        Assert.Single(_history.Search(new HistoryQuery { Keyword = $"text-{HistoryRepository.MaxRecords + 4}" }));
     }
 
     [Fact]
@@ -259,7 +259,7 @@ public sealed class HistoryRepositoryTests : IDisposable
         var vocabulary = new VocabularyRepository(broken);
 
         Assert.False(broken.IsAvailable);
-        Assert.Empty(repository.Search(null));
+        Assert.Empty(repository.Search(new HistoryQuery()));
         Assert.Equal(0, repository.Count());
         Assert.Empty(vocabulary.List());
         repository.Add("a", "b", "en", "zh-CN", "Bing"); // 不应抛异常
@@ -284,3 +284,4 @@ public sealed class HistoryRepositoryTests : IDisposable
         }
     }
 }
+

@@ -8,6 +8,7 @@ internal static class NativeMethods
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_TOPMOST = 0x00000008L;
     public const long WS_EX_NOACTIVATE = 0x08000000L;
+    public const long WS_EX_TRANSPARENT = 0x00000020L;
 
     /// <summary>工具窗口：不出现在 Alt+Tab 列表（FR-027 钉图，与微信钉图一致）。</summary>
     public const long WS_EX_TOOLWINDOW = 0x00000080L;
@@ -120,4 +121,13 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindow(IntPtr hWnd);
+
+    /// <summary>按窗口类名找任务栏：主屏 Shell_TrayWnd，副屏 Shell_SecondaryTrayWnd。</summary>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowW(string lpClassName, string? lpWindowName);
+
+    /// <summary>取窗口矩形（物理像素）。自动隐藏的任务栏仍停靠原位，所以这个矩形就是“任务栏顶边”。</summary>
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 }

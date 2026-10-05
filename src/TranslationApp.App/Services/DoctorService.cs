@@ -28,6 +28,17 @@ public sealed class DoctorService
     private readonly UpdateService _updates;
     private readonly OcrWorkerLauncher? _workerLauncher;
 
+    private DiagnosticReport? _lastReport;
+
+    /// <summary>最近一次诊断的快照；应用启动时自动跑的那次也写在这里。</summary>
+    public DiagnosticReport? LastReport => _lastReport;
+
+    /// <summary>是否已有一次诊断在跑（启动那次也算），避免重复并发执行。</summary>
+    public bool IsRunning { get; private set; }
+
+    /// <summary>每次诊断跑完触发（含启动自动跑的那次）；回调可能在后台线程，订阅方自行切回 UI 线程。</summary>
+    public event EventHandler<DiagnosticReport>? ReportReady;
+
     public DoctorService(
         AppSettings settings,
         HotkeyManager hotkeys,
@@ -44,33 +55,67 @@ public sealed class DoctorService
         _workerLauncher = workerLauncher;
     }
 
+    /// <summary>
+    /// 诊断项的固定清单（Id + 标题），顺序与 <see cref="RunAsync"/> 的产出顺序一致。
+    /// 诊断页在真正跑之前先用它把全部行铺出来（状态「待检查」），
+    /// 否则清单要等跑完才出现，页面在启动后那几秒是空的。
+    /// </summary>
+    public static readonly IReadOnlyList<(string Id, string Title)> ExpectedChecks =
+    [
+        ("hotkey-input", "全局热键 · hotkey:输入翻译"),
+        ("hotkey-select", "全局热键 · hotkey:划词翻译"),
+        ("hotkey-capture", "全局热键 · hotkey:截图翻译"),
+        ("hotkey-profile", "全局热键 · hotkey:场景模式"),
+        ("hotkey-replace", "全局热键 · hotkey:翻译并替换"),
+        ("ocr-windows", "Windows OCR 语言包"),
+        ("ocr-paddle", "PaddleOCR 嵌入模型"),
+        ("ocr-worker", "OCR 隔离进程"),
+        ("database", "历史数据库"),
+        ("data-directory", "本地数据目录"),
+        ("update-cache", "更新缓存目录"),
+        ("update-replace", "自动替换权限"),
+        ("proxy", "代理连通性"),
+        ("update-channel", "更新通道与清单验签"),
+    ];
+
     public async Task<DiagnosticReport> RunAsync(CancellationToken cancellationToken = default)
     {
-        var results = new List<DiagnosticResult>();
-        // 热键状态必须在首次 await 前读取：HotkeyManager 与设置窗口同线程创建。
-        results.AddRange(CheckHotkeys());
-        results.Add(CheckWindowsOcr());
-        results.Add(CheckPaddleOcr());
-        results.Add(await CheckOcrWorkerAsync(cancellationToken));
-        results.Add(CheckDatabase());
-        results.Add(CheckDataDirectory());
-        results.AddRange(CheckUpdateInstallability());
-
+        IsRunning = true;
         try
         {
-            results.Add(await CheckProxyAsync(cancellationToken));
-            results.Add(await CheckUpdateChannelAsync(cancellationToken));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
+            var results = new List<DiagnosticResult>();
+            // 热键状态必须在首次 await 前读取：HotkeyManager 与设置窗口同线程创建。
+            results.AddRange(CheckHotkeys());
+            results.Add(CheckWindowsOcr());
+            results.Add(CheckPaddleOcr());
+            results.Add(await CheckOcrWorkerAsync(cancellationToken));
+            results.Add(CheckDatabase());
+            results.Add(CheckDataDirectory());
+            results.AddRange(CheckUpdateInstallability());
 
-        return new DiagnosticReport(
-            DateTimeOffset.UtcNow,
-            CurrentVersion().ToString(),
-            AppPaths.IsPortable,
-            results);
+            try
+            {
+                results.Add(await CheckProxyAsync(cancellationToken));
+                results.Add(await CheckUpdateChannelAsync(cancellationToken));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            var report = new DiagnosticReport(
+                DateTimeOffset.UtcNow,
+                CurrentVersion().ToString(),
+                AppPaths.IsPortable,
+                results);
+            _lastReport = report;
+            ReportReady?.Invoke(this, report);
+            return report;
+        }
+        finally
+        {
+            IsRunning = false;
+        }
     }
 
     private IEnumerable<DiagnosticResult> CheckHotkeys()
@@ -83,7 +128,7 @@ public sealed class DoctorService
                 _settings.HotkeySelectTranslate, true),
             new HotkeySlot("hotkey-capture", "hotkey:截图翻译", "capture",
                 _settings.HotkeyCaptureTranslate, true),
-            new HotkeySlot("hotkey-profile", "hotkey:场景档案", "profile",
+            new HotkeySlot("hotkey-profile", "hotkey:场景模式", "profile",
                 _settings.HotkeySwitchProfile, true),
             new HotkeySlot("hotkey-replace", "hotkey:翻译并替换", "replace",
                 _settings.HotkeyReplaceTranslate, _settings.ReplaceSelectionEnabled),
@@ -156,7 +201,7 @@ public sealed class DoctorService
                     $"全局热键 · {slot.Label}",
                     DiagnosticStatus.Failed,
                     $"{definition} 未注册，可能被其他程序占用，或启动时注册失败。",
-                    "更换一个组合，或关闭占用该组合的程序后重启速译。");
+                    "更换一个组合，或关闭占用该组合的程序后重启译印。");
         }
     }
 
@@ -169,7 +214,7 @@ public sealed class DoctorService
                 "Windows OCR 语言包",
                 DiagnosticStatus.Failed,
                 OcrLanguages.MissingPackMessage,
-                "安装需要的 OCR 语言包后重启速译。");
+                "安装需要的 OCR 语言包后重启译印。");
         }
 
         var status = _ocr.ResolveStatus(_settings.OcrLanguage);
@@ -222,7 +267,7 @@ public sealed class DoctorService
                 "PaddleOCR 嵌入模型",
                 DiagnosticStatus.Warning,
                 "4/4 模型资源完整，但 OCR 隔离进程曾启动或识别失败，已回退到 Windows OCR。",
-                "检查杀毒软件隔离记录与临时目录权限；重启速译后可再试。");
+                "检查杀毒软件隔离记录与临时目录权限；重启译印后可再试。");
         }
 
         var selected = string.Equals(
@@ -666,3 +711,4 @@ public sealed class DoctorService
         string Value,
         bool Enabled);
 }
+

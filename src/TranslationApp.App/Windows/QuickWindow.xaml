@@ -1,9 +1,10 @@
 <Window x:Class="TranslationApp.Windows.QuickWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:TranslationApp.ViewModels"
-        Title="速译" MinWidth="320" MinHeight="240"
-        Width="420" Height="320"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:vm="clr-namespace:TranslationApp.ViewModels"
+      xmlns:local="clr-namespace:TranslationApp.Windows"
+        Title="译印 INKSEAL" MinWidth="360" MinHeight="240"
+        Width="496" Height="290"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" ShowActivated="True" ResizeMode="CanResize"
         FontFamily="{StaticResource Font.App}" FontSize="{StaticResource FontSize.Body}"
@@ -12,7 +13,9 @@
     <!--
       FR-002/003：无边框 + 圆角 + 置顶（EXSTYLE 在 SourceInitialized 追加 TOPMOST）；
       失焦隐藏由 WinEvent 前台监听实现；窗口可激活以便直接输入，隐藏时由代码把焦点还原给原应用。
-      布局层次（自上而下）：语言栏 → 输入区 → 译文区（占据剩余空间）→ 进度/错误/状态。
+      版面照设计稿 inkseal-ui.html 的小窗（.qw）逐层落地，自上而下：
+        印面条（印面标 + 语言药丸 + 来源标签 + 动作）→ 阴刻原文区 → 骑缝（线 / 进度）→
+        阳刻译文区（套准角 + 印面标）→ 换说法 → 印脚（骑缝齿 + 印文 + 落印动作）。
     -->
     <WindowChrome.WindowChrome>
         <WindowChrome GlassFrameThickness="0" CaptionHeight="0" ResizeBorderThickness="6" UseAeroCaptionButtons="False"/>
@@ -21,7 +24,6 @@
     <!--
       FR-026：「设为默认尺寸」入口（14.2.2）。拖拽只影响本次窗口，想把尺寸固化下来就用这里——
       写入设置里的默认宽高，下次呼出以该尺寸为基准；设置「通用 → 小窗尺寸」卡片里同步说明了本入口。
-      样式沿用 WPF 系统菜单配色（不写死颜色，深浅主题下均可读）；输入框/译文区有各自的文本菜单，不与之冲突。
     -->
     <Window.ContextMenu>
         <ContextMenu>
@@ -32,404 +34,570 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibility"/>
 
         <!--
-          FR-020（13.4.4）：横排与纵排两个 ItemsControl 共用这一个模板，
-          靠外层 Visibility 切换布局，避免运行时替换 ItemsPanel 踩模板缓存的坑。
+          对比栏的一列 = 一枚印面（设计稿 .cmp .col）：栏头是「引擎名 + 对比引擎」两枚标签，
+          正文 14.5px / 行高 1.6；横排靠容器底色露出发丝线分栏，纵排改用栏尾那条线。
         -->
         <DataTemplate x:Key="EngineResultTemplate">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+            <Border Background="{DynamicResource Brush.Surface}" Padding="18,14,18,16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <!-- 栏头：引擎名 + 复制 / 朗读 -->
-                <Grid Grid.Row="0" Margin="0,0,0,2">
-                    <TextBlock Text="{Binding EngineName}" Style="{StaticResource Text.Caption}"
-                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,56,0"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Style="{StaticResource IconButton}" Width="24" Height="24"
-                                ToolTip="复制该引擎译文" Command="{Binding CopyCommand}">
-                            <TextBlock Text="{StaticResource Icon.Copy}" FontFamily="{StaticResource Font.Icon}"
-                                       FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
-                        </Button>
-                        <Button Style="{StaticResource IconButton}" Width="24" Height="24" Margin="2,0,0,0"
-                                ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
-                                Command="{Binding SpeakTextCommand}">
-                            <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
-                                       FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
-                        </Button>
-                    </StackPanel>
+                    <!-- 栏头（设计稿 .cmp .ch） -->
+                    <Grid Grid.Row="0" Margin="0,0,0,9">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Style="{StaticResource Tag}" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding EngineName}" FontSize="11.5"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Border>
+                        <Border Grid.Column="1" Style="{StaticResource Tag.Line}" Margin="7,0,0,0"
+                                HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <TextBlock Text="对比引擎" FontSize="11.5"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        </Border>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Style="{StaticResource IconButton}" Width="24" Height="24"
+                                    ToolTip="复制该引擎译文" Command="{Binding CopyCommand}">
+                                <Viewbox Width="12" Height="12">
+                                    <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Copy}"/>
+                                </Viewbox>
+                            </Button>
+                            <Button Style="{StaticResource IconButton}" Width="24" Height="24" Margin="2,0,0,0"
+                                    ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                                    Command="{Binding SpeakTextCommand}">
+                                <Viewbox Width="12" Height="12">
+                                    <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Speak}"/>
+                                </Viewbox>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 译文（设计稿 .cmp .ct） -->
+                    <Grid Grid.Row="1">
+                        <TextBox Style="{StaticResource Field.ReadOnlyResult}"
+                                 Text="{Binding Text, Mode=OneWay}"
+                                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 FontSize="14.5" TextBlock.LineHeight="23.2"
+                                 TextBlock.LineStackingStrategy="BlockLineHeight"
+                                 Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}"/>
+
+                        <ProgressBar Style="{StaticResource Progress.Indeterminate}" VerticalAlignment="Top"
+                                     Margin="0,6,0,0"
+                                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+
+                        <!-- 部分失败（13.4.3）：该栏显示紧凑错误行 + 仅重试该栏 -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,0"
+                                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" MaxWidth="220"
+                                       FontSize="{StaticResource FontSize.Small}"
+                                       Foreground="{DynamicResource Brush.Error}"/>
+                            <Button Style="{StaticResource IconButton}" Width="20" Height="20" Margin="4,0,0,0"
+                                    ToolTip="仅重试该引擎" Command="{Binding RetryCommand}">
+                                <Viewbox Width="11" Height="11">
+                                    <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Refresh}"/>
+                                </Viewbox>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 纵排时的栏间分隔线（横排改用发丝线分栏，13.4.4） -->
+                    <Border Grid.Row="2" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,12,0,0"
+                            Visibility="{Binding IsVerticalLayout, Converter={StaticResource BoolToVis}}"/>
                 </Grid>
-
-                <!-- 译文：沿用「输出区无框」的既有层次表达 -->
-                <Grid Grid.Row="1">
-                    <TextBox Style="{StaticResource Field.ReadOnlyResult}"
-                             Text="{Binding Text, Mode=OneWay}"
-                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                             FontSize="{StaticResource FontSize.Content}"
-                             Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}"/>
-
-                    <ProgressBar Height="2" VerticalAlignment="Top" Margin="0,4,0,0"
-                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
-
-                    <!-- 部分失败（13.4.3）：该栏显示紧凑错误行 + 仅重试该栏 -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="2,2,0,0"
-                                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{StaticResource Icon.Error}" FontFamily="{StaticResource Font.Icon}"
-                                   FontSize="11" Foreground="{DynamicResource Brush.Error}"
-                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
-                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" MaxWidth="220"
-                                   FontSize="{StaticResource FontSize.Small}"
-                                   Foreground="{DynamicResource Brush.Error}"/>
-                        <Button Style="{StaticResource IconButton}" Width="20" Height="20" Margin="4,0,0,0"
-                                ToolTip="仅重试该引擎" Command="{Binding RetryCommand}">
-                            <TextBlock Text="{StaticResource Icon.Refresh}" FontFamily="{StaticResource Font.Icon}"
-                                       FontSize="11" Foreground="{DynamicResource Brush.Error}"/>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-
-                <!-- 纵排时的栏间分隔线（横排改用间距，13.4.4） -->
-                <Border Grid.Row="2" Style="{StaticResource Hairline}" Margin="0,10,0,0"
-                        Visibility="{Binding IsVerticalLayout, Converter={StaticResource BoolToVis}}"/>
-            </Grid>
+            </Border>
         </DataTemplate>
     </Window.Resources>
 
     <!-- 外层留白 12px 供阴影绘制，内层为真正的窗体表面 -->
-    <Border x:Name="SurfaceBorder" Margin="12" Padding="{StaticResource Padding.Window}"
+    <Border x:Name="SurfaceBorder" Margin="12" Padding="0"
             Background="{DynamicResource Brush.Window}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
-            CornerRadius="{StaticResource Radius.Window}"
+            CornerRadius="{StaticResource Brand.Radius.Window}"
             Effect="{StaticResource Shadow.Window}"
             MouseLeftButtonDown="OnSurfaceMouseDown">
+        <!--
+          落印反震：落纸那一瞬整张卡片向下顿一下再弹回，把「纸面被砸出的震动」画出来。
+          静止态 X/Y 恒为 0，不参与排版、不改设计稿静态观感；只由 PlaySealStamp 在落纸时刻驱动。
+        -->
+        <Border.RenderTransform>
+            <TranslateTransform x:Name="SurfaceShake" X="0" Y="0"/>
+        </Border.RenderTransform>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>   <!-- 语言栏 -->
-                <RowDefinition Height="Auto"/>   <!-- 输入区 -->
-                <RowDefinition Height="Auto"/>   <!-- 译文标题行 -->
-                <RowDefinition Height="Auto"/>   <!-- 词典卡（FR-049，无命中时 Collapsed） -->
-                <RowDefinition Height="*"/>      <!-- 译文内容 -->
-                <RowDefinition Height="Auto"/>  <!-- 换说法（FR-051，非 AI 引擎时 Collapsed） -->
-                <RowDefinition Height="Auto"/>  <!-- 进度 / 错误 / 状态 -->
+                <RowDefinition Height="Auto"/>   <!-- 印面条：印面标 + 语言药丸 + 来源标签 + 动作 -->
+                <RowDefinition Height="Auto"/>   <!-- 阴刻原文区 -->
+                <RowDefinition Height="Auto"/>   <!-- 骑缝：刻痕 / 进度 -->
+                <RowDefinition Height="Auto"/>   <!-- 词典卡（FR-049）+ 复习行（FR-052），无内容时 Collapsed -->
+                <RowDefinition Height="*"/>      <!-- 阳刻译文区 -->
+                <RowDefinition Height="Auto"/>   <!-- 换说法（FR-051，非 AI 引擎时 Collapsed） -->
+                <RowDefinition Height="Auto"/>   <!-- 印脚：骑缝齿 + 印文 + 落印动作 -->
             </Grid.RowDefinitions>
 
-            <!-- ============ 语言栏 ============ -->
-            <Grid x:Name="LanguageRow" Grid.Row="0" Margin="0,0,0,10">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                    <ComboBox x:Name="SourceLanguageBox" Width="112"
-                              ItemsSource="{Binding SourceOptions}"
-                              SelectedValue="{Binding SourceLanguage}"
-                              SelectedValuePath="Code" DisplayMemberPath="Display"
-                              ToolTip="源语言（自动检测由翻译引擎识别）"/>
-                    <Button Style="{StaticResource IconButton}" Margin="2,0" ToolTip="交换语言 (Ctrl+Enter)"
-                            Command="{Binding SwapCommand}">
-                        <TextBlock Text="{StaticResource Icon.Swap}" FontFamily="{StaticResource Font.Icon}"
-                                   FontSize="13" Foreground="{DynamicResource Brush.TextSecondary}"/>
-                    </Button>
-                    <ComboBox x:Name="TargetLanguageBox" Width="112"
-                              ItemsSource="{Binding TargetOptions}"
-                              SelectedValue="{Binding TargetLanguage}"
-                              SelectedValuePath="Code" DisplayMemberPath="Display"
-                              ToolTip="目标语言"/>
-                </StackPanel>
+            <!-- ============ 印面条（设计稿 .win-strip .qw-strip）============
+                 40px 高、左右 12px、间隙 8px：印面标 → 阴刻药丸（源语言 / 互换 / 目标语言）→ 朱砂来源标签 → 右侧动作。
+                 语言不再用带边框的下拉框：设计稿里它们是刻痕底上的无框文字按钮（.lang），
+                 原来那个 104px 宽的下拉框把整条挤压得不成比例。 -->
+            <Border x:Name="LanguageBar" Grid.Row="0" Height="40" Background="{DynamicResource Brush.Window}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
+                <Grid Margin="12,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <!-- FR-021 截图翻译：放在图钉左侧，与呼出截图流程语义相邻（13.5.2） -->
-                    <Button Style="{StaticResource IconButton}" Margin="0,0,2,0"
-                            ToolTip="{Binding CaptureToolTip}"
-                            Click="OnCaptureClick">
-                        <TextBlock Text="{StaticResource Icon.Capture}" FontFamily="{StaticResource Font.Icon}"
-                                   FontSize="13" Foreground="{DynamicResource Brush.TextSecondary}"/>
-                    </Button>
-                    <Button x:Name="PinButton" Style="{StaticResource IconButton}"
-                            Click="OnPinClick">
-                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="13">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{StaticResource Icon.Pin}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
-                                    <Setter Property="ToolTip" Value="固定窗口（不自动隐藏）"/>
-                                    <Style.Triggers>
-                                        <!-- 已固定：图标切换为「取消固定」并用文字级琥珀强调（AA 对比），状态一眼可见 -->
-                                        <DataTrigger Binding="{Binding IsPinned}" Value="True">
-                                            <Setter Property="Text" Value="{StaticResource Icon.Unpin}"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
-                                            <Setter Property="ToolTip" Value="取消固定（恢复失焦自动隐藏）"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Button>
-                    <Button Style="{StaticResource IconButton.Close}" Margin="2,0,0,0" ToolTip="关闭 (Esc)"
-                            Click="OnCloseClick"/>
-                </StackPanel>
-            </Grid>
+                    <!-- 印面标：与小窗、主窗标题栏共用同一个品牌记号 -->
+                    <Path Grid.Column="0" Style="{StaticResource BrandMark}" Width="18" Height="18"
+                          Margin="0,0,8,0" VerticalAlignment="Center"/>
 
-            <!-- ============ 输入区（右上角内嵌朗读原文按钮）============ -->
-            <Grid Grid.Row="1">
-                <TextBox x:Name="InputBox" MinHeight="76" MaxHeight="140"
-                         Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                         AcceptsReturn="True" TextWrapping="Wrap"
-                         MaxLength="{x:Static vm:QuickTranslateViewModel.MaxInputLength}"
-                         VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
-                         Padding="10,8,36,8"
-                         PreviewKeyDown="OnInputKeyDown"/>
-                <!-- 空状态占位（语言人格：「输入文字，按 Enter 翻译」，动词句说清下一步） -->
-                <TextBlock Text="输入文字，按 Enter 翻译（Shift+Enter 换行）" IsHitTestVisible="False"
-                           HorizontalAlignment="Left" VerticalAlignment="Top"
-                           Margin="12,9,36,0" FontSize="{StaticResource FontSize.Content}"
-                           Foreground="{DynamicResource Brush.TextDisabled}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                <Button Style="{StaticResource IconButton}" Width="24" Height="24"
-                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
-                        ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
-                        Command="{Binding SpeakSourceCommand}">
-                    <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
-                               FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
-                </Button>
-            </Grid>
+                    <!-- 语言药丸：阴刻底 + 两粒无框文字按钮，中间一枚互换（设计稿 .langpair / .lang / .swap） -->
+                    <Border Grid.Column="1" Background="{DynamicResource Brush.Sidebar}"
+                            CornerRadius="{StaticResource Brand.Radius.Control}" Padding="2"
+                            Margin="0,0,10,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox x:Name="SourceLanguageBox" BorderThickness="0" Background="Transparent"
+                                      Height="24" FontSize="12.5" Padding="8,0" FocusVisualStyle="{x:Null}"
+                                      ItemsSource="{Binding SourceOptions}"
+                                      SelectedValue="{Binding SourceLanguage}"
+                                      SelectedValuePath="Code" DisplayMemberPath="Display"
+                                      ToolTip="源语言（自动检测由翻译引擎识别）"/>
+                            <Button Style="{StaticResource IconButton}" Width="24" Height="24"
+                                    ToolTip="互换语言 (Ctrl+Enter)" Command="{Binding SwapCommand}"
+                                    VerticalAlignment="Center">
+                                <Viewbox Width="12" Height="12">
+                                    <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Swap}"/>
+                                </Viewbox>
+                            </Button>
+                            <ComboBox x:Name="TargetLanguageBox" BorderThickness="0" Background="Transparent"
+                                      Height="24" FontSize="12.5" Padding="8,0" FocusVisualStyle="{x:Null}"
+                                      ItemsSource="{Binding TargetOptions}"
+                                      SelectedValue="{Binding TargetLanguage}"
+                                      SelectedValuePath="Code" DisplayMemberPath="Display"
+                                      ToolTip="目标语言"/>
+                        </StackPanel>
+                    </Border>
 
-            <!-- ============ 译文标题行 ============
-                 两列布局：「译文」占固定列，按钮组占剩余列右对齐。
-                 以前两者叠在同一格，按钮一多就从右边压到「译文」两个字上（实测截图重叠）。 -->
-            <Grid x:Name="TitleRow" Grid.Row="2" Margin="2,12,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="译文" Style="{StaticResource Text.Caption}"
-                           VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <!-- FR-045：TM 回填后一键改用机器重译 -->
-                    <Button Content="重新翻译" Style="{StaticResource Button.Tonal}"
-                            Padding="8,0" Height="24" Margin="0,0,4,0"
-                            Command="{Binding ReTranslateMachineCommand}"
-                            ToolTip="不用记忆库，交给机器重译一遍"
-                            Visibility="{Binding IsReTranslateVisible, Converter={StaticResource BoolToVis}}"/>
-                    <!-- FR-043：≥3 段且段数对齐时出现「对照」开关（激活态主色底）。
-                         入口不因为开了对比/跟读就消失——点它就是把另一模式让位掉。 -->
-                    <Button Content="对照" Padding="8,0" Height="24" Margin="0,0,4,0"
-                            Command="{Binding ToggleAlignViewCommand}"
-                            Visibility="{Binding HasAlignment, Converter={StaticResource BoolToVis}}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsAlignView}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <!-- FR-020 结果对比：默认无底透明，激活态 PrimaryContainer 底 + Primary 图标（13.5.2） -->
-                    <Button Width="24" Height="24" Margin="0,0,2,0"
-                            ToolTip="{Binding CompareToolTip}"
-                            Command="{Binding ToggleCompareCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsComparing}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="12">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{StaticResource Icon.Compare}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsComparing}" Value="True">
-                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Button>
-                    <!-- 收藏到生词本（FR-015）：已收藏时变主色实心 -->
-                    <Button Style="{StaticResource IconButton}" Width="24" Height="24"
-                            ToolTip="加入生词本（再次点击移除）"
-                            Command="{Binding ToggleFavoriteCommand}"
-                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
-                        <TextBlock FontFamily="{StaticResource Font.Icon}" FontSize="12">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{StaticResource Icon.Favorite}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsFavoriteActive}" Value="True">
-                                            <Setter Property="Text" Value="{StaticResource Icon.FavoriteFilled}"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Button>
-                    <!-- 朗读译文（FR-016） -->
-                    <Button Style="{StaticResource IconButton}" Width="24" Height="24" Margin="2,0"
-                            ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
-                            Command="{Binding SpeakResultCommand}"
-                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{StaticResource Icon.Speak}" FontFamily="{StaticResource Font.Icon}"
-                                   FontSize="12" Foreground="{DynamicResource Brush.TextTertiary}"/>
-                    </Button>
-                    <!-- FR-053：影子跟读（再点一次即停止）；默认关，「设置 → 高级 → 朗读」里开 -->
-                    <Button Height="24" Padding="8,0" Margin="2,0"
-                            Command="{Binding ToggleShadowCommand}"
-                            Visibility="{Binding IsShadowButtonVisible, Converter={StaticResource BoolToVis}}"
-                            ToolTip="逐句朗读译文并高亮当前句，跟着念一遍；再点一次停止">
-                        <Button.Content>
-                            <TextBlock>
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="跟读"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsShadowRunning}" Value="True">
-                                                <Setter Property="Text" Value="停止"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </Button.Content>
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource Button.Tonal}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsShadowRunning}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource Brush.PrimaryText}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <Button Content="复制" Style="{StaticResource Button.Tonal}"
-                            Padding="8,0" Height="24"
-                            Command="{Binding CopyResultCommand}"
-                            ToolTip="复制译文（右侧 ⌄ 可改复制原文 / 原文+译文）"
-                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}"/>
-                    <!-- FR-044：复制策略菜单（译文 / 原文 / 原文+译文），点击弹菜单 -->
-                    <Button x:Name="CopyMenuButton" Style="{StaticResource IconButton}" Width="22" Height="24"
-                            Margin="2,0,0,0" Content="⌄" FontSize="12" Click="OnCopyMenuClick"
-                            ToolTip="复制策略：译文 / 原文 / 原文+译文"
-                            Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
-                        <Button.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="只复制译文" Command="{Binding CopyResultCommand}"/>
-                                <MenuItem Header="只复制原文" Command="{Binding CopySourceCommand}"/>
-                                <MenuItem Header="原文 + 译文" Command="{Binding CopyBothCommand}"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
-                </StackPanel>
-            </Grid>
+                    <!-- 来源标签（设计稿 .qw-tag）：值随呼出链路变化（划词 / 手动 / 剪贴板 / 文档） -->
+                    <Border Grid.Column="2" Style="{StaticResource Tag.Vermilion}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding OriginLabel}"/>
+                    </Border>
 
-            <!-- ===== 复习行（FR-052）+ 词典卡（FR-049）：同一行区域，谁有内容谁出现 ===== -->
-            <StackPanel Grid.Row="3">
-            <Border x:Name="ReviewCard" Style="{StaticResource Card}"
-                    Margin="0,4,0,0" Padding="10,6"
-                    Visibility="{Binding IsReviewVisible, Converter={StaticResource BoolToVis}}">
-                <Grid>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,150,0">
-                        <TextBlock Text="今日复习" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding ReviewProgress}" Style="{StaticResource Text.Caption}"
-                                   Margin="6,0,0,0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource Brush.Primary}"/>
-                        <TextBlock Text="{Binding ReviewText}" FontSize="{StaticResource FontSize.Small}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button Content="下一个" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
-                                Command="{Binding NextReviewWordCommand}"/>
-                        <Button Content="今天到这" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
-                                Margin="6,0,0,0" Command="{Binding FinishReviewTodayCommand}"/>
+                    <!-- 右侧动作：朗读原文 / 固定常显 / 收起（设计稿 .qw-strip-r 的三枚 btn-seal，均为 32×32） -->
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- FR-016 朗读原文 -->
+                        <Button Style="{StaticResource IconButton}" Width="32" Height="32"
+                                ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                                Command="{Binding SpeakSourceCommand}">
+                            <Viewbox Width="16" Height="16">
+                                <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Speak}"/>
+                            </Viewbox>
+                        </Button>
+                        <Button x:Name="PinButton" Style="{StaticResource IconButton}" Width="32" Height="32"
+                                Margin="2,0,0,0" Click="OnPinClick">
+                            <Viewbox Width="16" Height="16">
+                                <Path Data="{StaticResource Glyph.Pin}">
+                                    <Path.Style>
+                                        <Style TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+                                            <Setter Property="ToolTip" Value="固定窗口（不自动隐藏）"/>
+                                            <Style.Triggers>
+                                                <!-- 已固定：图标转朱砂，状态一眼可见 -->
+                                                <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                    <Setter Property="ToolTip" Value="取消固定（恢复失焦自动隐藏）"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </Viewbox>
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Width="32" Height="32" Margin="2,0,0,0"
+                                ToolTip="收起 (Esc)" Click="OnCloseClick">
+                            <Viewbox Width="16" Height="16">
+                                <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Close}"/>
+                            </Viewbox>
+                        </Button>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- ============ 词典卡（FR-049：划词/输入为单词且本地词典命中时出现） ============ -->
-            <Border x:Name="DictionaryCard" Style="{StaticResource Card}"
-                    Margin="0,4,0,0" Padding="10,8"
-                    MouseLeftButtonUp="OnDictionaryCardClick"
-                    Cursor="Hand"
-                    Visibility="{Binding IsDictionaryVisible, Converter={StaticResource BoolToVis}}">
-                <StackPanel>
-                    <Grid>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding DictionaryHeader}" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding DictionaryWord}" Style="{StaticResource Text.Caption}"
-                                       Margin="6,0,0,0" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Brush.Primary}"/>
-                        </StackPanel>
-                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource Brush.TextTertiary}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
-                                    <Setter Property="Text" Value="展开全文"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
-                                            <Setter Property="Text" Value="收起"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Grid>
-                    <TextBlock x:Name="DictionaryText" Text="{Binding DictionaryDefinition}" TextWrapping="Wrap" Margin="0,4,0,0">
+            <!-- ============ 阴刻原文区（设计稿 .qw-src）============
+                 carved 底 + 上缘一道内阴影（WPF 没有 inset shadow，用自上而下淡出的墨痕代替）。
+                 占位文字与输入框**共用同一组外边距**：样式模板把 Padding 又转成 PART_ContentHost 的
+                 Margin，若输入框写 Padding 而占位只写 Margin，光标会比占位文字整整多缩进一层。 -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.Sidebar}">
+                <Grid>
+                    <Border VerticalAlignment="Top" Height="10" IsHitTestVisible="False">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#1418120E" Offset="0"/>
+                                <GradientStop Color="#0018120E" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+
+                    <TextBlock Text="输入文字，按 Enter 落印" IsHitTestVisible="False"
+                               HorizontalAlignment="Left" VerticalAlignment="Top"
+                               Margin="18,13,36,0" FontSize="14.5" TextBlock.LineHeight="24.6"
+                               TextBlock.LineStackingStrategy="BlockLineHeight"
+                               Foreground="{DynamicResource Brush.TextDisabled}">
                         <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Hint}">
-                                <Setter Property="MaxHeight" Value="40"/>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
-                                        <Setter Property="MaxHeight" Value="180"/>
+                                    <DataTrigger Binding="{Binding Text, ElementName=InputBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
                     </TextBlock>
-                </StackPanel>
+
+                    <TextBox x:Name="InputBox" MinHeight="25" MaxHeight="140"
+                             Background="Transparent" BorderThickness="0" Padding="0"
+                             Margin="18,13,36,14"
+                             Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             MaxLength="{x:Static vm:QuickTranslateViewModel.MaxInputLength}"
+                             VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto"
+                             FontSize="14.5" TextBlock.LineHeight="24.6"
+                             TextBlock.LineStackingStrategy="BlockLineHeight"
+                             Foreground="{DynamicResource Brush.TextPrimary}"
+                             CaretBrush="{DynamicResource Brush.Primary}"
+                             PreviewKeyDown="OnInputKeyDown"/>
+                </Grid>
             </Border>
+
+            <!-- ============ 骑缝（设计稿 .qw-seam）============
+                 两语之间的分缝：平时是一条刻痕，右端收一粒方菱形；译印中它就是进度条。 -->
+            <Grid x:Name="SeamRow" Grid.Row="2" Height="20" Margin="18,0" VerticalAlignment="Center">
+                <Border Height="1" Background="{DynamicResource Brush.Border}" VerticalAlignment="Center"
+                        Margin="0,0,3,0"
+                        Visibility="{Binding IsProgressVisible, Converter={StaticResource InverseBoolToVisibility}}"/>
+                <Border Width="6" Height="6" Style="{StaticResource GroupDiamond}"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Visibility="{Binding IsProgressVisible, Converter={StaticResource InverseBoolToVisibility}}"/>
+                <ProgressBar Style="{StaticResource Progress.Indeterminate}" VerticalAlignment="Center"
+                             Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+
+            <!-- ===== 复习行（FR-052）+ 词典卡（FR-049）：同一行区域，谁有内容谁出现 ===== -->
+            <StackPanel Grid.Row="3" Margin="18,0">
+                <Border x:Name="ReviewCard" Style="{StaticResource Card}"
+                        Margin="0,4,0,0" Padding="10,6"
+                        Visibility="{Binding IsReviewVisible, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,150,0">
+                            <TextBlock Text="今日复习" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding ReviewProgress}" Style="{StaticResource Text.Caption}"
+                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.Primary}"/>
+                            <TextBlock Text="{Binding ReviewText}" FontSize="{StaticResource FontSize.Small}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="下一个" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
+                                    Command="{Binding NextReviewWordCommand}"/>
+                            <Button Content="今天到这" Style="{StaticResource Button.Tonal}" Padding="8,0" Height="22"
+                                    Margin="6,0,0,0" Command="{Binding FinishReviewTodayCommand}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border x:Name="DictionaryCard" Style="{StaticResource Card}"
+                        Margin="0,4,0,0" Padding="10,8"
+                        MouseLeftButtonUp="OnDictionaryCardClick"
+                        Cursor="Hand"
+                        Visibility="{Binding IsDictionaryVisible, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <Grid>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DictionaryHeader}" Style="{StaticResource Text.Caption}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding DictionaryWord}" Style="{StaticResource Text.Caption}"
+                                           Margin="6,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource Brush.Primary}"/>
+                            </StackPanel>
+                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Brush.TextTertiary}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                        <Setter Property="Text" Value="展开全文"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
+                                                <Setter Property="Text" Value="收起"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                        <TextBlock x:Name="DictionaryText" Text="{Binding DictionaryDefinition}" TextWrapping="Wrap" Margin="0,4,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Hint}">
+                                    <Setter Property="MaxHeight" Value="40"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDictionaryExpanded}" Value="True">
+                                            <Setter Property="MaxHeight" Value="180"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
-            <!-- ============ 译文内容 / 对比分栏 ============ -->
-            <Grid x:Name="ResultArea" Grid.Row="4">
+            <!-- ============ 阳刻译文区（设计稿 .qw-dst）============
+                 凸起的印面：左上 / 右下一对 9px 朱砂套准角，落定后右上角常驻一枚印面标（13% 朱砂）。 -->
+    <Grid x:Name="ResultArea" Grid.Row="4" MinHeight="104">
+        <Border Background="{DynamicResource Brush.ErrorContainer}"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- 阳刻套准角（设计稿 .qw-dst::before / ::after） -->
+                <Border Style="{StaticResource SealCorner}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                        BorderThickness="1,1,0,0"/>
+                <Border Style="{StaticResource SealCorner}" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        BorderThickness="0,0,1,1"/>
+
+                <!--
+                  震痕（落印冲击）：落纸那一瞬，一条横贯译文的骑缝细线自印面标向左展开，随即淡去——
+                  把「纸面被砸出的一道痕」画出来，与品牌已有的骑缝语言同源。静止态 opacity=0、ScaleX=1，
+                  不占排版、不改静态观感；画在译文之下，不遮挡文字。
+                -->
+                <Border x:Name="SealImpactLine" Height="2"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="18,23,14,0"
+                        Background="{DynamicResource Brush.Primary}" Opacity="0"
+                        IsHitTestVisible="False" RenderTransformOrigin="1,0.5">
+                    <Border.RenderTransform>
+                        <ScaleTransform x:Name="SealImpactLineScale" ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
+                </Border>
+
+                <!-- 第二、三条震痕：与第一条同源，各向下错开 6px、晚 46ms / 96ms 起播——余震一圈圈向下荡开。 -->
+                <Border x:Name="SealImpactLine2" Height="2"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="18,29,14,0"
+                        Background="{DynamicResource Brush.Primary}" Opacity="0"
+                        IsHitTestVisible="False" RenderTransformOrigin="1,0.5">
+                    <Border.RenderTransform>
+                        <ScaleTransform x:Name="SealImpactLine2Scale" ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
+                </Border>
+                <Border x:Name="SealImpactLine3" Height="2"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Top" Margin="18,35,14,0"
+                        Background="{DynamicResource Brush.Primary}" Opacity="0"
+                        IsHitTestVisible="False" RenderTransformOrigin="1,0.5">
+                    <Border.RenderTransform>
+                        <ScaleTransform x:Name="SealImpactLine3Scale" ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
+                </Border>
+
+                <!--
+                  印面标 + 落印（设计稿 .seal-mark / .halo 的强化版）：平时 13% 朱砂静静待在右上角，
+                  译文落定的那一刻由 PlaySealStamp 驱动「悬印加速下压 → 落纸硬压挤扁 → 短促回弹 → 归位」，并在落纸瞬间炸开飞溅墨点与冲击闪光；新加的三层静止态全是 opacity=0，不改设计稿的静态观感。
+                -->
+                <Grid HorizontalAlignment="Right" VerticalAlignment="Top" Width="22" Height="22"
+                      Margin="0,13,14,0" IsHitTestVisible="False"
+                      Visibility="{Binding IsSingleResultVisible, Converter={StaticResource BoolToVis}}">
+                    <!--
+                      墨爆：6 粒飞溅墨点。画布放大到 200×200 并以印面标中心为原点——旧版把墨点和闪光关在
+                      22×22 的小格子里，飞得再快也出不了那一格，所以「加固」了也看不出力量。
+                      静止态 opacity=0，不占排版、不改设计稿静态观感。
+                    -->
+                    <Canvas Width="200" Height="200" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            ClipToBounds="False">
+                        <Ellipse x:Name="SealDrop1" Canvas.Left="98" Canvas.Top="98" Width="4" Height="4"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift1"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="SealDrop2" Canvas.Left="98.25" Canvas.Top="98.25" Width="3.5" Height="3.5"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift2"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="SealDrop3" Canvas.Left="97.75" Canvas.Top="97.75" Width="4.5" Height="4.5"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift3"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="SealDrop4" Canvas.Left="98" Canvas.Top="98" Width="4" Height="4"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift4"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="SealDrop5" Canvas.Left="98.25" Canvas.Top="98.25" Width="3.5" Height="3.5"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift5"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Ellipse x:Name="SealDrop6" Canvas.Left="97.75" Canvas.Top="97.75" Width="4.5" Height="4.5"
+                                 Fill="{DynamicResource Brush.Primary}" Opacity="0">
+                            <Ellipse.RenderTransform>
+                                <TranslateTransform x:Name="SealDropShift6"/>
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
+                    </Canvas>
+                    <!-- 冲击闪光：落纸瞬间在印面标下方炸开一团实朱砂，200ms 内扩到 2 倍并淡尽。 -->
+                    <Ellipse x:Name="SealFlash" Fill="{DynamicResource Brush.Primary}" Opacity="0"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="SealFlashScale" ScaleX="1" ScaleY="1"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Ellipse x:Name="SealHalo" Fill="{DynamicResource Brush.Primary}" Opacity="0"
+                             RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="SealHaloScale" ScaleX="1" ScaleY="1"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <!--
+                      落点影（透视落印的「高度锚」）：印面标悬在高处时影小而淡，砸到纸面那刻影张开到最大最实，
+                      随即淡掉。影子由小到大 = 距纸面由远及近——没有这层影，光靠缩放看不出「高」。
+                      静止态 opacity=0、ScaleX/Y=1，不占排版、不改设计稿静态观感。
+                    -->
+                    <Ellipse x:Name="SealShadow" Width="22" Height="9"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,7,0,0"
+                             Fill="{DynamicResource Brush.Primary}" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="SealShadowScale" ScaleX="1" ScaleY="1"/>
+                        </Ellipse.RenderTransform>
+                    </Ellipse>
+                    <Path x:Name="SealMark" Style="{StaticResource BrandMark}"
+                          Opacity="0.13"
+                          RenderTransformOrigin="0.5,0.5">
+                        <Path.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="SealMarkScale" ScaleX="1" ScaleY="1"/>
+                                <!-- 落印时的轻微手歪：-7° 起、归位到 0°，盖实后不留倾斜（静止态 Angle=0） -->
+                                <RotateTransform x:Name="SealMarkSpin" Angle="0"/>
+                                <TranslateTransform x:Name="SealMarkShift" Y="0"/>
+                            </TransformGroup>
+                        </Path.RenderTransform>
+                    </Path>
+                </Grid>
+
                 <!--
                   FR-026 测量影子（14.2.1 第 1 点）：不可见、不参与命中，只用来 Measure 出「译文所需高度」。
                   刻意**不测真实的只读 TextBox**（Field.ReadOnlyResult）：它的 MaxHeight / 内边距 /
                   滚动条预留宽度都会干扰测量，且测量过程中改它的文本会污染真实 UI（闪烁、选中态丢失）。
-                  放在 ** 高度的译文行内，因此它的 DesiredSize 不会撑高窗口；可用宽度与内边距
-                  由代码在测量前对齐真实结果区（见 QuickWindow.xaml.cs 的 MeasureContentHeightDip）。
+                  字号与行高必须与 ResultBox 逐字一致，否则量出来的高度会比实际排版的矮。
                 -->
                 <TextBlock x:Name="MeasureShadow" Opacity="0" IsHitTestVisible="False" Panel.ZIndex="-1"
                            VerticalAlignment="Top" TextWrapping="Wrap" Text=""
                            FontFamily="{StaticResource Font.App}"
-                           FontSize="{StaticResource FontSize.Content}"/>
+                           FontSize="19" TextBlock.LineHeight="29.5"
+                           TextBlock.LineStackingStrategy="BlockLineHeight"/>
 
-                <!-- 空状态提示（无译文且不在翻译中时显示） -->
-                <TextBlock Text="翻译结果将显示在这里" Style="{StaticResource Text.Hint}"
-                           Foreground="{DynamicResource Brush.TextDisabled}"
-                           VerticalAlignment="Top" Margin="2,2,0,0"
-                           Visibility="{Binding IsResultPlaceholderVisible, Converter={StaticResource BoolToVis}}"/>
+                <!-- 空态（设计稿 .dst-empty）：一枚灰印痕 + 一句动词提示 -->
+                <StackPanel Orientation="Horizontal" Height="56" VerticalAlignment="Top" Margin="18,16,18,0"
+                            Visibility="{Binding IsResultPlaceholderVisible, Converter={StaticResource BoolToVis}}">
+                    <Border Width="6" Height="6" Style="{StaticResource Diamond}"
+                            Background="{DynamicResource Brush.BorderStrong}"
+                            Margin="0,0,9,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="输入文字，按 Enter 落印" FontSize="13" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.TextTertiary}"/>
+                </StackPanel>
+
+                <!-- 载入态（设计稿 .skeleton）：两条骨架 + 一道扫过的光 -->
+                <Border Background="{DynamicResource Brush.Surface}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding IsBusy}" Value="True"/>
+                                        <Condition Binding="{Binding IsComparing}" Value="False"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Grid VerticalAlignment="Top" Margin="18,16,18,18" Height="56">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="46*"/>
+                            <ColumnDefinition Width="26*"/>
+                            <ColumnDefinition Width="28*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="11"/>
+                            <RowDefinition Height="10"/>
+                            <RowDefinition Height="11"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="SkeletonBar1" Grid.Row="0" Grid.ColumnSpan="2" CornerRadius="3"
+                                Background="{DynamicResource Brush.SurfaceSubtle}" ClipToBounds="True">
+                            <Border x:Name="SkeletonShine1" Width="120" HorizontalAlignment="Left"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#00FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#8CFFFFFF" Offset="0.5"/>
+                                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="SkeletonShineShift1" X="-140"/>
+                                </Border.RenderTransform>
+                            </Border>
+                        </Border>
+
+                        <Border x:Name="SkeletonBar2" Grid.Row="2" Grid.Column="0" CornerRadius="3"
+                                Background="{DynamicResource Brush.SurfaceSubtle}" ClipToBounds="True">
+                            <Border x:Name="SkeletonShine2" Width="120" HorizontalAlignment="Left"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#00FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#8CFFFFFF" Offset="0.5"/>
+                                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="SkeletonShineShift2" X="-140"/>
+                                </Border.RenderTransform>
+                            </Border>
+                        </Border>
+                    </Grid>
+                    <Border.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation Storyboard.TargetName="SkeletonShineShift1"
+                                                     Storyboard.TargetProperty="X" From="-140" To="520" Duration="0:0:1.2"/>
+                                    <DoubleAnimation Storyboard.TargetName="SkeletonShineShift2"
+                                                     Storyboard.TargetProperty="X" From="-140" To="520" Duration="0:0:1.2"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Border.Triggers>
+                </Border>
+
+                <!-- 译文正文（设计稿 .dst-text）：19px / 1.55 / 600，只读输入框才选得中单个词 -->
                 <TextBox x:Name="ResultBox" Text="{Binding ResultText, Mode=OneWay}"
                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                         FontSize="{StaticResource FontSize.Content}">
+                         FontSize="19" TextBlock.LineHeight="29.5"
+                         TextBlock.LineStackingStrategy="BlockLineHeight"
+                         FontWeight="{StaticResource Weight.Semibold}" Padding="18,16,18,18">
                     <TextBox.Style>
                         <!-- FR-043：对照视图打开时整块译文让位（多一条 DataTrigger，其余沿用原样式） -->
                         <Style TargetType="TextBox" BasedOn="{StaticResource Field.ReadOnlyResult}">
@@ -448,18 +616,26 @@
                     </TextBox.Style>
                 </TextBox>
 
+                <!-- 副行（设计稿 .dst-sub）：一句人话交代这一句的来路 -->
+                <TextBlock x:Name="ResultSubText" Text="{Binding ResultSubText}" TextWrapping="Wrap"
+                           FontSize="13" TextBlock.LineHeight="22" IsHitTestVisible="False"
+                           TextBlock.LineStackingStrategy="BlockLineHeight"
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           HorizontalAlignment="Stretch" VerticalAlignment="Bottom" Margin="18,0,18,16"
+                           Visibility="{Binding HasResultSubText, Converter={StaticResource BoolToVis}}"/>
+
                 <!-- FR-043：逐段对照视图（原文灰 + 译文，段对堆叠滚动） -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="18,16,18,18"
                               Visibility="{Binding IsAlignView, Converter={StaticResource BoolToVis}}">
-                    <ItemsControl ItemsSource="{Binding AlignPairs}" Margin="2,0,8,0">
+                    <ItemsControl ItemsSource="{Binding AlignPairs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,0,0,10">
                                     <TextBlock Text="{Binding Source}" TextWrapping="Wrap"
-                                               FontSize="{StaticResource FontSize.Small}"
+                                               FontSize="12.5" LineHeight="21"
                                                Foreground="{DynamicResource Brush.TextTertiary}"/>
                                     <TextBlock Text="{Binding Translated}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                               FontSize="{StaticResource FontSize.Content}"/>
+                                               FontSize="13.5" LineHeight="21"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -467,9 +643,9 @@
                 </ScrollViewer>
 
                 <!-- FR-053：影子跟读（逐句竖排，当前句左侧强调条 + 前景提亮） -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="18,16,18,18"
                               Visibility="{Binding IsShadowMode, Converter={StaticResource BoolToVis}}">
-                    <ItemsControl ItemsSource="{Binding ShadowLines}" Margin="2,0,8,0">
+                    <ItemsControl ItemsSource="{Binding ShadowLines}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border BorderThickness="3,0,0,0" BorderBrush="Transparent" Padding="7,2,0,2" Margin="0,0,0,6">
@@ -502,33 +678,40 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <!-- 对比结果被语言/引擎集合变更清空后的提示（13.4.1） -->
-                <TextBlock Text="请重新点击「对比」以获取结果" Style="{StaticResource Text.Hint}"
-                           Foreground="{DynamicResource Brush.TextDisabled}"
-                           VerticalAlignment="Top" Margin="2,2,0,0"
+                <!--
+                  没盖上的那一印（设计稿 .fail）：一枚虚线空心印框 + 一句「这一印没盖上」+
+                  原因 + 两条退路。退路只此一处，印脚那边不再重复挂按钮。
+                -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="18,16,18,18"
+                            Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                    <Rectangle Width="22" Height="22" RadiusX="5" RadiusY="5" StrokeThickness="1.5"
+                               Stroke="{DynamicResource Brush.Error}" StrokeDashArray="3,2.4"
+                               Margin="0,2,12,0" VerticalAlignment="Top"/>
+                    <StackPanel>
+                        <TextBlock Text="这一印没盖上" FontSize="14" FontWeight="{StaticResource Weight.Semibold}"
+                                   Foreground="{DynamicResource Brush.Error}"/>
+                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" Margin="0,4,0,10"
+                                   FontSize="12.5" Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="重试" Style="{StaticResource Button.Outline}" Height="26" Padding="12,0"
+                                    FontSize="12" Command="{Binding TranslateCommand}"/>
+                            <Button Content="{Binding RetryButtonLabel}" Style="{StaticResource Button.Link}"
+                                    Height="26" Padding="12,0" Margin="8,0,0,0" FontSize="12"
+                                    Command="{Binding RetryOtherEngineCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 对比结果被语言 / 引擎集合变更清空后的提示（13.4.1） -->
+                <TextBlock Text="请重新点击「对比」以获取结果" FontSize="12.5"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           VerticalAlignment="Top" Margin="18,16,18,0"
                            Visibility="{Binding IsCompareHintVisible, Converter={StaticResource BoolToVis}}"/>
 
-                <!--
-                  动效签名「译光闪落」（品牌资产，docs/brand-asset-sheet.html）：
-                  译文落定瞬间一道琥珀光痕沿译文区扫过（420ms 减速收尾），
-                  由 QuickWindow.xaml.cs 在 ResultText 到达且无错误时触发；
-                  系统关闭窗口动画时跳过（reduced-motion 降级）。不参与命中测试与布局。
-                -->
-                <Border x:Name="SignatureStreak" Width="64" IsHitTestVisible="False" Opacity="0"
-                        HorizontalAlignment="Left" VerticalAlignment="Stretch"
-                        Background="{DynamicResource Brush.Signature.Streak}" CornerRadius="4"
-                        RenderTransformOrigin="0.5,0.5" Panel.ZIndex="1">
-                    <Border.RenderTransform>
-                        <TransformGroup>
-                            <SkewTransform AngleX="-14" AngleY="0"/>
-                            <TranslateTransform x:Name="SignatureStreakShift" X="-80"/>
-                        </TransformGroup>
-                    </Border.RenderTransform>
-                </Border>
-
-                <!-- 2 栏：横排（等宽分栏） -->
+                <!-- 2 栏：横排等宽分栏，列与列之间只隔 1px 发丝线（容器底色就是那条线） -->
                 <ItemsControl ItemsSource="{Binding CompareItems}"
                               ItemTemplate="{StaticResource EngineResultTemplate}"
+                              Background="{DynamicResource Brush.Border}"
                               Visibility="{Binding IsComparisonHorizontal, Converter={StaticResource BoolToVis}}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -537,7 +720,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemContainerStyle>
                         <Style TargetType="ContentPresenter">
-                            <Setter Property="Margin" Value="0,0,12,0"/>
+                            <Setter Property="Margin" Value="0,0,1,0"/>
                         </Style>
                     </ItemsControl.ItemContainerStyle>
                 </ItemsControl>
@@ -551,7 +734,7 @@
             </Grid>
 
             <!-- ===== 换说法（FR-051）：仅 AI 引擎显示；点已激活的一项 = 取消风格 ===== -->
-            <StackPanel x:Name="StyleRow" Grid.Row="5" Orientation="Horizontal" Margin="2,8,0,0"
+            <StackPanel x:Name="StyleRow" Grid.Row="5" Orientation="Horizontal" Margin="18,8,18,0"
                         Visibility="{Binding SupportsStyle, Converter={StaticResource BoolToVis}}"
                         ToolTip="换说法只改发给 AI 的风格指令；重新译一次，不重复写入历史">
                 <TextBlock Text="换说法" Style="{StaticResource Text.Caption}" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -596,35 +779,151 @@
                 </Button>
             </StackPanel>
 
-            <!-- ============ 进度 / 错误 / 状态 ============ -->
-            <StackPanel x:Name="StatusPanel" Grid.Row="6" Margin="0,10,0,0">
-                <ProgressBar Height="3" Margin="0,0,0,8" IsIndeterminate="True"
-                             Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
+            <!-- ============ 印脚（设计稿 .qw-foot）============
+                 骑缝齿（第一枚朱砂 = 这一句已经盖过章）+ 印文（引擎 · 耗时 · 状态）+ 落印动作。 -->
+            <Grid x:Name="StatusPanel" Grid.Row="6" MinHeight="36" Background="{DynamicResource Brush.Window}">
+                <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0"/>
+                <Grid Margin="18,9,12,9">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- 错误：填充色条 + 图标，与普通提示区分 -->
-                <Border Style="{StaticResource Banner.Error}" Margin="0,0,0,6"
-                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{StaticResource Icon.Error}" FontFamily="{StaticResource Font.Icon}"
-                                   FontSize="12" Foreground="{DynamicResource Brush.Error}"
-                                   VerticalAlignment="Top" Margin="0,1,6,0"/>
-                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
-                                   FontSize="{StaticResource FontSize.Small}"
-                                   Foreground="{DynamicResource Brush.Error}"/>
+                    <!-- 齿：第一枚朱砂 = 这一句已经盖过章 -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Border>
+                            <Border.Style>
+                                <Style TargetType="Border" BasedOn="{StaticResource ChiselTick}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasResult}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource Brush.Primary}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <Border Style="{StaticResource ChiselTick}"/>
+                        <Border Style="{StaticResource ChiselTick}" Margin="0"/>
                     </StackPanel>
-                </Border>
 
-                <!-- 普通提示 / 状态 + 术语命中徽标（P0 批 1） -->
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Hint}"
-                               Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"/>
-                    <TextBlock Text="{Binding GlossaryNote}" Margin="8,0,0,0"
-                               FontSize="{StaticResource FontSize.Caption}"
+                    <!-- 印文：EngineName · Elapsed · 定制印命中 / 已落印（设计稿 .imprint） -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding EngineName}" FontFamily="{StaticResource Font.Mono}" FontSize="11"
+                                   FontWeight="{StaticResource Weight.Medium}"
+                                   Foreground="{DynamicResource Brush.TextPrimary}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="·" Margin="8,0" FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center"
+                                   Visibility="{Binding HasElapsed, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="{Binding ElapsedDisplay}" FontFamily="{StaticResource Font.Mono}" FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" VerticalAlignment="Center"
+                                   Visibility="{Binding HasElapsed, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="{Binding GlossaryNote}" Margin="8,0,0,0" FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextTertiary}" VerticalAlignment="Center"
+                                   ToolTip="{Binding GlossaryTooltip}"
+                                   Visibility="{Binding HasGlossaryNote, Converter={StaticResource BoolToVis}}"/>
+                        <TextBlock Text="已落印" Margin="8,0,0,0" FontFamily="{StaticResource Font.Mono}" FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasGlossaryNote}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- 空态印文：还没落印时先把下一步说清楚 -->
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="11"
                                Foreground="{DynamicResource Brush.TextTertiary}"
-                               ToolTip="{Binding GlossaryTooltip}"
-                               Visibility="{Binding HasGlossaryNote, Converter={StaticResource BoolToVis}}"/>
-                </StackPanel>
-            </StackPanel>
+                               Text="待落印 · Enter 落印 · Ctrl+Enter 互换语言"
+                               Visibility="{Binding IsResultPlaceholderVisible, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- 没盖上时印脚只留一句印文，退路按钮在译文区那边 -->
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource Brush.TextSecondary}" Text="没盖上"
+                               Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- 落印动作（设计稿 .qw-acts）：朗读译文 / 收藏到藏印 / 对比引擎 / 复制 -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconButton}" Width="32" Height="32"
+                                ToolTip="{Binding SpeakToolTip}" IsEnabled="{Binding CanSpeak}"
+                                Command="{Binding SpeakResultCommand}">
+                            <Viewbox Width="16" Height="16">
+                                <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.SpeakWave}"/>
+                            </Viewbox>
+                        </Button>
+                        <!-- FR-015 收藏到藏印：已收藏时转朱砂 -->
+                        <Button Style="{StaticResource IconButton}" Width="32" Height="32"
+                                ToolTip="收藏到藏印（再次点击移除）" Command="{Binding ToggleFavoriteCommand}">
+                            <Viewbox Width="16" Height="16">
+                                <Path Data="{StaticResource Glyph.Star}">
+                                    <Path.Style>
+                                        <Style TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsFavoriteActive}" Value="True">
+                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </Viewbox>
+                        </Button>
+                        <!-- FR-020 结果对比：与工作台同一命令；激活态主色底 -->
+                        <Button Width="32" Height="32" Margin="2,0" ToolTip="{Binding CompareToolTip}"
+                                Command="{Binding ToggleCompareCommand}">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsComparing}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource Brush.PrimaryContainer}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Viewbox Width="16" Height="16">
+                                <Path Data="{StaticResource Glyph.Compare}">
+                                    <Path.Style>
+                                        <Style TargetType="Path" BasedOn="{StaticResource Icon.Line}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsComparing}" Value="True">
+                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.PrimaryText}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </Viewbox>
+                        </Button>
+                        <!-- 复制（设计稿 .btn.btn-line.btn-sm：白印面 + 发丝线描边 + 图标 + 文字）；
+                             复制策略（FR-044）收到右键菜单，不在印脚上多长一个 ⌄。 -->
+                        <Button Style="{StaticResource Button.Outline}" Padding="12,0" Height="26" Margin="6,0,0,0"
+                                FontSize="12" Command="{Binding CopyResultCommand}"
+                                ToolTip="复制译文（右键可改复制原文 / 原文+译文）">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Viewbox Width="16" Height="16" Margin="0,0,8,0">
+                                    <Path Style="{StaticResource Icon.Line}" Data="{StaticResource Glyph.Copy}"/>
+                                </Viewbox>
+                                <TextBlock Text="复制" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="只复制译文" Command="{Binding CopyResultCommand}"/>
+                                    <MenuItem Header="只复制原文" Command="{Binding CopySourceCommand}"/>
+                                    <MenuItem Header="原文 + 译文" Command="{Binding CopyBothCommand}"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </Grid>
     </Border>
 </Window>

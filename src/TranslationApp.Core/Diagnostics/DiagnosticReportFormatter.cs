@@ -19,7 +19,7 @@ public static partial class DiagnosticReportFormatter
         ArgumentNullException.ThrowIfNull(report);
 
         var builder = new StringBuilder();
-        builder.AppendLine("速译诊断报告");
+        builder.AppendLine("译印诊断报告");
         builder.Append("生成时间（UTC）：").AppendLine(report.GeneratedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"));
         builder.Append("应用版本：").AppendLine(report.AppVersion);
         builder.Append("便携模式：").AppendLine(report.PortableMode ? "是" : "否");

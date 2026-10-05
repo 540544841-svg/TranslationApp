@@ -36,6 +36,22 @@ public partial class SettingsViewModel
     [ObservableProperty]
     private bool _portableMode;
 
+    private bool _suppressPortableCallback;
+
+    /// <summary>便携开关是否可用：EXE 目录可写才允许把印谱搬过去（Program Files 不行）。</summary>
+    public bool PortableAvailable => AppPaths.CanWriteBaseDirectory;
+
+    /// <summary>为什么落在这里——把自动推断的结果讲清楚，用户不必做选择题。</summary>
+    public string PortableNote =>
+        !AppPaths.CanWriteBaseDirectory
+            ? "EXE 所在目录不可写，固定写在系统用户目录"
+            : AppPaths.IsPortable
+                ? "印谱写在 EXE 同目录，整个文件夹拷走即可迁移"
+                : "印谱写在系统用户目录；放进 U 盘会自动改为随身";
+
+    /// <summary>刚改过开关、要重启才切过去——只有这时候才在开关旁挂「重启生效」角标。</summary>
+    public bool PortableRestartPending => AppPaths.PortableRestartPending;
+
     [ObservableProperty]
     private string _backupMessage = "";
 
@@ -119,10 +135,10 @@ public partial class SettingsViewModel
     {
         var dialog = new SaveFileDialog
         {
-            Title = "导出速译备份",
-            Filter = "速译备份 (*.zip)|*.zip",
+            Title = "导出译印备份",
+            Filter = "译印备份 (*.zip)|*.zip",
             DefaultExt = ".zip",
-            FileName = $"速译备份-{DateTime.Now:yyyyMMdd-HHmm}.zip",
+            FileName = $"译印备份-{DateTime.Now:yyyyMMdd-HHmm}.zip",
             InitialDirectory = AppPaths.BackupsDirectory,
         };
         if (dialog.ShowDialog() != true) return;
@@ -144,8 +160,8 @@ public partial class SettingsViewModel
     {
         var dialog = new OpenFileDialog
         {
-            Title = "选择速译备份",
-            Filter = "速译备份 (*.zip)|*.zip|所有文件 (*.*)|*.*",
+            Title = "选择译印备份",
+            Filter = "译印备份 (*.zip)|*.zip|所有文件 (*.*)|*.*",
             InitialDirectory = AppPaths.BackupsDirectory,
         };
         if (dialog.ShowDialog() != true) return;
@@ -159,13 +175,13 @@ public partial class SettingsViewModel
 
         var confirm = System.Windows.MessageBox.Show(
             "恢复会替换当前设置、历史与生词本。建议先导出当前数据，是否继续？",
-            "速译 · 恢复备份",
+            "译印 · 恢复备份",
             System.Windows.MessageBoxButton.OKCancel,
             System.Windows.MessageBoxImage.Warning);
         if (confirm != System.Windows.MessageBoxResult.OK) return;
 
         var result = _backup.RestoreFrom(dialog.FileName);
-        BackupMessage = result.IsValid ? $"{result.Message}；重启速译后完整生效" : result.Message;
+        BackupMessage = result.IsValid ? $"{result.Message}；重启译印后完整生效" : result.Message;
     }
 
     [RelayCommand]
@@ -188,17 +204,29 @@ public partial class SettingsViewModel
 
     partial void OnPortableModeChanged(bool value)
     {
+        if (_suppressPortableCallback)
+        {
+            return;
+        }
+
         try
         {
             AppPaths.SetPortable(value);
             BackupMessage = value
-                ? "已启用便携模式；重启后数据改写到 EXE 同目录 data"
-                : "已关闭便携模式；重启后数据回到系统 AppData";
+                ? "已启用便携模式；重启后印谱改写到 EXE 同目录 data"
+                : "已关闭便携模式；重启后印谱回到系统用户目录";
         }
         catch (Exception ex)
         {
-            BackupMessage = $"切换便携模式失败：{ex.Message}";
+            // SetPortable 的消息已经是给用户看的，别再包一层「失败：」把信息盖掉。
+            Log.Warning(ex, "切换便携模式失败");
+            _suppressPortableCallback = true;
+            PortableMode = AppPaths.IsPortable;
+            _suppressPortableCallback = false;
+            BackupMessage = ex.Message;
         }
+
+        OnPropertyChanged(nameof(PortableRestartPending));
     }
 
     private static ReleaseVersion CurrentAppVersion()
@@ -208,4 +236,16 @@ public partial class SettingsViewModel
                       ?? new Version(1, 0, 0, 0);
         return new ReleaseVersion(version.Major, version.Minor, version.Build, Math.Max(0, version.Revision));
     }
+    /// <summary>设置页「版本」行展示的当前版本号（设计稿 §02 版本行）。</summary>
+    public string AppVersionText
+    {
+        get
+        {
+            var v = CurrentAppVersion();
+            return $"v{v.Major}.{v.Minor}.{v.Patch}";
+        }
+    }
+
+    /// <summary>当前数据目录（随便携模式实时变化），供设置页只读展示。</summary>
+    public string DataFolderPath => AppPaths.DataDirectory;
 }

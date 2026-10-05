@@ -64,7 +64,7 @@ public class SettingsStoreTests : IDisposable
         var store = new JsonSettingsStore(FilePath);
         var loaded = store.Load();
 
-        Assert.Equal(1, loaded.SchemaVersion);
+        Assert.Equal(SettingsMigrations.CurrentSchemaVersion, loaded.SchemaVersion);
         Assert.Equal("zh-CN", loaded.TargetLanguage);
     }
 

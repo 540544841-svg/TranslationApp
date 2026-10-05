@@ -43,22 +43,28 @@ public sealed class TtsService : ITtsService, IDisposable
     /// <summary>等一句朗读「开始」的上限：语音冷启动/首次选语音包比后续慢，给 1.5s，超了就不再干等。</summary>
     private const int SpeakStartWaitMs = 1500;
 
-    private readonly SpeechSynthesizer _synthesizer = new();
+    private readonly SpeechSynthesizer? _synthesizer;
     private readonly object _gate = new();
 
     public TtsService()
     {
-        // 不阻塞调用线程：朗读在 SAPI 自己的线程上进行
-        _synthesizer.SetOutputToDefaultAudioDevice();
+        try
+        {
+            _synthesizer = new SpeechSynthesizer();
+            _synthesizer.SetOutputToDefaultAudioDevice();
+        }
+        catch (PlatformNotSupportedException)
+        {
+            _synthesizer = null;
+        }
     }
-
     public int InstalledVoiceCount
     {
         get
         {
             try
             {
-                return _synthesizer.GetInstalledVoices().Count(v => v.Enabled);
+                return (_synthesizer?.GetInstalledVoices() ?? Enumerable.Empty<InstalledVoice>()).Count(v => v.Enabled);
             }
             catch
             {
@@ -73,7 +79,7 @@ public sealed class TtsService : ITtsService, IDisposable
         {
             lock (_gate)
             {
-                return _synthesizer.State == SynthesizerState.Speaking;
+                return _synthesizer?.State == SynthesizerState.Speaking == true;
             }
         }
     }
@@ -86,7 +92,7 @@ public sealed class TtsService : ITtsService, IDisposable
     {
         try
         {
-            var voices = _synthesizer.GetInstalledVoices().Where(v => v.Enabled).ToArray();
+            var voices = (_synthesizer?.GetInstalledVoices() ?? Enumerable.Empty<InstalledVoice>()).Where(v => v.Enabled).ToArray();
             if (voices.Length == 0)
             {
                 return false;
@@ -133,7 +139,7 @@ public sealed class TtsService : ITtsService, IDisposable
         }
 
         await WaitSpeechCycleAsync(
-            () => { lock (_gate) { return _synthesizer.State == SynthesizerState.Speaking; } },
+            () => { lock (_gate) { return _synthesizer?.State == SynthesizerState.Speaking == true; } },
             ms => Task.Delay(ms, cancellationToken),
             () => cancellationToken.IsCancellationRequested,
             SpeakPollMs,
@@ -182,28 +188,28 @@ public sealed class TtsService : ITtsService, IDisposable
     private void SpeakLocked(string text, string languageCode)
     {
         // 再次点击 = 停止当前朗读（FR-016）
-        _synthesizer.SpeakAsyncCancelAll();
+        _synthesizer?.SpeakAsyncCancelAll();
 
         var voice = FindVoice(languageCode);
         if (voice is not null)
         {
-            _synthesizer.SelectVoice(voice);
+            _synthesizer?.SelectVoice(voice);
         }
 
-        _synthesizer.SpeakAsync(text);
+        _synthesizer?.SpeakAsync(text);
     }
 
     public void Stop()
     {
         lock (_gate)
         {
-            _synthesizer.SpeakAsyncCancelAll();
+            _synthesizer?.SpeakAsyncCancelAll();
         }
     }
 
     private string? FindVoice(string languageCode)
     {
-        var voices = _synthesizer.GetInstalledVoices().Where(v => v.Enabled).ToArray();
+        var voices = (_synthesizer?.GetInstalledVoices() ?? Enumerable.Empty<InstalledVoice>()).Where(v => v.Enabled).ToArray();
         var target = Normalize(languageCode);
 
         var exact = voices.FirstOrDefault(v =>
@@ -234,14 +240,16 @@ public sealed class TtsService : ITtsService, IDisposable
         {
             try
             {
-                _synthesizer.SpeakAsyncCancelAll();
+                _synthesizer?.SpeakAsyncCancelAll();
             }
             catch
             {
                 // 忽略
             }
 
-            _synthesizer.Dispose();
+            _synthesizer?.Dispose();
         }
     }
 }
+
+

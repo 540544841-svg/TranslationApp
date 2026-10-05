@@ -16,17 +16,17 @@ public sealed class WindowSizePolicyTests
     /// <summary>1366×768 屏（14.2.3 的示例屏）。</summary>
     private const double WorkArea768 = 768;
 
-    private const double DefaultWidth = WindowSizePolicy.DefaultWidthDip;   // 420
-    private const double DefaultHeight = WindowSizePolicy.DefaultHeightDip; // 320
+    private const double DefaultWidth = WindowSizePolicy.DefaultWidthDip;   // 设计稿 472 + 阴影留白 24
+    private const double DefaultHeight = WindowSizePolicy.DefaultHeightDip; // 设计稿 266 + 阴影留白 24
 
     // ---------------- 宽度：只增不减 + 640 上限（14.2） ----------------
 
     [Fact]
     public void ResolveWidth_短内容保持默认宽度不缩水()
     {
-        // 只增不减：内容只需 120 DIP 时仍用默认宽度 420
-        Assert.Equal(420, WindowSizePolicy.ResolveWidth(DefaultWidth, 120, adaptToContent: true));
-        Assert.Equal(420, WindowSizePolicy.ResolveWidth(DefaultWidth, 0, adaptToContent: true));
+        // 只增不减：内容只需 120 DIP 时仍用默认宽度
+        Assert.Equal(DefaultWidth, WindowSizePolicy.ResolveWidth(DefaultWidth, 120, adaptToContent: true));
+        Assert.Equal(DefaultWidth, WindowSizePolicy.ResolveWidth(DefaultWidth, 0, adaptToContent: true));
     }
 
     [Fact]
@@ -54,14 +54,14 @@ public sealed class WindowSizePolicyTests
     [Fact]
     public void ResolveWidth_测量失败时保持默认宽度()
     {
-        Assert.Equal(420, WindowSizePolicy.ResolveWidth(DefaultWidth, double.NaN, adaptToContent: true));
-        Assert.Equal(420, WindowSizePolicy.ResolveWidth(DefaultWidth, -5, adaptToContent: true));
+        Assert.Equal(DefaultWidth, WindowSizePolicy.ResolveWidth(DefaultWidth, double.NaN, adaptToContent: true));
+        Assert.Equal(DefaultWidth, WindowSizePolicy.ResolveWidth(DefaultWidth, -5, adaptToContent: true));
     }
 
     [Fact]
     public void ResolveWidth_自适应关闭时等于默认宽度()
     {
-        Assert.Equal(420, WindowSizePolicy.ResolveWidth(DefaultWidth, 5000, adaptToContent: false));
+        Assert.Equal(DefaultWidth, WindowSizePolicy.ResolveWidth(DefaultWidth, 5000, adaptToContent: false));
         Assert.Equal(700, WindowSizePolicy.ResolveWidth(700, 100, adaptToContent: false));
     }
 
@@ -152,9 +152,9 @@ public sealed class WindowSizePolicyTests
     [Fact]
     public void ResolveHeight_短内容等于默认高度()
     {
-        // 空输入/短译文：窗口高度就是默认高度 320（不再是最小高度 240 起算）
-        Assert.Equal(320, WindowSizePolicy.ResolveHeight(DefaultHeight, 120, DefaultHeight, true, WorkArea1080));
-        Assert.Equal(320, WindowSizePolicy.ResolveHeight(DefaultHeight, 300, DefaultHeight, true, WorkArea1080));
+        // 空输入/短译文：窗口高度就是默认高度（不再是最小高度 240 起算）
+        Assert.Equal(DefaultHeight, WindowSizePolicy.ResolveHeight(DefaultHeight, 120, DefaultHeight, true, WorkArea1080));
+        Assert.Equal(DefaultHeight, WindowSizePolicy.ResolveHeight(DefaultHeight, 200, DefaultHeight, true, WorkArea1080));
     }
 
     [Fact]
@@ -214,14 +214,14 @@ public sealed class WindowSizePolicyTests
     public void ResolveHeight_测量失败时保持当前尺寸(double brokenMeasurement)
     {
         // AC：极端文本也不崩、尺寸保持合理（不缩小、不为 0）
-        Assert.Equal(320, WindowSizePolicy.ResolveHeight(DefaultHeight, brokenMeasurement, DefaultHeight, true, WorkArea1080));
+        Assert.Equal(DefaultHeight, WindowSizePolicy.ResolveHeight(DefaultHeight, brokenMeasurement, DefaultHeight, true, WorkArea1080));
         Assert.Equal(400, WindowSizePolicy.ResolveHeight(DefaultHeight, brokenMeasurement, 400, true, WorkArea1080));
     }
 
     [Fact]
     public void ResolveHeight_自适应关闭时等于默认高度()
     {
-        Assert.Equal(320, WindowSizePolicy.ResolveHeight(DefaultHeight, 5000, 320, false, WorkArea1080));
+        Assert.Equal(DefaultHeight, WindowSizePolicy.ResolveHeight(DefaultHeight, 5000, 320, false, WorkArea1080));
         Assert.Equal(500, WindowSizePolicy.ResolveHeight(500, 100, 500, false, WorkArea1080));
     }
 
@@ -280,8 +280,8 @@ public sealed class WindowSizePolicyTests
     [Fact]
     public void ClampWidthHeight_配置损坏为NaN时回退推荐默认值()
     {
-        Assert.Equal(420, WindowSizePolicy.ClampWidth(double.NaN));
-        Assert.Equal(320, WindowSizePolicy.ClampHeight(double.NaN));
+        Assert.Equal(WindowSizePolicy.DefaultWidthDip, WindowSizePolicy.ClampWidth(double.NaN));
+        Assert.Equal(WindowSizePolicy.DefaultHeightDip, WindowSizePolicy.ClampHeight(double.NaN));
     }
 
     [Fact]
@@ -320,11 +320,12 @@ public sealed class WindowSizePolicyTests
     [Fact]
     public void 默认参数与文档一致()
     {
-        // 14.2 / 14.6：默认 420×320、范围 320~900 与 240~900、自适应加宽上限 640、内容高度上限 640
+        // 14.2 / 14.6：默认 496×290（设计稿卡片 472×266 + 四周 12 阴影留白）、范围 320~900 与 240~900、
+        // 自适应加宽上限 640、内容高度上限 640
         Assert.Equal("auto", WindowSizePolicy.AutoMode);
         Assert.Equal("manual", WindowSizePolicy.ManualMode);
-        Assert.Equal(420, WindowSizePolicy.DefaultWidthDip);
-        Assert.Equal(320, WindowSizePolicy.DefaultHeightDip);
+        Assert.Equal(496, WindowSizePolicy.DefaultWidthDip);
+        Assert.Equal(290, WindowSizePolicy.DefaultHeightDip);
         Assert.Equal(320, WindowSizePolicy.MinWidthDip);
         Assert.Equal(900, WindowSizePolicy.MaxWidthDip);
         Assert.Equal(240, WindowSizePolicy.MinHeightDip);
@@ -339,5 +340,47 @@ public sealed class WindowSizePolicyTests
         // 防御：推荐默认值若被改坏（超出范围），「恢复推荐默认值」会把设置写成非法值
         Assert.InRange(WindowSizePolicy.DefaultWidthDip, WindowSizePolicy.MinWidthDip, WindowSizePolicy.MaxWidthDip);
         Assert.InRange(WindowSizePolicy.DefaultHeightDip, WindowSizePolicy.MinHeightDip, WindowSizePolicy.MaxHeightDip);
+    }
+
+    // ---------------- 防抖合并（14.2.4 时机 3/5：更早的到期时间赢） ----------------
+
+    [Fact]
+    public void MergeDebounceMs_没有挂起时采用本次请求的时长()
+    {
+        Assert.Equal(400, WindowSizePolicy.MergeDebounceMs(0, 400));
+        Assert.Equal(120, WindowSizePolicy.MergeDebounceMs(0, 120));
+    }
+
+    [Fact]
+    public void MergeDebounceMs_已挂起短防抖时长防抖不得把它顶掉()
+    {
+        // 这是本函数存在的理由：译文返回的 120ms 必须活过紧随其后的 StatusText / IsBusy(400ms)
+        Assert.Equal(120, WindowSizePolicy.MergeDebounceMs(120, 400));
+    }
+
+    [Fact]
+    public void MergeDebounceMs_已挂起长防抖时短防抖可提前()
+    {
+        // 反向不阻塞：先 IsBusy(400ms)、后 ResultText(120ms) 时按 120ms 算（越早越准）
+        Assert.Equal(120, WindowSizePolicy.MergeDebounceMs(400, 120));
+        Assert.Equal(200, WindowSizePolicy.MergeDebounceMs(400, 200));
+        Assert.Equal(400, WindowSizePolicy.MergeDebounceMs(400, 400));
+    }
+
+    [Fact]
+    public void MergeDebounceMs_翻译成功收尾整批属性变更合并为短防抖()
+    {
+        // 真实顺序：ResultText(120ms) → StatusText(400ms) → IsBusy=false(400ms)
+        var pending = WindowSizePolicy.MergeDebounceMs(0, 120);
+        pending = WindowSizePolicy.MergeDebounceMs(pending, 400);
+        pending = WindowSizePolicy.MergeDebounceMs(pending, 400);
+        Assert.Equal(120, pending);
+
+        // 开始翻译的顺序：IsBusy=true(400ms) → ErrorText(400ms) → ResultText 清空(120ms) → StatusText(400ms)
+        pending = WindowSizePolicy.MergeDebounceMs(0, 400);
+        pending = WindowSizePolicy.MergeDebounceMs(pending, 400);
+        pending = WindowSizePolicy.MergeDebounceMs(pending, 120);
+        pending = WindowSizePolicy.MergeDebounceMs(pending, 400);
+        Assert.Equal(120, pending);
     }
 }

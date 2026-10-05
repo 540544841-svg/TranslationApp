@@ -47,6 +47,24 @@
     <sys:Double x:Key="Brand.Chisel.TickHeight">6</sys:Double>
     <sys:Double x:Key="Brand.Chisel.TickGap">3</sys:Double>
 
+    <!-- ==================== 印面标 · 品牌记号几何 ====================
+         设计稿 inkseal-ui.html 的 .inkwell / .seal-mark：一枚圆角印面底，里面刻掉两支
+         相对的箭头与中心方菱形（负形）。用 Exclude 做真布尔减法，因此记号在纸面、印面
+         或任何底色上都是透明的，不需要知道背后是什么颜色。
+         viewBox 0 0 64 64，用作 Path.Data 配 Stretch=Uniform 即可任意缩放。 -->
+    <CombinedGeometry x:Key="Brand.Mark.Geometry" GeometryCombineMode="Exclude">
+        <CombinedGeometry.Geometry1>
+            <RectangleGeometry Rect="4,4,56,56" RadiusX="14" RadiusY="14"/>
+        </CombinedGeometry.Geometry1>
+        <CombinedGeometry.Geometry2>
+            <GeometryGroup>
+                <PathGeometry Figures="M28,18 L28,25.5 20,32 28,38.5 28,46 13.5,32 Z"/>
+                <PathGeometry Figures="M36,18 L36,25.5 44,32 36,38.5 36,46 50.5,32 Z"/>
+                <PathGeometry Figures="M32,27.4 L36.6,32 32,36.6 27.4,32 Z"/>
+            </GeometryGroup>
+        </CombinedGeometry.Geometry2>
+    </CombinedGeometry>
+
     <!-- ==================== 印面圆角阶梯（设计稿原值）====================
          设计稿用的是 12 / 8 / 6 / 4，比现有 Tokens.Base.xaml 的 14 / 12 / 10 / 8 / 6 整体更方。
          若要整站套用，对照关系（需人工确认，勿盲改）：

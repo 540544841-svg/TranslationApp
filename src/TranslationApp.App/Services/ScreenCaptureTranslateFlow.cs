@@ -30,6 +30,8 @@ public sealed class ScreenCaptureTranslateFlow
     private readonly PinWindowManager _pins;
     private readonly TranslatorCatalog _catalog;
     private readonly Action<string, string> _balloon;
+    private readonly ISettingsStore _store;
+    private readonly FeedbackSoundService _sounds;
 
     private bool _running;
 
@@ -39,7 +41,9 @@ public sealed class ScreenCaptureTranslateFlow
         QuickWindow quickWindow,
         PinWindowManager pins,
         TranslatorCatalog catalog,
-        Action<string, string> balloon)
+        Action<string, string> balloon,
+        ISettingsStore store,
+        FeedbackSoundService sounds)
     {
         _settings = settings;
         _ocr = ocr;
@@ -47,6 +51,8 @@ public sealed class ScreenCaptureTranslateFlow
         _pins = pins;
         _catalog = catalog;
         _balloon = balloon;
+        _store = store;
+        _sounds = sounds;
     }
 
     /// <summary>热键/托盘/小窗按钮统一入口；重复触发时忽略（正在框选或识别中）。</summary>
@@ -65,7 +71,7 @@ public sealed class ScreenCaptureTranslateFlow
         catch (Exception ex)
         {
             Log.Error(ex, "截图翻译流程异常");
-            _balloon("速译 - 截图翻译", "截图翻译失败，请重试（详见日志）");
+            _balloon("截图翻译", "截图翻译失败，请重试（详见日志）");
         }
         finally
         {
@@ -79,13 +85,13 @@ public sealed class ScreenCaptureTranslateFlow
         if (!_ocr.IsAvailable)
         {
             Log.Warning("按下截图热键，但系统未安装 OCR 语言包");
-            _balloon("速译 - 截图翻译不可用", OcrLanguages.MissingPackMessage);
+            _balloon("截图翻译不可用", OcrLanguages.MissingPackMessage);
             return;
         }
 
         if (!TryResolveMonitor(out var monitor, out var monitorInfo))
         {
-            _balloon("速译 - 截图翻译", "无法确定鼠标所在的显示器，截图已取消");
+            _balloon("截图翻译", "无法确定鼠标所在的显示器，截图已取消");
             return;
         }
 
@@ -102,29 +108,44 @@ public sealed class ScreenCaptureTranslateFlow
         var frame = ScreenCapturer.Capture(monitorInfo.RcMonitor.Left, monitorInfo.RcMonitor.Top, width, height);
         if (frame is null)
         {
-            _balloon("速译 - 截图翻译", "截屏失败，请重试");
+            _balloon("截图翻译", "截屏失败，请重试");
             return;
         }
 
         // 步骤 4~6：遮罩框选（松开即确认；Esc / 右键 / 过小选区 = 取消）
         var overlay = new CaptureOverlayWindow(
             frame.Display, monitorInfo.RcMonitor, _settings.OcrScrimOpacity, _ocr.MaxImageDimension);
+        if (!_settings.CaptureHintShown)
+        {
+            overlay.SetCaptureHint("首次使用：拖动框选文字 → 松开即翻译 · Esc 取消");
+        }
+
         var confirmed = overlay.ShowDialog() == true;
 
         if (!confirmed || overlay.ConfirmedSelection is not { } selection)
         {
             Log.Debug("截图翻译已取消");
             RestoreForeground(previousForeground);
+            if (!_settings.CaptureHintShown)
+            {
+                _settings.CaptureHintShown = true;
+            }
+                _store.Save(_settings);
             return;
         }
 
         // 步骤 7：DIP 选区 → 图像像素矩形（实测比值换算）→ 裁剪 → 超限等比缩小 → 识别
+        if (!_settings.CaptureHintShown)
+        {
+            _settings.CaptureHintShown = true;
+        }
+        _store.Save(_settings);
         var imageRect = CaptureGeometry.DipToImageRect(
             selection, overlay.ScaleX, overlay.ScaleY, frame.Width, frame.Height);
         var cropped = BgraImage.Crop(frame.Bgra, frame.Width, frame.Height, imageRect);
         if (cropped.Length == 0)
         {
-            _balloon("速译 - 截图翻译", "选区无效，截图已取消");
+            _balloon("截图翻译", "选区无效，截图已取消");
             RestoreForeground(previousForeground);
             return;
         }
@@ -167,7 +188,7 @@ public sealed class ScreenCaptureTranslateFlow
 
         if (text is null || recognition is null)
         {
-            _balloon("速译 - 截图翻译", "OCR 识别失败，请重试或检查语言包");
+            _balloon("截图翻译", "OCR 识别失败，请重试或检查语言包");
             return;
         }
 
@@ -215,7 +236,7 @@ public sealed class ScreenCaptureTranslateFlow
             }
             else
             {
-                _balloon("速译 - 截图翻译", emptyNotice);
+                _balloon("截图翻译", emptyNotice);
             }
 
             return;
@@ -235,6 +256,8 @@ public sealed class ScreenCaptureTranslateFlow
             {
                 RestoreForeground(previousForeground);
             }
+
+            _sounds.PlaySuccess();
         }
 
         // 步骤 8（旧链路，text / both）：识别文本进入小窗可编辑输入框，是否自动翻译由 OcrAutoTranslate 决定
@@ -243,6 +266,7 @@ public sealed class ScreenCaptureTranslateFlow
             _quickWindow.ShowForOcrText(text, status.TranslationCode, previousInput, notice);
         }
     }
+
 
     // ==================== pin 链路：布局 → 翻译 → 排版 ====================
 

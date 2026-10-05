@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 <#
 .SYNOPSIS
-    速译一键发布：产出自包含单文件 EXE（需求文档 FR-013 / 阶段 0 发布链路）。
+    译印一键发布：产出自包含单文件 EXE（需求文档 FR-013 / 阶段 0 发布链路）。
 
 .DESCRIPTION
     执行 dotnet publish -r win-x64 --self-contained -p:PublishSingleFile=true，
@@ -26,7 +26,20 @@ if (-not $OutputDir) { $OutputDir = Join-Path $repoRoot "publish" }
 $project = Join-Path $repoRoot "src\TranslationApp.App\TranslationApp.App.csproj"
 $exe = Join-Path $OutputDir "TranslationApp.exe"
 
-Write-Host "== 速译发布：Configuration=$Configuration Runtime=$Runtime ==" -ForegroundColor Cyan
+# 发布前先清场：正在跑的实例会锁住 publish\TranslationApp.exe，新包覆盖不了，用户双击也只能
+# 唤出旧窗口（单实例守卫）。所以发布的第一步就是把实例停掉，保证落盘的是最新包。
+$running = @(Get-Process -Name "TranslationApp" -ErrorAction SilentlyContinue)
+if ($running.Count -gt 0) {
+    Write-Host ("停掉正在运行的实例：{0} 个（PID {1}）" -f $running.Count, ($running.Id -join ', ')) -ForegroundColor Yellow
+    $running | Stop-Process -Force
+    # 等文件句柄真正释放，否则紧接着的 dotnet publish -o 会因为目标被占用而失败。
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Milliseconds 250
+        if (@(Get-Process -Name "TranslationApp" -ErrorAction SilentlyContinue).Count -eq 0) { break }
+    }
+}
+
+Write-Host "== 译印发布：Configuration=$Configuration Runtime=$Runtime ==" -ForegroundColor Cyan
 Write-Host "项目：$project"
 
 dotnet publish $project -c $Configuration -r $Runtime --self-contained `

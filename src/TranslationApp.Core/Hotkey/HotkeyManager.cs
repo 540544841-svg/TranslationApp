@@ -48,7 +48,7 @@ public sealed class HotkeyManager : IDisposable
     private readonly Dictionary<int, HotkeyDefinition> _registered = new();
     private int _nextId = 1;
     private bool _disposed;
-    private bool _suspended;
+    private int _suspendCount;
 
     public HotkeyManager()
     {
@@ -81,7 +81,7 @@ public sealed class HotkeyManager : IDisposable
             return true; // 同名同组合是幂等更新；Windows 会拒绝为同一组合重复分配新 ID。
         }
 
-        if (_suspended)
+        if (_suspendCount > 0)
         {
             // 设置窗口打开时所有全局热键暂时注销。这里先用注册/立即注销探测组合是否可用，
             // 更新的是“待恢复”定义，避免录制 Alt+D 时被应用自己的旧热键抢先吞掉。
@@ -163,7 +163,7 @@ public sealed class HotkeyManager : IDisposable
     {
         if (_idByName.TryGetValue(name, out var id))
         {
-            if (!_suspended)
+            if (_suspendCount == 0)
             {
                 UnregisterHotKey(_hwnd, id);
             }
@@ -180,12 +180,14 @@ public sealed class HotkeyManager : IDisposable
     /// <summary>
     /// 暂停全部全局热键，供设置/引导窗口录制按键时使用。保留当前定义与槽位映射，
     /// 期间仍可通过 TryRegister 校验并更新待恢复的热键。
+    /// 每个窗口持有自己的暂停计数；所有调用者都 Resume 后才恢复注册。
     /// </summary>
     public void SuspendAll()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_suspended)
+        if (_suspendCount > 0)
         {
+            _suspendCount++;
             return;
         }
 
@@ -194,19 +196,23 @@ public sealed class HotkeyManager : IDisposable
             UnregisterHotKey(_hwnd, id);
         }
 
-        _suspended = true;
+        _suspendCount = 1;
     }
 
-    /// <summary>恢复设置窗口期间暂停的全部热键，返回恢复失败的槽位名称。</summary>
+    /// <summary>释放一个暂停计数；最后一个调用者恢复全部热键，返回恢复失败的槽位名称。</summary>
     public IReadOnlyList<string> ResumeAll()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_suspended)
+        if (_suspendCount <= 0)
         {
             return [];
         }
 
-        _suspended = false;
+        _suspendCount--;
+        if (_suspendCount > 0)
+        {
+            return [];
+        }
         var failures = new List<string>();
         foreach (var (id, definition) in _registered.ToArray())
         {

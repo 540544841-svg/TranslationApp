@@ -70,6 +70,96 @@ public static class LlmResponseParser
         }
     }
 
+    /// <summary>
+    /// 解析 Responses API（<c>/responses</c>）的成功响应，返回译文。
+    /// 标准形态：<c>output[]</c> 里第一条 <c>type=message</c> 的 <c>content[]</c> 中第一段 <c>output_text</c> 的 text；
+    /// 兼容部分网关直接给出的顶层 <c>output_text</c>，以及少数网关在 /responses 上仍回 chat 形态的情况。
+    /// </summary>
+    public static string ParseResponses(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            throw new TranslationException(TranslationErrorType.Engine, EngineDetailMessage("返回空响应"));
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new TranslationException(TranslationErrorType.Engine, EngineDetailMessage("响应格式异常"), ex);
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("output", out var output)
+                && output.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in output.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object
+                        || !item.TryGetProperty("content", out var content)
+                        || content.ValueKind != JsonValueKind.Array)
+                    {
+                        continue;
+                    }
+
+                    foreach (var part in content.EnumerateArray())
+                    {
+                        if (part.ValueKind != JsonValueKind.Object
+                            || !part.TryGetProperty("text", out var textElement)
+                            || textElement.ValueKind != JsonValueKind.String)
+                        {
+                            continue;
+                        }
+
+                        // 只收 output_text（reasoning 等其它段落没有 text）
+                        if (part.TryGetProperty("type", out var typeElement)
+                            && typeElement.ValueKind == JsonValueKind.String
+                            && typeElement.GetString() != "output_text")
+                        {
+                            continue;
+                        }
+
+                        var text = textElement.GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(text))
+                        {
+                            return text;
+                        }
+                    }
+                }
+            }
+
+            // 兜底 1：部分兼容网关直接把 output_text 拍在顶层
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("output_text", out var flat)
+                && flat.ValueKind == JsonValueKind.String)
+            {
+                var text = flat.GetString()?.Trim();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    return text;
+                }
+            }
+
+            // 兜底 2：少数网关在 /responses 上仍回 chat 形态
+            try
+            {
+                return Parse(json);
+            }
+            catch (TranslationException)
+            {
+                // 落到下面的统一文案
+            }
+
+            throw new TranslationException(TranslationErrorType.Engine, EngineDetailMessage("响应缺少 output_text"));
+        }
+    }
+
     /// <summary>取错误正文里的 message（取不到返回 null）。</summary>
     public static string? TryReadErrorMessage(string? json)
     {

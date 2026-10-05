@@ -5,12 +5,58 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" ShowActivated="False" Topmost="True"
         ResizeMode="NoResize" Focusable="False"
-        Width="32" Height="32">
-    <!-- P0 批 2 / FR-036：悬停取词浮标。不抢焦点（ShowActivated=False）以免目标应用丢选区 -->
-    <Border CornerRadius="16" Background="{DynamicResource Brush.Primary}"
-            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Cursor="Hand"
-            MouseLeftButtonUp="OnBadgeClick" ToolTip="翻译选中内容">
-        <TextBlock Text="译" Foreground="{DynamicResource Brush.OnPrimary}" FontSize="14" FontWeight="SemiBold"
-                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-    </Border>
+        Width="40" Height="40">
+    <!--
+      FR-036 悬停取词浮标：选中文字后跟着光标浮出的那一枚。
+      它得是一枚印，而不是又一个控件——纸面印面上刻着品牌记号，落下来时带一圈墨晕与回弹。
+      窗口的物理尺寸由 code-behind 写死（40×40），内容用 Viewbox 缩放进窗口，
+      所以高 DPI 屏上印面不会被裁掉；整窗都是点击区，40px 的印标不该再有「点不中」的边缘。
+      不抢焦点（ShowActivated=False）：目标应用必须一直拿着选区。
+    -->
+    <Viewbox Stretch="Fill">
+        <Grid Width="40" Height="40" Background="Transparent" Cursor="Hand"
+              MouseLeftButtonUp="OnBadgeClick"
+              MouseEnter="OnBadgePointerEnter" MouseLeave="OnBadgePointerLeave"
+              MouseLeftButtonDown="OnBadgePointerDown">
+
+            <!-- 墨晕：落印那一刻从印面底下溢出来的一圈朱砂气，扩到两倍就淡没了 -->
+            <Ellipse x:Name="Halo" Width="20" Height="20" Opacity="0"
+                     Fill="{DynamicResource Brush.Primary}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                     RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                    <ScaleTransform x:Name="HaloScale" ScaleX="1" ScaleY="1"/>
+                </Ellipse.RenderTransform>
+            </Ellipse>
+
+            <!-- 印面 32×32：纸面托底，朱砂记号刻在上面（记号本身的负形露出纸色） -->
+            <Grid x:Name="Seal" Width="32" Height="32"
+                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                  RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform x:Name="SealScale" ScaleX="1" ScaleY="1"/>
+                </Grid.RenderTransform>
+
+                <!-- 内层专管指针反馈：入场回弹与悬停/按下各占一层变换，互不打架 -->
+                <Grid x:Name="SealBody" RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="SealPointerScale" ScaleX="1" ScaleY="1"/>
+                    </Grid.RenderTransform>
+
+                    <Border Background="{DynamicResource Brush.Surface}"
+                            CornerRadius="{StaticResource Brand.Radius.Seal}"
+                            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="7" ShadowDepth="1" Direction="270"
+                                              Opacity="0.30" Color="{DynamicResource Color.Shadow}"
+                                              RenderingBias="Quality"/>
+                        </Border.Effect>
+                    </Border>
+
+                    <Path Style="{StaticResource BrandMark}" Width="30" Height="30"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Viewbox>
 </Window>

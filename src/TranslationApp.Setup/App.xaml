@@ -1,0 +1,22 @@
+<Application x:Class="TranslationApp.Setup.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!--
+      安装器（立契）资源合并顺序与主程序一致，直接复用同一批 XAML 文件：
+        [0] 主题色板（纸/墨，按安装时刻定，运行时整本替换）
+        [1] 基础令牌   [2] 品牌令牌   [3] 线性图标集   [4] 控件样式
+      这样「安装窗口」和「装好之后的软件」用的是同一套色、同一套字、同一枚印。
+    -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Tokens.Theme.Paper.xaml"/>
+                <ResourceDictionary Source="Themes/Tokens.Base.xaml"/>
+                <ResourceDictionary Source="Themes/Tokens.Brand.xaml"/>
+                <ResourceDictionary Source="Themes/Icons.Line.xaml"/>
+                <ResourceDictionary Source="Themes/Controls.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

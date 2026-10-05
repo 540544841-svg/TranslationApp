@@ -85,5 +85,27 @@
                 </Style>
             </TextBlock.Style>
         </TextBlock>
+
+        <!-- 冲突或占用时只给出可以直接点击采用的低风险备选，不要求用户再次录键。 -->
+        <StackPanel x:Name="SuggestionsPanel" Orientation="Horizontal" Margin="2,6,0,0"
+                    Visibility="Collapsed">
+            <TextBlock Text="可用备选：" VerticalAlignment="Center" Margin="0,0,6,0"
+                       FontSize="{StaticResource FontSize.Caption}"
+                       Foreground="{DynamicResource Brush.TextTertiary}"/>
+            <ItemsControl x:Name="SuggestionsList">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Content="{Binding}" Style="{StaticResource Button.Tonal}"
+                                Height="24" Padding="8,0" Margin="0,0,6,0"
+                                Click="OnSuggestionClick"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
     </StackPanel>
 </UserControl>

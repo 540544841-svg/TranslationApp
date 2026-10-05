@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace TranslationApp.Core.Anki;
 
-/// <summary>一条待推送笔记（正面=原文、背面=译文；标签含「速译」与语言对）。FR-035。</summary>
+/// <summary>一条待推送笔记（正面=原文、背面=译文；标签含「译印」与语言对）。FR-035。</summary>
 public sealed record AnkiNoteRequest(
     string Deck,
     string Model,
@@ -44,12 +44,12 @@ public static class AnkiRequestBuilder
             @params = new { notes = notes.Select(NoteObject).ToArray() },
         });
 
-    /// <summary>把一条生词快照成笔记：标签固定「速译」+ 语言对（语言缺失时只挂「速译」）。</summary>
+    /// <summary>把一条生词快照成笔记：标签固定「译印」+ 语言对（语言缺失时只挂「译印」）。</summary>
     public static AnkiNoteRequest FromVocabulary(
         string deck, string model, string frontField, string backField,
         string source, string translated, string sourceLanguage, string targetLanguage)
     {
-        var tags = new List<string> { "速译" };
+        var tags = new List<string> { "译印" };
         if (!string.IsNullOrWhiteSpace(sourceLanguage) && !string.IsNullOrWhiteSpace(targetLanguage))
         {
             tags.Add($"{sourceLanguage}-{targetLanguage}");

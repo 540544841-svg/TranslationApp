@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 与主程序同一代 TFM 家族；安装器只用 WPF + 注册表，不需要 Windows SDK 投影 -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>TranslationApp.Setup</RootNamespace>
+    <AssemblyName>TranslationApp.Setup</AssemblyName>
+    <Version>1.0.0</Version>
+    <AssemblyTitle>译印 INKSEAL · 立契</AssemblyTitle>
+    <Product>译印 INKSEAL</Product>
+    <Description>译印安装程序：印落，字才算数。</Description>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 安装器与主程序共用同一枚印面图标，用户看到的始终是同一个记号 -->
+    <ApplicationIcon>..\TranslationApp.App\Assets\app.ico</ApplicationIcon>
+    <DebugType>embedded</DebugType>
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+    <!-- 载荷（主程序单 EXE）作为嵌入资源随安装器走，安装包只有一个文件 -->
+    <PayloadPath Condition="'$(PayloadPath)' == ''">$(MSBuildThisFileDirectory)..\..\publish\TranslationApp.exe</PayloadPath>
+    <!-- 载荷指纹与版本由 build\make-setup.ps1 在打包时算出并传进来：安装时据此校验载荷未被
+         调包，契书上的版本号也来自真实产物而不是手写常量。开发构建留空即跳过校验。 -->
+    <PayloadSha256 Condition="'$(PayloadSha256)' == ''"></PayloadSha256>
+    <PayloadVersion Condition="'$(PayloadVersion)' == ''"></PayloadVersion>
+    <PayloadBytes Condition="'$(PayloadBytes)' == ''">0</PayloadBytes>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="PayloadSha256" Value="$(PayloadSha256)" />
+    <AssemblyMetadata Include="PayloadVersion" Value="$(PayloadVersion)" />
+    <AssemblyMetadata Include="PayloadBytes" Value="$(PayloadBytes)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 复用主程序的设置模型与序列化：安装器写下的 settings.json 与主程序读的完全同构 -->
+    <ProjectReference Include="..\TranslationApp.Core\TranslationApp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 主题色板 / 基础令牌 / 品牌令牌 / 图标集 / 控件样式：与主程序同一批文件，样式零漂移 -->
+    <Resource Include="..\TranslationApp.App\Themes\Tokens.Theme.Paper.xaml" Link="Themes\Tokens.Theme.Paper.xaml" />
+    <Resource Include="..\TranslationApp.App\Themes\Tokens.Theme.Ink.xaml" Link="Themes\Tokens.Theme.Ink.xaml" />
+    <Resource Include="..\TranslationApp.App\Themes\Tokens.Base.xaml" Link="Themes\Tokens.Base.xaml" />
+    <Resource Include="..\TranslationApp.App\Themes\Tokens.Brand.xaml" Link="Themes\Tokens.Brand.xaml" />
+    <Resource Include="..\TranslationApp.App\Themes\Icons.Line.xaml" Link="Themes\Icons.Line.xaml" />
+    <Resource Include="..\TranslationApp.App\Themes\Controls.xaml" Link="Themes\Controls.xaml" />
+  </ItemGroup>
+
+  <!-- 载荷缺失（未跑过发布）时不报错：装出来的安装器会明确告诉用户「包里没有主程序」，
+       而不是让 dotnet build / dotnet test 因为一个尚未生成的发布产物而失败。 -->
+  <ItemGroup Condition="Exists('$(PayloadPath)')">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="TranslationApp.Setup.Payload.exe" />
+  </ItemGroup>
+
+</Project>

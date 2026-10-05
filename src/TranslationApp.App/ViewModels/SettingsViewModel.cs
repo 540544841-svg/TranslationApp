@@ -27,8 +27,23 @@ namespace TranslationApp.ViewModels;
 /// <summary>主题下拉项。</summary>
 public sealed record ThemeOption(string Value, string Display);
 
+/// <summary>「按时间」主题里的小时下拉项（如 06:00）。</summary>
+public sealed record HourOption(int Hour, string Display);
+
 /// <summary>代理作用范围下拉项（FR-018）。</summary>
 public sealed record ProxyModeOption(string Value, string Display);
+
+/// <summary>
+/// 历史页的一行：会话组标题，或一条记录。
+/// 分组视图原先是「外层 ItemsControl 套内层 ItemsControl」：内层拿不到有限高度，
+/// UI 虚拟化失效，500 条记录要一次性实例化 500 份行模板，这是切到历史页卡顿的主因。
+/// 摊平成一层后由单个 ListBox 渲染，每行只在进入视口时才创建视觉树。
+/// </summary>
+public abstract record HistoryRow;
+
+public sealed record HistoryHeaderRow(int GroupIndex, string Label, string ToggleText) : HistoryRow;
+
+public sealed record HistoryRecordRow(TranslationRecord Record) : HistoryRow;
 
 /// <summary>
 /// 设置窗口 ViewModel（FR-009/014/015/016/017/018/019）：配置即时保存（变更即写盘，无确定按钮）。
@@ -56,9 +71,13 @@ public partial class SettingsViewModel : ObservableObject
     private readonly BackupService _backup;
     private readonly UpdateService _updates;
     private readonly TranslationApp.Services.DoctorService _doctor;
+    private readonly TranslationApp.Services.InPlaceTranslationService _inPlaceTranslations;
     private bool _suppressAutoStartCallback;
     private bool _suppressPasswordCallback;
     private long _historyRefreshVersion;
+    private readonly HashSet<int> _collapsedGroups = [];
+
+    public QuickTranslateViewModel Workbench { get; }
 
     public SettingsViewModel(
         AppSettings settings,
@@ -81,8 +100,11 @@ public partial class SettingsViewModel : ObservableObject
         BackupService backup,
         UpdateService updates,
         TranslationApp.Services.DoctorService doctor,
-        TranslationApp.Core.Dictionary.DictionaryManager? dictionaries = null)
+        TranslationApp.Services.InPlaceTranslationService inPlaceTranslations,
+        TranslationApp.Core.Dictionary.DictionaryManager? dictionaries = null,
+        QuickTranslateViewModel? workbench = null)
     {
+        Workbench = workbench ?? throw new ArgumentNullException(nameof(workbench));
         _settings = settings;
         _store = store;
         _hotkeyManager = hotkeyManager;
@@ -103,9 +125,12 @@ public partial class SettingsViewModel : ObservableObject
         _backup = backup;
         _updates = updates;
         _doctor = doctor;
+        _inPlaceTranslations = inPlaceTranslations;
         _dictionaries = dictionaries;
 
         _showStartBalloon = settings.ShowStartBalloon;
+        _launchRevealEnabled = settings.LaunchRevealEnabled;
+        _feedbackSoundEnabled = settings.FeedbackSoundEnabled;
         _autoStartEnabled = autoStart.IsEnabled;
         _targetLanguage = settings.TargetLanguage;
         _hotkeyInputText = settings.HotkeyInputTranslate;
@@ -119,6 +144,9 @@ public partial class SettingsViewModel : ObservableObject
         _replaceSelectionEnabled = settings.ReplaceSelectionEnabled;
         _replaceWritesHistory = settings.ReplaceWritesHistory;
         _selectedTheme = NormalizeTheme(settings.Theme);
+        _themePaperFromHour = settings.ThemePaperFromHour;
+        _themePaperToHour = settings.ThemePaperToHour;
+        ThemeManager.EffectiveChanged += OnEffectiveThemeChanged;
 
         // 「引擎」页（FR-024）先建卡片，再决定当前引擎是否可用（未配置则回退并提示）
         InitializeEnginePage();
@@ -126,11 +154,11 @@ public partial class SettingsViewModel : ObservableObject
 
         _clipboardMonitorEnabled = settings.ClipboardMonitorEnabled;
         _autoSpeakAfterSelect = settings.AutoSpeakAfterSelect;
-        // P0 批 1：隐私模式 / 阅读清洗 / 术语表
+        // P0 批 1：隐私模式 / 自动整理换行 / 术语表
         _privacyMode = settings.PrivacyMode;
         _cleanClipboardText = settings.CleanClipboardText;
         InitializeGlossaryPage();
-        // P0 批 2：悬停取词 / 术语全局开关 / Anki 直推 / 场景档案
+        // P0 批 2：悬停取词 / 术语全局开关 / Anki 直推 / 场景模式
         _hoverSelectEnabled = settings.HoverSelectEnabled;
         _glossaryEnabled = settings.GlossaryEnabled;
         InitializeAnkiPage();
@@ -153,13 +181,14 @@ public partial class SettingsViewModel : ObservableObject
         InitializeApiPage();
         // P0 批 4：本地 mdx 词典（列表要显示「装了但解析不了」的项，构造时扫一次）
         InitializeDictionariesPage();
+        // 诊断页：先铺出全部检查项（「待检查」），App 启动时那次自动诊断随后把每行改成结论
+        InitializeDoctorPage();
 
         // FR-026「通用 → 小窗尺寸」：默认宽高即设置里的 QuickWindowWidth/Height（见 AppSettings 注释），
         // 开关沿用 QuickWindowSizeMode（auto = 按内容自适应 / manual = 固定用默认宽高）
         _quickWindowAutoSize = !WindowSizePolicy.IsManual(settings.QuickWindowSizeMode);
         _quickWindowDefaultWidth = WindowSizePolicy.ClampWidth(settings.QuickWindowWidth);
         _quickWindowDefaultHeight = WindowSizePolicy.ClampHeight(settings.QuickWindowHeight);
-        UpdateQuickWindowSizeMessage();
 
         // 「高级 → 截图翻译（OCR）」分区（13.5.1）：先建下拉项，再回填设置值
         BuildOcrLanguageOptions();
@@ -190,8 +219,6 @@ public partial class SettingsViewModel : ObservableObject
 
         _ttsAvailable = tts.InstalledVoiceCount > 0;
 
-        _ = RefreshHistoryAsync();
-        RefreshVocabulary();
         if (_clipboardMonitorEnabled)
         {
             _clipboardMonitor.Start();
@@ -204,10 +231,38 @@ public partial class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<ThemeOption> ThemeOptions { get; } =
     [
+        // 放在首位：它是默认档，当前选中项在左边一眼能看见
+        new("auto", "按时间"),
         new("system", "跟随系统"),
-        new("light", "浅色"),
-        new("dark", "深色"),
+        // 品牌语：浅色叫「纸」、深色叫「墨」，一脉相承；具体含义交给行说明交代
+        new("light", "纸"),
+        new("dark", "墨"),
     ];
+
+    // 「纸的时段」两个下拉各给一段候选（起点 0~22、终点 1~23），
+    // 让「起 < 止」天然成立；两端仍会互相顶推，见 OnThemePaper*HourChanged。
+    public IReadOnlyList<HourOption> PaperFromHourOptions { get; } =
+        [.. Enumerable.Range(0, 23).Select(h => new HourOption(h, $"{h:00}:00"))];
+
+    public IReadOnlyList<HourOption> PaperToHourOptions { get; } =
+        [.. Enumerable.Range(1, 23).Select(h => new HourOption(h, $"{h:00}:00"))];
+
+    /// <summary>「纸的时段」只有按时间档才现身（其他档位下这两个小时没有意义）。</summary>
+    public bool IsThemeAuto => SelectedTheme == "auto";
+
+    /// <summary>
+    /// 按时间档的一句话现状：「此刻 02:18 属墨 · 06:00 转纸」。
+    /// 用户最困惑的就是「为什么现在是黑的」，这里直接把他此刻所处的位置和下一个切换点报出来。
+    /// </summary>
+    public string ThemeAutoStatus
+    {
+        get
+        {
+            var (isPaper, flipHour) = ThemeManager.ResolvePaperWindow(
+                ThemePaperFromHour, ThemePaperToHour, DateTime.Now);
+            return $"此刻 {DateTime.Now:HH:mm} 属{(isPaper ? "纸" : "墨")} · {flipHour:00}:00 转{(isPaper ? "墨" : "纸")}";
+        }
+    }
 
     public IReadOnlyList<ProxyModeOption> ProxyModeOptions { get; } =
     [
@@ -218,6 +273,28 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _showStartBalloon;
 
+    /// <summary>启动时播放「启印」落印动画（手动启动；开机自启不播）。</summary>
+    [ObservableProperty]
+    private bool _launchRevealEnabled;
+
+    /// <summary>操作确认音效（默认关）：截图识别等关键动作成功后短提示。</summary>
+    [ObservableProperty]
+    private bool _feedbackSoundEnabled;
+
+    partial void OnFeedbackSoundEnabledChanged(bool value) => Save(s => s.FeedbackSoundEnabled = value);
+
+    /// <summary>默认只展示日常功能，首次启动不再被全部设置项淹没。</summary>
+    [ObservableProperty]
+    private bool _showAdvancedSettings;
+
+    public string AdvancedSettingsToggleText => ShowAdvancedSettings ? "收起高级设置" : "显示高级设置";
+
+    partial void OnShowAdvancedSettingsChanged(bool value) =>
+        OnPropertyChanged(nameof(AdvancedSettingsToggleText));
+
+    [RelayCommand]
+    private void ToggleAdvancedSettings() => ShowAdvancedSettings = !ShowAdvancedSettings;
+
     [ObservableProperty]
     private bool _autoStartEnabled;
 
@@ -225,7 +302,19 @@ public partial class SettingsViewModel : ObservableObject
     private string _targetLanguage;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsThemeAuto))]
+    [NotifyPropertyChangedFor(nameof(ThemeAutoStatus))]
     private string _selectedTheme;
+
+    /// <summary>按时间档的纸时段起点小时（默认 6，设置页可改）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ThemeAutoStatus))]
+    private int _themePaperFromHour;
+
+    /// <summary>按时间档的纸时段终点小时（默认 18，设置页可改）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ThemeAutoStatus))]
+    private int _themePaperToHour;
 
     [ObservableProperty]
     private string _selectedEngine;
@@ -240,7 +329,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _hotkeyCaptureText;
 
-    /// <summary>FR-037（批 2）：场景档案循环切换热键（默认 Alt+P）。</summary>
+    /// <summary>FR-037（批 2）：场景模式循环切换热键（默认 Alt+P）。</summary>
     [ObservableProperty]
     private string _hotkeyProfileText;
 
@@ -262,6 +351,21 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _hotkeyReplaceStatus = "";
+
+    [ObservableProperty]
+    private IReadOnlyList<string> _hotkeyInputSuggestions = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<string> _hotkeySelectSuggestions = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<string> _hotkeyCaptureSuggestions = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<string> _hotkeyProfileSuggestions = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<string> _hotkeyReplaceSuggestions = [];
 
     [ObservableProperty]
     private bool _replaceSelectionEnabled;
@@ -322,7 +426,6 @@ public partial class SettingsViewModel : ObservableObject
             if (changed)
             {
                 Save(s => s.QuickWindowWidth = clamped);
-                UpdateQuickWindowSizeMessage();
             }
         }
     }
@@ -344,43 +447,27 @@ public partial class SettingsViewModel : ObservableObject
             if (changed)
             {
                 Save(s => s.QuickWindowHeight = clamped);
-                UpdateQuickWindowSizeMessage();
             }
         }
     }
 
-    /// <summary>当前尺寸设置的一句话说明。</summary>
-    [ObservableProperty]
-    private string _quickWindowSizeMessage = "";
-
     partial void OnQuickWindowAutoSizeChanged(bool value)
     {
         Save(s => s.QuickWindowSizeMode = value ? WindowSizePolicy.AutoMode : WindowSizePolicy.ManualMode);
-        UpdateQuickWindowSizeMessage();
         Log.Information("小窗尺寸模式已切换为 {Mode}", value ? "按内容自适应" : "固定使用默认宽高");
     }
 
-    /// <summary>「恢复推荐默认值」：宽高重置为 420 × 320（开关状态不变）。</summary>
+    /// <summary>「恢复推荐默认值」：宽高重置为设计稿小窗尺寸（开关状态不变）。</summary>
     [RelayCommand]
     private void RestoreRecommendedDefaultSize()
     {
         QuickWindowDefaultWidth = WindowSizePolicy.DefaultWidthDip;
         QuickWindowDefaultHeight = WindowSizePolicy.DefaultHeightDip;
-        QuickWindowSizeMessage = $"已恢复推荐默认值：{WindowSizePolicy.DefaultWidthDip:0} × {WindowSizePolicy.DefaultHeightDip:0} DIP";
-    }
-
-    private void UpdateQuickWindowSizeMessage()
-    {
-        var width = Math.Round(_quickWindowDefaultWidth);
-        var height = Math.Round(_quickWindowDefaultHeight);
-        QuickWindowSizeMessage = QuickWindowAutoSize
-            ? $"每次呼出都用默认 {width} × {height} DIP 起算：内容多时高度自动增长"
-              + "，宽度按内容最长行加宽、最多加宽到 640（默认宽度本身超过 640 时以默认值为准）；只增不减；"
-              + "拖动边缘只影响本次窗口——想固化就在小窗空白处右键「设为默认尺寸」"
-            : $"固定尺寸：每次呼出都是 {width} × {height} DIP，不看内容；拖动边缘只影响本次窗口";
     }
 
     partial void OnShowStartBalloonChanged(bool value) => Save(s => s.ShowStartBalloon = value);
+
+    partial void OnLaunchRevealEnabledChanged(bool value) => Save(s => s.LaunchRevealEnabled = value);
 
     partial void OnSelectedThemeChanged(string value)
     {
@@ -393,6 +480,45 @@ public partial class SettingsViewModel : ObservableObject
         ThemeManager.Apply(ToAppTheme(value));
     }
 
+    /// <summary>改了纸时段起点：顶推终点保证「起 < 止」，存盘并按新时段重算一次。</summary>
+    partial void OnThemePaperFromHourChanged(int value)
+    {
+        if (value >= ThemePaperToHour)
+        {
+            ThemePaperToHour = value + 1;
+        }
+
+        Save(s => s.ThemePaperFromHour = value);
+        ReapplyAutoTheme();
+    }
+
+    /// <summary>改了纸时段终点：顶推起点保证「起 < 止」，存盘并按新时段重算一次。</summary>
+    partial void OnThemePaperToHourChanged(int value)
+    {
+        if (value <= ThemePaperFromHour)
+        {
+            ThemePaperFromHour = value - 1;
+        }
+
+        Save(s => s.ThemePaperToHour = value);
+        ReapplyAutoTheme();
+    }
+
+    /// <summary>
+    /// 时段或档位变了就立刻重算一次：改完要马上看到纸/墨翻过来，而不是等下一分钟计时器醒来。
+    /// </summary>
+    private void ReapplyAutoTheme()
+    {
+        ThemeManager.ConfigurePaperHours(ThemePaperFromHour, ThemePaperToHour);
+        if (SelectedTheme == "auto")
+        {
+            ThemeManager.Apply(AppTheme.Auto);
+        }
+    }
+
+    /// <summary>到点自动换肤时（ThemeManager 的分钟计时器）刷新行内「此刻」提示。</summary>
+    private void OnEffectiveThemeChanged() => OnPropertyChanged(nameof(ThemeAutoStatus));
+
     partial void OnSelectedEngineChanged(string value)
     {
         if (!string.IsNullOrEmpty(value) && _settings.Engine != value)
@@ -400,6 +526,8 @@ public partial class SettingsViewModel : ObservableObject
             Save(s => s.Engine = value);
             GeneralMessage = "";
             EngineMessage = ""; // 用户已主动切换，回退提示不再适用
+            RefreshCompareEngineTags(); // 未勾选对比引擎时，摘要取的是「当前引擎 + 首个已配置引擎」
+            RefreshCurrentEngineFlags(); // 引擎页的「当前引擎」朱砂标签随之换位
         }
     }
 
@@ -525,6 +653,7 @@ public partial class SettingsViewModel : ObservableObject
             Save(s => s.HotkeyReplaceTranslate = value);
             SetInvalid(slot, false);
             SetStatus(slot, $"{value} 已保存；启用替换后注册");
+            SetSuggestions(slot, []);
             return;
         }
 
@@ -539,6 +668,7 @@ public partial class SettingsViewModel : ObservableObject
                 SetStatus(slot, $"{newDefinition} 与“{LabelOf(other)}”重复；已保留原热键 {oldDefinition}");
                 HotkeyMessage = "功能之间的热键不能重复";
                 SetHotkeyText(slot, oldDefinition.ToString());
+                SetSuggestions(slot, BuildSuggestions(slot, newDefinition));
                 return;
             }
         }
@@ -577,6 +707,7 @@ public partial class SettingsViewModel : ObservableObject
             {
                 SetStatus(other, "");
             }
+            SetSuggestions(slot, []);
 
             HotkeyMessage = "";
             return;
@@ -587,6 +718,7 @@ public partial class SettingsViewModel : ObservableObject
         SetStatus(slot, $"{newDefinition} 已被系统或其他程序占用；原热键 {oldDefinition} 仍可用");
         HotkeyMessage = $"热键 {newDefinition} 注册失败，请换一个组合";
         SetHotkeyText(slot, oldDefinition.ToString());
+        SetSuggestions(slot, BuildSuggestions(slot, newDefinition));
     }
 
     private static string NameOf(HotkeySlot slot) => slot switch
@@ -612,12 +744,30 @@ public partial class SettingsViewModel : ObservableObject
         HotkeySlot.Input => "输入翻译",
         HotkeySlot.Select => "划词翻译",
         HotkeySlot.Capture => "截图翻译",
-        HotkeySlot.Profile => "场景档案切换",
+        HotkeySlot.Profile => "场景模式切换",
         _ => "翻译并替换",
     };
 
     private static IEnumerable<HotkeySlot> OtherSlots(HotkeySlot slot) =>
         Enum.GetValues<HotkeySlot>().Where(other => other != slot);
+
+    private IReadOnlyList<string> BuildSuggestions(HotkeySlot slot, HotkeyDefinition requested)
+    {
+        var appOwned = OtherSlots(slot)
+            .Select(other => HotkeyDefinition.TryParse(CurrentHotkeyText(other), out var definition)
+                ? definition
+                : (HotkeyDefinition?)null)
+            .Where(definition => definition is not null)
+            .Select(definition => definition!)
+            .ToArray();
+
+        return HotkeySuggestionGenerator.Suggest(
+                requested,
+                appOwned,
+                candidate => _hotkeyManager.CanRegister(NameOf(slot), candidate))
+            .Select(definition => definition.ToString())
+            .ToArray();
+    }
 
     private string CurrentHotkeyText(HotkeySlot slot) => slot switch
     {
@@ -703,40 +853,107 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    // ==================== FR-014 历史记录 ====================
-
-    public ObservableCollection<TranslationRecord> HistoryItems { get; } = [];
-
-    /// <summary>按会话分组后的视图行（FR-057）：组标题 + 该组记录 + 折叠状态。</summary>
-    public sealed partial class HistoryGroupRow : ObservableObject
+    private void SetSuggestions(HotkeySlot slot, IReadOnlyList<string> suggestions)
     {
-        public required string Label { get; init; }
-
-        public ObservableCollection<TranslationRecord> Records { get; } = [];
-
-        /// <summary>默认展开：分组的目的是"少滚动"，不是"多点两下才看得到"。</summary>
-        [ObservableProperty]
-        private bool _isExpanded = true;
-
-        public string ToggleText => IsExpanded ? "收起" : "展开";
-
-        public System.Windows.Visibility BodyVisibility =>
-            IsExpanded ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-
-        partial void OnIsExpandedChanged(bool value)
+        switch (slot)
         {
-            OnPropertyChanged(nameof(ToggleText));
-            OnPropertyChanged(nameof(BodyVisibility));
+            case HotkeySlot.Input:
+                HotkeyInputSuggestions = suggestions;
+                break;
+            case HotkeySlot.Select:
+                HotkeySelectSuggestions = suggestions;
+                break;
+            case HotkeySlot.Profile:
+                HotkeyProfileSuggestions = suggestions;
+                break;
+            case HotkeySlot.Replace:
+                HotkeyReplaceSuggestions = suggestions;
+                break;
+            default:
+                HotkeyCaptureSuggestions = suggestions;
+                break;
         }
     }
 
-    public ObservableCollection<HistoryGroupRow> HistoryGroups { get; } = [];
+    // ==================== FR-014 历史记录 ====================
+
+    /// <summary>历史页当前渲染的行序列（平铺时全是记录行；分组时标题行交错记录行）。</summary>
+    [ObservableProperty]
+    private ObservableCollection<HistoryRow> _historyRows = [];
+
+    // ==================== 工作台摘要（设计稿 .wb-strip / .wb-side）====================
+
+    /// <summary>「最近落印」条数：与印谱页的筛选互不影响，工作台永远看最新的几条。</summary>
+    private const int WorkbenchRecentLimit = 4;
+
+    /// <summary>
+    /// 工作台右栏的「最近落印」。「以前从 HistoryRows 里取前三条」，那会把印谱页的选择
+    /// （关键字 / 只看固定 / 引擎筛选）带到工作台上，因此改成独立查询。
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<HistoryRecordRow> _workbenchRecentRows = [];
+
+    /// <summary>
+    /// 工作台「今日印记」条的今日落印数。这是条上唯一跨重启保持真实的数字——
+    /// 历史库只存文本，不存耗时与命中次数，所以条上其余三项在 QuickTranslateViewModel
+    /// 里按本次运行累计（见其 SessionXxx 注释）。
+    /// </summary>
+    [ObservableProperty]
+    private int _todaySealCount;
+
+    /// <summary>当前场景（档案）显示名，供工作台「场景 · 阅读」标签使用。</summary>
+    public string ProfileDisplayName => _profiles.DisplayName;
+
+    /// <summary>工作台条上的场景标签。</summary>
+    public string WorkbenchSceneTag => $"场景 · {ProfileDisplayName}";
+
+    /// <summary>工作台条上的隐私标签。隐私开着时历史是不写的，这件事得写在脸上。</summary>
+    public string WorkbenchPrivacyTag => PrivacyMode ? "隐私模式 已开" : "隐私模式 已关";
+
+    /// <summary>
+    /// 切到工作台时刷新整页摘要：今日落印数、最近落印、引擎行状态、场景名。
+    /// 查询走后台线程——工作台是首页，不能因为几条统计把窗口拖住。
+    /// </summary>
+    public async Task RefreshWorkbenchAsync()
+    {
+        OnPropertyChanged(nameof(ProfileDisplayName));
+        OnPropertyChanged(nameof(WorkbenchSceneTag));
+        OnPropertyChanged(nameof(WorkbenchPrivacyTag));
+        RefreshWorkbenchEngineRows();
+        try
+        {
+            var today = HistoryTimeRanges.StartOf(HistoryTimeRanges.Today);
+            var (count, recent) = await Task.Run(() =>
+            {
+                var todayCount = _history.Search(new HistoryQuery { From = today }).Count;
+                var latest = _history.Search(new HistoryQuery { Limit = WorkbenchRecentLimit })
+                    .Select(record => new HistoryRecordRow(record)).ToArray();
+                return (todayCount, (IReadOnlyList<HistoryRecordRow>)latest);
+            });
+            TodaySealCount = count;
+            WorkbenchRecentRows = recent;
+        }
+        catch (Exception ex)
+        {
+            // 首页不该因为一条统计查询失败就报错：拿不到就保持上一次的值
+            Log.Warning(ex, "刷新工作台摘要失败");
+        }
+    }
+
+
+    /// <summary>列表里的记录条数（ListBox 没有 HasItems，空状态用它判断）。</summary>
+    [ObservableProperty]
+    private int _historyCount;
 
     /// <summary>历史页是否走分组视图（关掉或有搜索词时回到平铺）。</summary>
     [ObservableProperty]
     private bool _historyGroupedView;
 
-    partial void OnHistoryGroupedViewChanged(bool value) => Save(s => s.HistoryGroupedView = value);
+    partial void OnHistoryGroupedViewChanged(bool value)
+    {
+        Save(s => s.HistoryGroupedView = value);
+        _ = RefreshHistoryAsync();
+    }
 
     /// <summary>
     /// 实际生效的分组开关：搜索时强制平铺——跨组命中的结果按相关性排，
@@ -750,58 +967,292 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _historyMessage = "";
 
+    [ObservableProperty]
+    private bool _historyPinnedOnly;
+
+    [ObservableProperty]
+    private string _historyEngineFilter = "";
+
+    [ObservableProperty]
+    private string _historyTargetLanguageFilter = "";
+
+    [ObservableProperty]
+    private string _historyTimeFilter = HistoryTimeRanges.All;
+
+    partial void OnHistoryPinnedOnlyChanged(bool value) => _ = RefreshHistoryAsync();
+
+    partial void OnHistoryEngineFilterChanged(string value) => _ = RefreshHistoryAsync();
+
+    partial void OnHistoryTargetLanguageFilterChanged(string value) => _ = RefreshHistoryAsync();
+
+    partial void OnHistoryTimeFilterChanged(string value) => _ = RefreshHistoryAsync();
+
+    // ==================== 检索行的胶囩文案（设计稿 .tag.line） ====================
+    // 下拉项直接写人话（「全部引擎 / 近 30 天」），空字符串只存在于查询层；
+    // 显示值与查询值分开存，中文不会流进 HistoryQuery。
+    public const string AllEnginesLabel = "全部引擎";
+
+    public const string AllLanguagesLabel = "全部语言";
+
+    [ObservableProperty]
+    private string _historyEngineFilterLabel = AllEnginesLabel;
+
+    [ObservableProperty]
+    private string _historyTargetLanguageFilterLabel = AllLanguagesLabel;
+
+    [ObservableProperty]
+    private string _historyTimeFilterLabel = "全部时间";
+
+    partial void OnHistoryEngineFilterLabelChanged(string value) =>
+        HistoryEngineFilter = EngineRawFor(value);
+
+    partial void OnHistoryTargetLanguageFilterLabelChanged(string value) =>
+        HistoryTargetLanguageFilter = value == AllLanguagesLabel ? "" : value;
+
+    /// <summary>胶囩文案 → 库里的引擎原名（Engine 列存的是目录全名，筛选靠它精确匹配）。</summary>
+    private readonly Dictionary<string, string> _historyEngineRawByLabel = new(StringComparer.Ordinal);
+
+    private string EngineRawFor(string label)
+    {
+        if (label.Length == 0 || label == AllEnginesLabel)
+        {
+            return "";
+        }
+
+        return _historyEngineRawByLabel.TryGetValue(label, out var raw) ? raw : label;
+    }
+
+    /// <summary>原名 → 胶囩文案；两枚引擎撞了短名就退回全名，保证一枚胶囩只对一个引擎。</summary>
+    private string EngineLabelFor(string raw)
+    {
+        if (raw.Length == 0)
+        {
+            return AllEnginesLabel;
+        }
+
+        var label = TranslationRecord.ShortEngineName(raw);
+        if (label != raw && _historyEngineRawByLabel.TryGetValue(label, out var taken) && taken != raw)
+        {
+            return raw;
+        }
+
+        _historyEngineRawByLabel[label] = raw;
+        return label;
+    }
+
+    partial void OnHistoryTimeFilterLabelChanged(string value) =>
+        HistoryTimeFilter = HistoryTimeLabelToValue(value);
+
+    private static string HistoryTimeLabelToValue(string label) => label switch
+    {
+        "今天" => HistoryTimeRanges.Today,
+        "近 7 天" => HistoryTimeRanges.Week,
+        "近 30 天" => HistoryTimeRanges.Month,
+        _ => HistoryTimeRanges.All,
+    };
+
+    /// <summary>时间胶囩的四档（设计稿只画了一枚「近 30 天」，这里补齐其余三档）。</summary>
+    public IReadOnlyList<string> HistoryTimeLabels { get; } = ["全部时间", "今天", "近 7 天", "近 30 天"];
+
+    /// <summary>检索行右端的印数；千位分隔用不受区域设置影响的空格，与设计稿 `4 812 印` 一致。</summary>
+    public string HistoryCountDisplay =>
+        $"{HistoryCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", " ")} 印";
+
+    partial void OnHistoryCountChanged(int value) => OnPropertyChanged(nameof(HistoryCountDisplay));
+
+    public IReadOnlyList<string> HistoryEngineOptions { get; private set; } = [AllEnginesLabel];
+
+    public IReadOnlyList<string> HistoryTargetLanguageOptions { get; private set; } = [AllLanguagesLabel];
+
     partial void OnHistoryKeywordChanged(string value) => _ = RefreshHistoryAsync();
+
+
+    /// <summary>供窗口在首次切到历史页时触发懒加载。</summary>
+    public Task RefreshHistoryOnceAsync() => RefreshHistoryAsync();
+
+    /// <summary>把界面上的三枚胶囊与关键字合成一次查询；刷新与导出共用，不会两边跑偏。</summary>
+    private HistoryQuery BuildHistoryQuery(int limit = 500) => new()
+    {
+        Keyword = HistoryKeyword,
+        Limit = limit,
+        PinnedOnly = HistoryPinnedOnly,
+        Engine = HistoryEngineFilter,
+        TargetLanguage = HistoryTargetLanguageFilter,
+        From = HistoryTimeRanges.StartOf(HistoryTimeFilter),
+    };
 
     [RelayCommand]
     private async Task RefreshHistoryAsync()
     {
+        // 版本号只负责丢弃旧结果；不做同关键字去重，保证懒加载/刷新永远会有一次真实查询。
         var version = ++_historyRefreshVersion;
-        var keyword = HistoryKeyword;
-        var grouped = HistoryGroupedView && string.IsNullOrWhiteSpace(keyword);
-        var records = await Task.Run(() => _history.Search(keyword));
+        var query = BuildHistoryQuery();
+        var keyword = query.Keyword;
+        var grouped = HistoryGroupedView && string.IsNullOrWhiteSpace(keyword)
+            && HistoryEngineFilter.Length == 0
+            && HistoryTargetLanguageFilter.Length == 0
+            && !HistoryPinnedOnly;
 
-        if (version != _historyRefreshVersion)
+        try
         {
-            return; // 输入已继续变化，旧查询结果直接丢弃
-        }
-
-        HistoryItems.Clear();
-        HistoryGroups.Clear();
-        foreach (var record in records)
-        {
-            HistoryItems.Add(record);
-        }
-
-        if (grouped)
-        {
-            foreach (var group in HistoryGrouper.Group(records))
+            // 查询与行序列构建都在后台线程：500 条记录的分组 + 摊平不该占 UI 线程
+            var built = await Task.Run(() => BuildHistoryRows(query, grouped));
+            if (version != _historyRefreshVersion)
             {
-                var row = new HistoryGroupRow { Label = group.Label };
-                foreach (var record in group.Records)
-                {
-                    row.Records.Add(record);
-                }
+                return; // 已有更新的查询，旧结果作废
+            }
 
-                HistoryGroups.Add(row);
+            // 整集合一次性替换：逐条 Clear()+Add() 会触发 N 次 CollectionChanged，
+            // 每次都要丢弃并重建整个列表的视觉子树
+            UpdateHistoryFilterOptions(built.Records);
+            HistoryRows = new ObservableCollection<HistoryRow>(built.Rows);
+            HistoryCount = built.Count;
+
+            HistoryMessage = built.Count == 0
+                ? (string.IsNullOrWhiteSpace(keyword) ? "暂无翻译历史" : "没有匹配的记录")
+                : $"共 {built.Count} 条"
+                  + (grouped ? $" · {built.GroupCount} 个会话" : "")
+                  + (built.Count >= 500 ? "（仅显示最近 500 条）" : "");
+        }
+        catch (Exception ex)
+        {
+            HistoryMessage = "历史加载失败，请点击刷新重试";
+            Log.Warning(ex, "加载翻译历史失败");
+        }
+    }
+
+    /// <summary>从当前历史数据聚合下拉项；不覆盖已选中的有效值，避免每次刷新丢失选择。</summary>
+    private void UpdateHistoryFilterOptions(IReadOnlyList<TranslationRecord> records)
+    {
+        var engines = records.Select(r => r.Engine).Where(e => e.Length > 0).Distinct().Order().ToArray();
+        var languages = records.Select(r => r.TargetLanguage).Where(l => l.Length > 0).Distinct().Order().ToArray();
+        var engineOptions = new List<string> { AllEnginesLabel };
+        _historyEngineRawByLabel.Clear();
+        engineOptions.AddRange(engines.Select(EngineLabelFor));
+        HistoryEngineOptions = engineOptions;
+        var languageOptions = new List<string> { AllLanguagesLabel };
+        languageOptions.AddRange(languages);
+        HistoryTargetLanguageOptions = languageOptions;
+        OnPropertyChanged(nameof(HistoryEngineOptions));
+        OnPropertyChanged(nameof(HistoryTargetLanguageOptions));
+        SyncFilterLabels();
+    }
+
+    /// <summary>
+    /// 让胶囩文案与查询值保持一致：聚合出的选项里已经没了当前选择（例如印谱被清空），
+    /// 就退回「全部」，否则胶囩会显示一个下拉里不存在的值。
+    /// 直接改字段再加通知，避免 value 变更再触发一次刷新。
+    /// </summary>
+    private void SyncFilterLabels()
+    {
+        if (HistoryEngineFilter.Length > 0 && !HistoryEngineOptions.Contains(HistoryEngineFilter))
+        {
+            HistoryEngineFilter = "";
+        }
+
+        var engine = EngineLabelFor(HistoryEngineFilter);
+        if (HistoryEngineFilterLabel != engine)
+        {
+            HistoryEngineFilterLabel = engine;
+        }
+
+        if (HistoryTargetLanguageFilter.Length > 0
+            && !HistoryTargetLanguageOptions.Contains(HistoryTargetLanguageFilter))
+        {
+            HistoryTargetLanguageFilter = "";
+        }
+
+        var language = HistoryTargetLanguageFilter.Length == 0
+            ? AllLanguagesLabel
+            : HistoryTargetLanguageFilter;
+        if (HistoryTargetLanguageFilterLabel != language)
+        {
+            HistoryTargetLanguageFilterLabel = language;
+        }
+    }
+
+    [RelayCommand]
+    private async Task TogglePinHistoryAsync(TranslationRecord? record)
+    {
+        if (record is null)
+        {
+            return;
+        }
+
+        _history.SetPinned(record.Id, !record.Pinned);
+        await RefreshHistoryAsync();
+    }
+
+    private sealed record BuiltHistory(List<HistoryRow> Rows, IReadOnlyList<TranslationRecord> Records, int Count, int GroupCount);
+
+    private BuiltHistory BuildHistoryRows(HistoryQuery query, bool grouped)
+    {
+        var records = _history.Search(query);
+        var keyword = query.Keyword;
+        var rows = new List<HistoryRow>(records.Count + 16);
+
+        if (!grouped)
+        {
+            foreach (var record in records)
+            {
+                rows.Add(new HistoryRecordRow(record));
+            }
+
+            return new BuiltHistory(rows, records, records.Count, 0);
+        }
+
+        var groups = HistoryGrouper.Group(records);
+        for (var index = 0; index < groups.Count; index++)
+        {
+            rows.Add(new HistoryHeaderRow(index, groups[index].Label, "收起"));
+            foreach (var record in groups[index].Records)
+            {
+                rows.Add(new HistoryRecordRow(record));
             }
         }
 
-        OnPropertyChanged(nameof(IsHistoryGrouped));
-        HistoryMessage = HistoryItems.Count == 0
-            ? (string.IsNullOrWhiteSpace(keyword) ? "暂无翻译历史" : "没有匹配的记录")
-            : $"共 {HistoryItems.Count} 条"
-              + (grouped ? $" · {HistoryGroups.Count} 个会话" : "")
-              + (HistoryItems.Count >= 500 ? "（仅显示最近 500 条）" : "");
+        return new BuiltHistory(rows, records, records.Count, groups.Count);
     }
 
-    /// <summary>折叠/展开一个会话组（FR-057）。</summary>
+    /// <summary>折叠/展开一个会话组（FR-057）：只从行序列里摘掉/放回该组的记录行。</summary>
     [RelayCommand]
-    private void ToggleHistoryGroup(HistoryGroupRow? row)
+    private void ToggleHistoryGroup(HistoryHeaderRow? header)
     {
-        if (row is not null)
+        if (header is null)
         {
-            row.IsExpanded = !row.IsExpanded;
+            return;
         }
+
+        var collapsed = !_collapsedGroups.Contains(header.GroupIndex);
+        if (collapsed)
+        {
+            _collapsedGroups.Add(header.GroupIndex);
+        }
+        else
+        {
+            _collapsedGroups.Remove(header.GroupIndex);
+        }
+
+        var rows = new List<HistoryRow>(HistoryRows.Count);
+        var current = -1;
+        foreach (var row in HistoryRows)
+        {
+            switch (row)
+            {
+                case HistoryHeaderRow h:
+                    current = h.GroupIndex;
+                    rows.Add(h with { ToggleText = h.GroupIndex == header.GroupIndex
+                        ? (collapsed ? "展开" : "收起") : h.ToggleText });
+                    break;
+                case HistoryRecordRow when current == header.GroupIndex && collapsed:
+                    break;
+                default:
+                    rows.Add(row);
+                    break;
+            }
+        }
+
+        HistoryRows = new ObservableCollection<HistoryRow>(rows);
     }
 
     [RelayCommand]
@@ -842,8 +1293,8 @@ public partial class SettingsViewModel : ObservableObject
     {
         // FR-014：一键清空需二次确认
         var confirm = MessageBox.Show(
-            $"确定要清空全部 {HistoryItems.Count} 条翻译历史吗？此操作不可撤销。",
-            "速译 · 清空历史", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            $"确定要清空全部 {HistoryCount} 条翻译历史吗？此操作不可撤销。",
+            "译印 · 清空历史", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.OK)
         {
             return;
@@ -854,9 +1305,106 @@ public partial class SettingsViewModel : ObservableObject
         HistoryMessage = "已清空翻译历史";
     }
 
+    /// <summary>导出当前筛选下的印谱（FR-014）：CSV 给表格看，TSV 直接丢给 Anki。</summary>
+    [RelayCommand]
+    private void ExportHistoryCsv() => ExportHistory("CSV 文件|*.csv", "印谱.csv", anki: false);
+
+    [RelayCommand]
+    private void ExportHistoryTsv() => ExportHistory("TSV 文件（Anki 可导入）|*.tsv", "印谱-anki.tsv", anki: true);
+
+    private void ExportHistory(string filter, string defaultName, bool anki)
+    {
+        // 导出的是「这一次筛选的结果」，不是整库：所见即所得，不会把用户看不到的记录写进去。
+        var records = _history.Search(BuildHistoryQuery(HistoryRepository.MaxRecords));
+        if (records.Count == 0)
+        {
+            HistoryMessage = "当前筛选下没有可导出的记录";
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Filter = filter,
+            FileName = defaultName,
+            OverwritePrompt = true,
+        };
+
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var builder = new System.Text.StringBuilder();
+            if (!anki)
+            {
+                builder.AppendLine("时间,引擎,源语言,目标语言,原文,译文,已校对,禁用复用,已固定");
+            }
+
+            foreach (var record in records)
+            {
+                // Anki 只要正面/背面两列；CSV 带上全部元数据，方便再加工
+                var cells = anki
+                    ? new[] { record.SourceText, record.TranslatedText }
+                    : new[]
+                    {
+                        record.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                        record.Engine,
+                        record.SourceLanguage,
+                        record.TargetLanguage,
+                        record.SourceText,
+                        record.TranslatedText,
+                        record.Reviewed ? "是" : "否",
+                        record.Rejected ? "是" : "否",
+                        record.Pinned ? "是" : "否",
+                    };
+
+                builder.AppendLine(string.Join(anki ? '\t' : ',', cells.Select(c => EscapeCell(c, anki))));
+            }
+
+            // CSV 带 BOM 便于 Excel 正确识别中文；TSV 为 Anki 导入用，不加 BOM
+            var encoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: !anki);
+            File.WriteAllText(dialog.FileName, builder.ToString(), encoding);
+            HistoryMessage = $"已导出 {records.Count} 条到 {Path.GetFileName(dialog.FileName)}";
+
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{dialog.FileName}\"")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "导出印谱失败");
+            HistoryMessage = "导出失败，请检查目标路径是否可写";
+        }
+    }
+
+    /// <summary>单元格转义：记录是任意文本，换行要压平，CSV 里的逗号与引号要括起来。</summary>
+    private static string EscapeCell(string value, bool anki)
+    {
+        var flat = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (anki)
+        {
+            return flat;
+        }
+
+        return flat.Contains(',') || flat.Contains('"')
+            ? $"\"{flat.Replace("\"", "\"\"")}\""
+            : flat;
+    }
+
     // ==================== FR-015 生词本 ====================
 
-    public ObservableCollection<VocabularyEntry> VocabularyItems { get; } = [];
+
+    [ObservableProperty]
+    private ObservableCollection<VocabularyEntry> _vocabularyItems = [];
+
+    /// <summary>「已藏」分组头上的枚数（设计稿 .group-h 的「已藏 · 128 枚」）。</summary>
+    public string VocabularyGroupTitle => $"已藏 · {VocabularyItems.Count} 枚";
+
+    partial void OnVocabularyItemsChanged(ObservableCollection<VocabularyEntry> value) =>
+        OnPropertyChanged(nameof(VocabularyGroupTitle));
 
     [ObservableProperty]
     private string _vocabularyMessage = "";
@@ -864,16 +1412,24 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void RefreshVocabulary()
     {
-        var entries = _vocabulary.List();
-        VocabularyItems.Clear();
-        foreach (var entry in entries)
-        {
-            VocabularyItems.Add(entry);
-        }
-
+        // 整集合一次性替换：避免逐条 Clear()+Add() 触发 N 次视觉树重建
+        VocabularyItems = new ObservableCollection<VocabularyEntry>(_vocabulary.List());
         VocabularyMessage = VocabularyItems.Count == 0
             ? "生词本为空：在翻译小窗点击收藏按钮即可加入"
             : $"共 {VocabularyItems.Count} 个词条";
+    }
+
+    /// <summary>仅供 --render-ui：直接摆几条样例进列表，不落库（否则存词行永远只能拍到空态）。</summary>
+    internal void SeedVocabularyForRender()
+    {
+        var now = DateTimeOffset.Now;
+        VocabularyItems =
+        [
+            new VocabularyEntry(1, now.AddDays(-3), "serendipity", "意外之喜；不期而遇的美好", "en", "zh-CN"),
+            new VocabularyEntry(2, now.AddDays(-5), "断舍离", "Letting go of what does not spark joy", "zh-CN", "en"),
+            new VocabularyEntry(3, now.AddDays(-9), "Zeitgeist", "时代精神；时代思潮", "de", "zh-CN"),
+        ];
+        VocabularyMessage = $"共 {VocabularyItems.Count} 个词条";
     }
 
     [RelayCommand]
@@ -968,14 +1524,14 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    // ==================== P0 批 1：隐私模式 / 阅读清洗 / 引擎看板 ====================
+    // ==================== P0 批 1：隐私模式 / 自动整理换行 / 引擎看板 ====================
 
     /// <summary>隐私模式（spec §2）：本地留痕全关；翻译请求本身仍会发送。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HoverLockedByPrivacy))]
     private bool _privacyMode;
 
-    /// <summary>阅读清洗（spec §3）：划词/剪贴板文本合并硬换行，默认开。</summary>
+    /// <summary>自动整理换行（spec §3）：划词/剪贴板文本合并硬换行，默认开。</summary>
     [ObservableProperty]
     private bool _cleanClipboardText;
 
@@ -1070,9 +1626,10 @@ public partial class SettingsViewModel : ObservableObject
         try
         {
             var guide = new TranslationApp.Windows.FirstRunGuideWindow(
-                _settings, _store, _hotkeyManager, _catalog, _ocr);
+                _settings, _store, _hotkeyManager, _catalog, _ocr, _inPlaceTranslations, _autoStart);
             guide.OpenDoctorRequested += (_, _) => SettingsNavigationRequested?.Invoke(this, "诊断");
             guide.Show();
+            guide.Activate();
         }
         catch (Exception ex)
         {
@@ -1239,6 +1796,74 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     partial void OnCleanClipboardTextChanged(bool value) => Save(s => s.CleanClipboardText = value);
+    partial void OnProfileStatusTextChanged(string value) => RefreshProfileStatusOverride();
+
+    /// <summary>让状态行在受限文件继续使用旧短语时，也能按 ProfileOverrides 的 9 键展示实际改动项。</summary>
+    private void RefreshProfileStatusOverride()
+    {
+        if (!ProfileStatusText.StartsWith("当前：", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var profile = _profiles.AllProfiles().FirstOrDefault(p => p.Name == _profiles.DisplayName);
+        ProfileStatusText = profile is null
+            ? "当前：标准 · 使用当前配置"
+            : $"当前：{_profiles.DisplayName} · {DescribeOverrides(profile.Overrides)}"
+              + (_profiles.IsDeviation() ? "（当前设置已偏离）" : "");
+    }
+
+    /// <summary>把当前模式实际会改的项展开成一句话，避免用户只看到“打包成一档”却不知道它动了什么。</summary>
+    private string DescribeOverrides(ProfileOverrides overrides)
+    {
+        var items = new List<string>();
+        if (overrides.Engine is { } engine)
+        {
+            items.Add($"AI 引擎：{_catalog.Find(engine)?.Name ?? engine}");
+        }
+
+        if (overrides.SourceLanguage is { } source)
+        {
+            items.Add($"原文：{TranslationLanguages.DisplayName(source)}");
+        }
+
+        if (overrides.TargetLanguage is { } target)
+        {
+            items.Add($"译文：{TranslationLanguages.DisplayName(target)}");
+        }
+
+        if (overrides.Style is { } style)
+        {
+            items.Add($"风格：{TranslationStyles.Parse(style).DisplayName()}");
+        }
+
+        if (overrides.CleanClipboardText is { } clean)
+        {
+            items.Add($"自动整理换行：{(clean ? "开" : "关")}");
+        }
+
+        if (overrides.PrivacyMode is { } privacy)
+        {
+            items.Add($"隐私模式：{(privacy ? "开" : "关")}");
+        }
+
+        if (overrides.GlossaryEnabled is { } glossary)
+        {
+            items.Add($"术语表：{(glossary ? "开" : "关")}");
+        }
+
+        if (overrides.ClipboardMonitorEnabled is { } monitor)
+        {
+            items.Add($"剪贴板监听：{(monitor ? "开" : "关")}");
+        }
+
+        if (overrides.HoverSelectEnabled is { } hover)
+        {
+            items.Add($"悬停取词：{(hover ? "开" : "关")}");
+        }
+
+        return items.Count == 0 ? "使用当前配置" : string.Join(" / ", items);
+    }
 
     /// <summary>切到「引擎」页时刷新各卡近 7 天看板。</summary>
     public void RefreshEngineStats()
@@ -1247,6 +1872,8 @@ public partial class SettingsViewModel : ObservableObject
         {
             card.RefreshStats();
         }
+
+        AiProviders?.RefreshStats();
     }
 
     partial void OnAutoSpeakAfterSelectChanged(bool value) => Save(s => s.AutoSpeakAfterSelect = value);
@@ -1437,13 +2064,14 @@ public partial class SettingsViewModel : ObservableObject
 
     internal static AppTheme ToAppTheme(string? value) => value switch
     {
+        "auto" => AppTheme.Auto,
         "light" => AppTheme.Light,
         "dark" => AppTheme.Dark,
         _ => AppTheme.System,
     };
 
     private static string NormalizeTheme(string? value) =>
-        value is "light" or "dark" ? value : "system";
+        value is "light" or "dark" or "auto" ? value : "system";
 
     private static string NormalizeProxyMode(string? value) =>
         string.Equals(value, "all", StringComparison.OrdinalIgnoreCase) ? "all" : "googleOnly";

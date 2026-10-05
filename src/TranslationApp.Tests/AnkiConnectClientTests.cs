@@ -36,7 +36,7 @@ public class AnkiConnectClientTests
     }
 
     private static AnkiNoteRequest Note(string front = "apple") => new(
-        "生词本", "基本", "正面", front, "背面", "苹果", ["速译"]);
+        "生词本", "基本", "正面", front, "背面", "苹果", ["译印"]);
 
     [Fact]
     public async Task Probe_Ok_ReturnsVersion()

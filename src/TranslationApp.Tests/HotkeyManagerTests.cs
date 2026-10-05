@@ -68,6 +68,23 @@ public sealed class HotkeyManagerTests
     }
 
     [Fact]
+    public void SuspendAll_NestedOwners_KeepRecordingUntilEveryOwnerResumes()
+    {
+        using var manager = new HotkeyManager();
+        using var owner = new HotkeyManager();
+        var definition = FindAvailableDefinition(manager, "nested");
+        Assert.True(manager.TryRegister("editable", definition));
+
+        manager.SuspendAll();
+        manager.SuspendAll();
+        Assert.Empty(manager.ResumeAll());
+        Assert.True(owner.TryRegister("external", definition));
+        owner.Unregister("external");
+        Assert.Empty(manager.ResumeAll());
+        Assert.True(manager.IsRegistered("editable"));
+    }
+
+    [Fact]
     public void CanRegister_RejectsCombinationAlreadyOwnedByThisApp()
     {
         using var manager = new HotkeyManager();

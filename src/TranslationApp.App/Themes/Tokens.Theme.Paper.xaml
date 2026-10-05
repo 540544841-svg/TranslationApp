@@ -31,7 +31,8 @@
     <!-- ================= 表面与背景 =================
          纸是底色，印面比纸亮（白），阴刻比纸暗。层次靠「纸 / 印面 / 阴刻」三级，
          而不是靠阴影堆叠——阴影只用来表示浮起，不表示层级。 -->
-    <Color x:Key="Color.Window">#FFF4F3F1</Color>          <!-- [稿] paper 纸 -->
+<Color x:Key="Color.Window">#FFF4F3F1</Color>          <!-- [稿] paper 纸 -->
+<Color x:Key="Color.Surface">#FFFFFFFF</Color>         <!-- [稿] sheet 印面 -->
     <Color x:Key="Color.Sidebar">#FFEAE8E4</Color>         <!-- [稿] carved 阴刻 -->
     <Color x:Key="Color.SurfaceSubtle">#FFEAE8E4</Color>   <!-- [稿] carved 阴刻 -->
     <Color x:Key="Color.SurfaceMuted">#FFE0DEDA</Color>    <!-- [稿] carved-deep 深阴刻 -->
@@ -79,12 +80,14 @@
          纸模式下拇指悬停变朱砂，是品牌色最轻的一次露面。 -->
     <Color x:Key="Color.ScrollThumb">#FFCFCCC7</Color>          <!-- [稿] hairline-strong -->
     <Color x:Key="Color.ScrollThumbHover">#FFC0392B</Color>     <!-- [稿] hover 露出朱砂 -->
+    <Color x:Key="Color.SealGold">#FFB98A1F</Color>          <!-- [稿] 藏印金：已固定的星标 -->
 
     <!-- 阴影：颜色固定，透明度在 Effect 上设置。取自设计稿 shadow 的 rgba(24,18,14,·)，暖黑非纯黑 -->
     <Color x:Key="Color.Shadow">#FF18120E</Color>
 
     <!-- ================= 画刷 ================= -->
-    <SolidColorBrush x:Key="Brush.Window" Color="{StaticResource Color.Window}"/>
+<SolidColorBrush x:Key="Brush.Window" Color="{StaticResource Color.Window}"/>
+<SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}"/>
     <SolidColorBrush x:Key="Brush.Sidebar" Color="{StaticResource Color.Sidebar}"/>
     <SolidColorBrush x:Key="Brush.SurfaceSubtle" Color="{StaticResource Color.SurfaceSubtle}"/>
     <SolidColorBrush x:Key="Brush.SurfaceMuted" Color="{StaticResource Color.SurfaceMuted}"/>
@@ -99,6 +102,16 @@
     <SolidColorBrush x:Key="Brush.TextDisabled" Color="{StaticResource Color.TextDisabled}"/>
 
     <SolidColorBrush x:Key="Brush.Primary" Color="{StaticResource Color.Primary}"/>
+
+    <!-- 骑缝书脊：贯穿内容区的那一条分缝。设计稿里它在首尾各淡出一段,
+         而不是硬切一刀——这条线是「骑缝印」的直角边，断开得太生硬就不像刻的了。
+         渐变按百分比近似那两段淡出（34px / 52px）。 -->
+    <LinearGradientBrush x:Key="Brush.Spine" StartPoint="0.5,0" EndPoint="0.5,1">
+        <GradientStop Color="#00CFCCC7" Offset="0"/>
+        <GradientStop Color="#CFCFCCC7" Offset="0.06"/>
+        <GradientStop Color="#CFCFCCC7" Offset="0.91"/>
+        <GradientStop Color="#00CFCCC7" Offset="1"/>
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="Brush.PrimaryHover" Color="{StaticResource Color.PrimaryHover}"/>
     <SolidColorBrush x:Key="Brush.PrimaryPressed" Color="{StaticResource Color.PrimaryPressed}"/>
     <SolidColorBrush x:Key="Brush.PrimaryContainer" Color="{StaticResource Color.PrimaryContainer}"/>
@@ -117,11 +130,13 @@
 
     <SolidColorBrush x:Key="Brush.ScrollThumb" Color="{StaticResource Color.ScrollThumb}"/>
     <SolidColorBrush x:Key="Brush.ScrollThumbHover" Color="{StaticResource Color.ScrollThumbHover}"/>
+    <SolidColorBrush x:Key="Brush.SealGold" Color="{StaticResource Color.SealGold}"/>
 
-    <!-- ================= 品牌签名动效：落印 =================
-         进度与「译文落定」共用同一支笔：一道朱砂刻痕自左向右展开。
-         中段 50% 实心、两端 25% 渐隐，保证任意时刻截图都有一段清晰可见的印色。
-         时长与缓动见 Tokens.Brand.xaml 的 Brand.Duration.Stamp / Brand.Ease.Stamp。 -->
+    <!-- ================= 译印中的进度笔迹 =================
+         一道朱砂刻痕自左向右扫过（Progress.Indeterminate 专用）。中段 50% 实心、
+         两端 25% 渐隐，保证任意时刻截图都有一段清晰可见的印色。
+         落印签名动效已改为印面标的下沉回弹（keyframes land），见 Tokens.Brand.xaml 的
+         Brand.Duration.Stamp / Brand.Ease.Stamp 与 QuickWindow.PlaySealStamp。 -->
     <LinearGradientBrush x:Key="Brush.Signature.Streak" StartPoint="0,0" EndPoint="1,0">
         <GradientStop Color="#00C0392B" Offset="0"/>
         <GradientStop Color="#FFC0392B" Offset="0.25"/>
@@ -137,10 +152,29 @@
     <Color x:Key="Color.Capture.Selection">#FFE2564A</Color>        <!-- [稿] 选区 / 四角 / 菱形手柄 -->
     <Color x:Key="Color.Capture.LabelBackground">#DB0D1015</Color>  <!-- [稿] rgba(13,16,21,.86) HUD 底板 -->
     <Color x:Key="Color.Capture.LabelText">#FFEDEFF2</Color>        <!-- [稿] HUD 文字 -->
+    <!-- 选区 / 放大镜 / 提示条其余元素（设计稿 05 截图），与上面四色同属固定色 -->
+    <Color x:Key="Color.Capture.Guide">#33FFFFFF</Color>            <!-- [稿] rgba(255,255,255,.20) 贯穿虚线 -->
+    <Color x:Key="Color.Capture.HudBorder">#24FFFFFF</Color>        <!-- [稿] rgba(255,255,255,.14) HUD 描边 -->
+    <Color x:Key="Color.Capture.HintBackground">#B30D1015</Color>   <!-- [稿] rgba(13,16,21,.70) 底部提示底 -->
+    <Color x:Key="Color.Capture.HintText">#9EEDEFF2</Color>         <!-- [稿] rgba(237,239,242,.62) 底部提示文字 -->
+    <Color x:Key="Color.Capture.LoupeBackground">#E60D1015</Color>  <!-- [稿] rgba(13,16,21,.90) 放大镜底 -->
+    <Color x:Key="Color.Capture.LoupeBorder">#29FFFFFF</Color>      <!-- [稿] rgba(255,255,255,.16) 放大镜描边 -->
+    <Color x:Key="Color.Capture.LoupeGrid">#14FFFFFF</Color>        <!-- [稿] rgba(255,255,255,.08) 格子缝 -->
+    <Color x:Key="Color.Capture.LoupeCell">#FF3C424C</Color>        <!-- [稿] 放大镜格子（取样前的底色） -->
+    <Color x:Key="Color.Capture.OnSelection">#FFFFFFFF</Color>      <!-- [稿] 朱砂底上的白字 / 选区内侧白线 -->
     <SolidColorBrush x:Key="Brush.Capture.Scrim" Color="{StaticResource Color.Capture.Scrim}"/>
     <SolidColorBrush x:Key="Brush.Capture.Selection" Color="{StaticResource Color.Capture.Selection}"/>
     <SolidColorBrush x:Key="Brush.Capture.LabelBackground" Color="{StaticResource Color.Capture.LabelBackground}"/>
     <SolidColorBrush x:Key="Brush.Capture.LabelText" Color="{StaticResource Color.Capture.LabelText}"/>
+    <SolidColorBrush x:Key="Brush.Capture.Guide" Color="{StaticResource Color.Capture.Guide}"/>
+    <SolidColorBrush x:Key="Brush.Capture.HudBorder" Color="{StaticResource Color.Capture.HudBorder}"/>
+    <SolidColorBrush x:Key="Brush.Capture.HintBackground" Color="{StaticResource Color.Capture.HintBackground}"/>
+    <SolidColorBrush x:Key="Brush.Capture.HintText" Color="{StaticResource Color.Capture.HintText}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LoupeBackground" Color="{StaticResource Color.Capture.LoupeBackground}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LoupeBorder" Color="{StaticResource Color.Capture.LoupeBorder}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LoupeGrid" Color="{StaticResource Color.Capture.LoupeGrid}"/>
+    <SolidColorBrush x:Key="Brush.Capture.LoupeCell" Color="{StaticResource Color.Capture.LoupeCell}"/>
+    <SolidColorBrush x:Key="Brush.Capture.OnSelection" Color="{StaticResource Color.Capture.OnSelection}"/>
 
     <!-- ================= 内容覆盖层（固定色，不随主题）=================
          颜色由被覆盖的图片本身决定（取样后二选一），故两套主题取值一致，键名同。 -->

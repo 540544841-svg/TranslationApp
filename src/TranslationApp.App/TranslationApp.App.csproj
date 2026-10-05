@@ -16,6 +16,10 @@
     <!-- 0.3.0：OCR 原生引擎进程隔离（同 EXE 子进程 + 命名管道）+ 发布密钥轮换（release-2026-02）。 -->
     <!-- 0.3.1：修复备份恢复 WAL 顺序与单文件发布外置 .lib 导入库问题。 -->
     <Version>0.3.1</Version>
+    <!-- 文件属性 / 任务管理器 / 任务栏提示里显示的名字：译印 INKSEAL（文件名保持 TranslationApp.exe，不动发布链路）。 -->
+    <AssemblyTitle>译印 INKSEAL</AssemblyTitle>
+    <Product>译印 INKSEAL</Product>
+    <Description>印落，字才算数。原文在彼岸，译文在你这岸，中间必须有人落印。</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- PDB 内嵌，保证 publish 产物只有单 EXE -->

@@ -317,12 +317,12 @@ try {
     }
 
     $settingsWindow = Wait-For -TimeoutSeconds 15 -Message 'Settings window did not open.' -Condition {
-        Find-Window $app.Id '速译 · 设置'
+        Find-Window $app.Id '译印 INKSEAL · 设置'
     }
     $steps.Add('settings-window')
 
     $guide = Wait-For -TimeoutSeconds 15 -Message 'First-run guide did not open.' -Condition {
-        Find-Window $app.Id '速译 · 首次使用引导'
+        Find-Window $app.Id '译印 · 首次使用引导'
     }
     Save-ElementImage $guide (Join-Path $OutDir '01-guide-engine.png')
     $steps.Add('guide-step-1')
@@ -330,7 +330,7 @@ try {
     Invoke-Button $guide 'NextButton'
     Start-Sleep -Milliseconds 400
     $guide = Wait-For -TimeoutSeconds 5 -Message 'Guide step 2 did not open.' -Condition {
-        Find-Window $app.Id '速译 · 首次使用引导'
+        Find-Window $app.Id '译印 · 首次使用引导'
     }
     Save-ElementImage $guide (Join-Path $OutDir '02-guide-hotkey.png')
     $steps.Add('guide-step-2')
@@ -363,12 +363,12 @@ try {
 
     $nextButton.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     Wait-For -TimeoutSeconds 8 -Message 'First-run guide did not close.' -Condition {
-        -not (Find-Window $app.Id '速译 · 首次使用引导')
+        -not (Find-Window $app.Id '译印 · 首次使用引导')
     }
     $steps.Add('guide-completed')
 
     $settingsWindow = Wait-For -TimeoutSeconds 8 -Message 'Settings window became unavailable after onboarding.' -Condition {
-        Find-Window $app.Id '速译 · 设置'
+        Find-Window $app.Id '译印 INKSEAL · 设置'
     }
     Select-Tab $settingsWindow '热键'
     Start-Sleep -Milliseconds 400
@@ -389,7 +389,7 @@ try {
     $steps.Add('settings-hotkey-edited-and-reset')
 
     $settingsWindow = Wait-For -TimeoutSeconds 8 -Message 'Settings window became unavailable.' -Condition {
-        Find-Window $app.Id '速译 · 设置'
+        Find-Window $app.Id '译印 INKSEAL · 设置'
     }
     Select-Tab $settingsWindow '诊断'
     Start-Sleep -Milliseconds 500

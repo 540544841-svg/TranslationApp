@@ -8,8 +8,11 @@ public interface IHistoryRepository
     /// <summary>写入一条翻译记录，并自动清理超出上限的旧记录。</summary>
     void Add(string sourceText, string translatedText, string sourceLanguage, string targetLanguage, string engine);
 
-    /// <summary>按关键字模糊搜索（原文或译文），关键字为空时返回最近的记录；按时间倒序。</summary>
-    IReadOnlyList<TranslationRecord> Search(string? keyword, int limit = 500);
+    /// <summary>固定/取消固定一条历史；固定记录不受自动清理影响。</summary>
+    void SetPinned(long id, bool pinned);
+
+    /// <summary>按关键字与过滤条件搜索；关键字为空时返回最近的记录；固定记录优先。</summary>
+    IReadOnlyList<TranslationRecord> Search(HistoryQuery query);
 
     /// <summary>
     /// TM 候选（FR-045 / spec §3）：同目标语言最近 limit 条的轻量投影，供 <see cref="TmMatcher"/> 比对。
@@ -62,13 +65,15 @@ public sealed class HistoryRepository : IHistoryRepository
         public bool Reviewed { get; init; }
         public bool Rejected { get; init; }
         public long? EditedAtMs { get; init; }
+        public bool Pinned { get; init; }
 
         public TranslationRecord ToRecord() => new(
             Id,
             DateTimeOffset.FromUnixTimeMilliseconds(CreatedAtMs),
             SourceText, TranslatedText, SourceLanguage, TargetLanguage, Engine,
             Reviewed, Rejected,
-            EditedAtMs is { } edited ? DateTimeOffset.FromUnixTimeMilliseconds(edited) : null);
+            EditedAtMs is { } edited ? DateTimeOffset.FromUnixTimeMilliseconds(edited) : null,
+            Pinned);
     }
 
     public void Add(string sourceText, string translatedText, string sourceLanguage, string targetLanguage, string engine)
@@ -99,7 +104,9 @@ public sealed class HistoryRepository : IHistoryRepository
             connection.Execute(
                 """
                 DELETE FROM History
-                WHERE Id NOT IN (SELECT Id FROM History ORDER BY Id DESC LIMIT @Max);
+                WHERE Pinned = 0 AND Id NOT IN (
+                    SELECT Id FROM History ORDER BY Id DESC LIMIT @Max
+                );
                 """,
                 new { Max = MaxRecords });
         }
@@ -109,30 +116,66 @@ public sealed class HistoryRepository : IHistoryRepository
         }
     }
 
-    public IReadOnlyList<TranslationRecord> Search(string? keyword, int limit = 500)
+    public void SetPinned(long id, bool pinned)
     {
-        if (!_database.IsAvailable)
+        if (!_database.IsAvailable) return;
+        try
         {
-            return [];
+            using var connection = _database.OpenConnection();
+            connection.Execute("UPDATE History SET Pinned = @Pinned WHERE Id = @Id;",
+                new { Id = id, Pinned = pinned });
         }
+        catch
+        {
+            // 固定失败不影响历史主流程
+        }
+    }
+
+    public IReadOnlyList<TranslationRecord> Search(HistoryQuery query)
+    {
+        if (!_database.IsAvailable) return [];
 
         try
         {
             using var connection = _database.OpenConnection();
-            var trimmed = keyword?.Trim();
+            var keyword = query.Keyword.Trim();
+            var conditions = new List<string>();
+            var parameters = new Dictionary<string, object> { ["@Limit"] = query.Limit };
 
-            var rows = string.IsNullOrEmpty(trimmed)
-                ? connection.Query<Row>(
-                    "SELECT * FROM History ORDER BY Id DESC LIMIT @Limit;",
-                    new { Limit = limit })
-                : connection.Query<Row>(
-                    """
-                    SELECT * FROM History
-                    WHERE SourceText LIKE @Pattern ESCAPE '\' OR TranslatedText LIKE @Pattern ESCAPE '\'
-                    ORDER BY Id DESC LIMIT @Limit;
-                    """,
-                    new { Pattern = $"%{Escape(trimmed)}%", Limit = limit });
+            if (keyword.Length > 0)
+            {
+                conditions.Add("(SourceText LIKE @Pattern ESCAPE '\\' OR TranslatedText LIKE @Pattern ESCAPE '\\')");
+                parameters["@Pattern"] = $"%{Escape(keyword)}%";
+            }
+            if (query.PinnedOnly)
+            {
+                conditions.Add("Pinned = 1");
+            }
+            if (!string.IsNullOrWhiteSpace(query.Engine))
+            {
+                conditions.Add("Engine = @Engine");
+                parameters["@Engine"] = query.Engine;
+            }
+            if (!string.IsNullOrWhiteSpace(query.TargetLanguage))
+            {
+                conditions.Add("TargetLanguage = @TargetLanguage");
+                parameters["@TargetLanguage"] = query.TargetLanguage;
+            }
+            if (query.From is { } from)
+            {
+                conditions.Add("CreatedAtMs >= @FromMs");
+                parameters["@FromMs"] = from.ToUnixTimeMilliseconds();
+            }
+            if (query.To is { } to)
+            {
+                conditions.Add("CreatedAtMs <= @ToMs");
+                parameters["@ToMs"] = to.ToUnixTimeMilliseconds();
+            }
 
+            var where = conditions.Count == 0 ? "" : "WHERE " + string.Join(" AND ", conditions);
+            var rows = connection.Query<Row>(
+                $"""SELECT * FROM History {where} ORDER BY Pinned DESC, Id DESC LIMIT @Limit;""",
+                parameters);
             return rows.Select(r => r.ToRecord()).ToArray();
         }
         catch

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TranslationApp.Core.Settings;
 
 /// <summary>
@@ -6,8 +8,8 @@ namespace TranslationApp.Core.Settings;
 /// </summary>
 public sealed class AppSettings
 {
-    /// <summary>配置结构版本，供后续升级迁移使用。</summary>
-    public int SchemaVersion { get; set; } = 1;
+    /// <summary>配置结构版本，供后续升级迁移使用（迁移逻辑见 <see cref="SettingsMigrations"/>）。</summary>
+    public int SchemaVersion { get; set; } = SettingsMigrations.CurrentSchemaVersion;
 
     /// <summary>源语言（auto = 自动检测）。</summary>
     public string SourceLanguage { get; set; } = "auto";
@@ -30,8 +32,21 @@ public sealed class AppSettings
     /// <summary>启动时显示托盘气泡提示。</summary>
     public bool ShowStartBalloon { get; set; } = true;
 
-    /// <summary>界面主题：system（跟随系统，默认）/ light / dark。</summary>
-    public string Theme { get; set; } = "system";
+    /// <summary>
+    /// 界面主题：auto（按时间，默认）/ system（跟随系统）/ light（纸）/ dark（墨）。
+    /// 默认按时间，新装用户第一次看到的引导页（立契）就自然是「白天纸、晚上墨」，
+    /// 不必先做一次选择。老用户的设置里已经写死 system，不受影响。
+    /// </summary>
+    public string Theme { get; set; } = "auto";
+
+    /// <summary>
+    /// 「按时间」主题里纸时段的起点小时（0~23，默认 6）。与 <see cref="ThemePaperToHour"/> 一起
+    /// 决定何时是纸：落在 [起, 止) 内用纸，其余用墨。写死六点对作息偏晚的人没意义，所以放开。
+    /// </summary>
+    public int ThemePaperFromHour { get; set; } = 6;
+
+    /// <summary>「按时间」主题里纸时段的终点小时（1~23，默认 18），必须大于起点。</summary>
+    public int ThemePaperToHour { get; set; } = 18;
 
     /// <summary>
     /// 翻译小窗**默认宽度**（DIP，含阴影留白的窗口尺寸；范围 320~900）。
@@ -39,13 +54,13 @@ public sealed class AppSettings
     /// （上限 640，默认值本身可越过该上限）；拖拽边缘不写回本字段，只有小窗右键「设为默认尺寸」
     /// 或在设置里手填才会改它（FR-026 / 14.2）。
     /// </summary>
-    public double QuickWindowWidth { get; set; } = 420;
+    public double QuickWindowWidth { get; set; } = Layout.WindowSizePolicy.DefaultWidthDip;
 
     /// <summary>
     /// 翻译小窗**默认高度**（DIP，范围 240~900）。每次呼出以它为基准，自适应只在此基础上按内容增高
     /// （上限为 `min(0.80 × 工作区高, 640)`），内容少时不缩到比它更小（FR-026 / 14.2）。
     /// </summary>
-    public double QuickWindowHeight { get; set; } = 320;
+    public double QuickWindowHeight { get; set; } = Layout.WindowSizePolicy.DefaultHeightDip;
 
     // ==================== FR-026 小窗按内容自适应尺寸 ====================
 
@@ -56,7 +71,7 @@ public sealed class AppSettings
     /// </summary>
     public string QuickWindowSizeMode { get; set; } = Layout.WindowSizePolicy.AutoMode;
 
-    /// <summary>自适应改尺寸时用 140 ms 高度缓动动画；实测卡顿则置 false（FR-026 / 14.2.4）。</summary>
+    /// <summary>自适应改尺寸时宽高同走一条 260 ms 缓动动画（QuinticEase/EaseOut）；实测卡顿则置 false（FR-026 / 14.2.4）。</summary>
     public bool QuickWindowAdaptiveAnimation { get; set; } = true;
 
     // ==================== FR-017 剪贴板监听 ====================
@@ -128,25 +143,39 @@ public sealed class AppSettings
     /// </summary>
     public bool DeepLUseFreeEndpoint { get; set; } = true;
 
-    // ==================== FR-022 AI（LLM，OpenAI 兼容）引擎 ====================
+    // ==================== FR-022 AI（通用接口）引擎 ====================
 
     /// <summary>
-    /// AI 引擎接口地址（13.7 默认值）。落库为「用户填写的原始形态」，
-    /// 请求前按 <see cref="Translation.LlmTranslator.NormalizeEndpoint"/> 归一化到 /chat/completions。
+    /// AI 供应商配置档：可存多档（家里 Ollama / 公司网关 / 云上 API），切「当前档」即换供应商。
+    /// 出厂自带一档 DeepSeek（国内可直连）；密钥均为 DPAPI 密文。
     /// </summary>
-    public string LlmBaseUrl { get; set; } = Translation.LlmTranslator.DefaultBaseUrl;
+    public List<LlmProvider> LlmProviders { get; set; } = [LlmProvider.CreateDefault()];
 
-    /// <summary>AI 引擎 API Key（DPAPI 密文）。</summary>
-    public string LlmApiKeyEncrypted { get; set; } = "";
+    /// <summary>当前供应商档 Id；指向不存在的档时回落到列表第一档。</summary>
+    public string LlmActiveProviderId { get; set; } = LlmProvider.DefaultId;
 
-    /// <summary>模型名（13.7 默认 deepseek-chat）。</summary>
-    public string LlmModel { get; set; } = Translation.LlmTranslator.DefaultModel;
+    /// <summary>当前供应商档；一档都没有时为 null（派生值，不落盘，避免与列表重复）。</summary>
+    [JsonIgnore]
+    public LlmProvider? ActiveLlmProvider =>
+        LlmProviders.FirstOrDefault(p => string.Equals(p.Id, LlmActiveProviderId, StringComparison.Ordinal))
+        ?? LlmProviders.FirstOrDefault();
 
-    /// <summary>自定义系统 Prompt；空 = 使用内置 Prompt（13.3.2）。</summary>
+    /// <summary>自定义系统 Prompt；空 = 使用内置 Prompt（13.3.2）。对所有档生效。</summary>
     public string LlmPrompt { get; set; } = "";
 
-    /// <summary>采样温度（13.7 默认 0.2）。</summary>
+    /// <summary>采样温度（13.7 默认 0.2）。对所有档生效。</summary>
     public double LlmTemperature { get; set; } = Translation.LlmTranslator.DefaultTemperature;
+
+    // ---- 以下三个是 0.3.x 的单档遗留字段：仅供 schema 2 → 3 迁移读取，迁移后即清空，运行期不再使用 ----
+
+    /// <summary>[遗留] 单档时代的接口地址。</summary>
+    public string LlmBaseUrl { get; set; } = Translation.LlmTranslator.DefaultBaseUrl;
+
+    /// <summary>[遗留] 单档时代的 API Key（DPAPI 密文）。</summary>
+    public string LlmApiKeyEncrypted { get; set; } = "";
+
+    /// <summary>[遗留] 单档时代的模型名。</summary>
+    public string LlmModel { get; set; } = Translation.LlmTranslator.DefaultModel;
 
     // ==================== FR-020 引擎结果对比 ====================
 
@@ -424,6 +453,9 @@ public sealed class AppSettings
     /// <summary>首次运行上手卡是否已看过（FR-059）：看过就不再弹，设置页可再看一次。</summary>
     public bool OnboardingShown { get; set; }
 
+    /// <summary>启动时播放「启印」落印动画（手动启动；开机自启不播，点一下或 Esc 可跳过）。</summary>
+    public bool LaunchRevealEnabled { get; set; } = true;
+
     // ==================== 签名更新 / 备份 / 原位替换 ====================
 
     /// <summary>签名更新清单地址；空 = 未配置更新通道。</summary>
@@ -443,4 +475,10 @@ public sealed class AppSettings
 
     /// <summary>粘贴替换后是否写入翻译历史；默认写入，隐私模式下始终不写。</summary>
     public bool ReplaceWritesHistory { get; set; } = true;
+
+    /// <summary>操作确认音效（默认关）：截图识别、原位替换成功后短提示，避免静默失败。</summary>
+    public bool FeedbackSoundEnabled { get; set; }
+
+    /// <summary>截图框选强化提示是否只展示一次；旧用户默认视为已看过。</summary>
+    public bool CaptureHintShown { get; set; } = true;
 }

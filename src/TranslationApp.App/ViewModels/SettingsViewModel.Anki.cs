@@ -45,6 +45,32 @@ public partial class SettingsViewModel
 
     private bool CanTestAnki() => !IsAnkiBusy;
 
+    /// <summary>「牌组 / 笔记模板」行的只读摘要（设计稿 mono 值 + 「选择」按钮）。</summary>
+    public string AnkiDeckRowValue => $"{AnkiDeck} · {AnkiModel}";
+
+    /// <summary>「字段映射」行的只读摘要。</summary>
+    public string AnkiFieldRowValue => $"{AnkiFrontField} ← 原文 · {AnkiBackField} ← 译文";
+
+    /// <summary>「选择 / 编辑」就地展开，收起时不占行高（与翻译页「对比引擎」同一套做法）。</summary>
+    [ObservableProperty]
+    private bool _ankiDeckEditorOpen;
+
+    [ObservableProperty]
+    private bool _ankiFieldEditorOpen;
+
+    /// <summary>连接状态胶囩（设计稿 .tag.ok「已连接」）：与 AnkiStatusText 的长句分工。</summary>
+    [ObservableProperty]
+    private string _ankiConnectionTag = "未测试";
+
+    [ObservableProperty]
+    private bool _ankiConnectionOk;
+
+    [RelayCommand]
+    private void ToggleAnkiDeckEditor() => AnkiDeckEditorOpen = !AnkiDeckEditorOpen;
+
+    [RelayCommand]
+    private void ToggleAnkiFieldEditor() => AnkiFieldEditorOpen = !AnkiFieldEditorOpen;
+
     private void InitializeAnkiPage()
     {
         // 构造期直写 backing field：与主文件各 _xxx = settings.Xxx 同款，避免触发 OnChanged 的重复落盘
@@ -62,13 +88,29 @@ public partial class SettingsViewModel
 
     partial void OnAnkiPushOnFavoriteChanged(bool value) => Save(s => s.AnkiPushOnFavorite = value);
 
-    partial void OnAnkiDeckChanged(string value) => Save(s => s.AnkiDeck = value);
+    partial void OnAnkiDeckChanged(string value)
+    {
+        Save(s => s.AnkiDeck = value);
+        OnPropertyChanged(nameof(AnkiDeckRowValue));
+    }
 
-    partial void OnAnkiModelChanged(string value) => Save(s => s.AnkiModel = value);
+    partial void OnAnkiModelChanged(string value)
+    {
+        Save(s => s.AnkiModel = value);
+        OnPropertyChanged(nameof(AnkiDeckRowValue));
+    }
 
-    partial void OnAnkiFrontFieldChanged(string value) => Save(s => s.AnkiFrontField = value);
+    partial void OnAnkiFrontFieldChanged(string value)
+    {
+        Save(s => s.AnkiFrontField = value);
+        OnPropertyChanged(nameof(AnkiFieldRowValue));
+    }
 
-    partial void OnAnkiBackFieldChanged(string value) => Save(s => s.AnkiBackField = value);
+    partial void OnAnkiBackFieldChanged(string value)
+    {
+        Save(s => s.AnkiBackField = value);
+        OnPropertyChanged(nameof(AnkiFieldRowValue));
+    }
 
     [RelayCommand(CanExecute = nameof(CanTestAnki))]
     private async Task TestAnkiAsync()
@@ -81,6 +123,8 @@ public partial class SettingsViewModel
             AnkiStatusText = probe.Ok
                 ? $"AnkiConnect 已连接（版本 {probe.Version}）"
                 : $"连接失败：{probe.Reason ?? "未知原因"}——需开着桌面版 Anki 且装有 AnkiConnect 插件";
+            AnkiConnectionOk = probe.Ok;
+            AnkiConnectionTag = probe.Ok ? "已连接" : "未连接";
         }
         finally
         {
@@ -116,6 +160,8 @@ public partial class SettingsViewModel
             var result = await _anki.PushNotesAsync(notes);
             AnkiStatusText = $"新增 {result.Added} · 跳过 {result.Skipped}（重复） · 失败 {result.Failed}"
                 + (result.Reason is null ? "" : $"（{result.Reason}）");
+            AnkiConnectionOk = result.Reason is null;
+            AnkiConnectionTag = result.Reason is null ? "已连接" : "未连接";
         }
         finally
         {

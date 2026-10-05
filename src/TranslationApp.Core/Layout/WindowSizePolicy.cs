@@ -39,10 +39,11 @@ public static class WindowSizePolicy
     public const double MaxHeightDip = 900;
 
     /// <summary>推荐默认宽度（DIP）：「恢复推荐默认值」按钮的重置目标。</summary>
-    public const double DefaultWidthDip = 420;
+    /// <remarks>496 = 设计稿小窗卡片宽 472 + 两侧阴影留白 12×2（inkseal-ui.html .qw）。</remarks>
+    public const double DefaultWidthDip = 496;
 
-    /// <summary>推荐默认高度（DIP）。</summary>
-    public const double DefaultHeightDip = 320;
+    /// <summary>推荐默认高度（DIP）：设计稿小窗卡片 266 + 两侧阴影留白 12×2。</summary>
+    public const double DefaultHeightDip = 290;
 
     /// <summary>
     /// 按内容加宽的绝对上限（DIP）。**只约束"自适应加宽"这个动作**：
@@ -70,11 +71,11 @@ public static class WindowSizePolicy
 
     // ==================== 设置值夹取 ====================
 
-    /// <summary>把默认宽度夹取到 <c>[320, 900]</c>；NaN（配置损坏）回退到推荐默认值 420。</summary>
+    /// <summary>把默认宽度夹取到 <c>[320, 900]</c>；NaN（配置损坏）回退到推荐默认值 496。</summary>
     public static double ClampWidth(double widthDip) =>
         double.IsNaN(widthDip) ? DefaultWidthDip : Math.Clamp(widthDip, MinWidthDip, MaxWidthDip);
 
-    /// <summary>把默认高度夹取到 <c>[240, 900]</c>；NaN（配置损坏）回退到推荐默认值 320。</summary>
+    /// <summary>把默认高度夹取到 <c>[240, 900]</c>；NaN（配置损坏）回退到推荐默认值 290。</summary>
     public static double ClampHeight(double heightDip) =>
         double.IsNaN(heightDip) ? DefaultHeightDip : Math.Clamp(heightDip, MinHeightDip, MaxHeightDip);
 
@@ -192,4 +193,16 @@ public static class WindowSizePolicy
     /// </summary>
     public static (double Width, double Height) NormalizeAsDefault(double windowWidthDip, double windowHeightDip) =>
         (Math.Round(ClampWidth(windowWidthDip), 1), Math.Round(ClampHeight(windowHeightDip), 1));
+
+    /// <summary>
+    /// 防抖合并（14.2.4）：同一批属性变更里可能先后请求不同的防抖时长——译文返回走短防抖
+    /// （<c>120 ms</c>），紧随其后的状态行 / 忙碌行变化走长防抖（<c>400 ms</c>）。规则是「更早的到期时间赢」：
+    /// 已经挂起更短的防抖时，后面的长防抖不得把它顶掉，否则「译文一到就生长」的短防抖形同虚设，
+    /// 用户看到的是「译文先出现、窗口停一下再长」。
+    /// </summary>
+    /// <param name="pendingMs">当前已挂起的防抖时长（毫秒）；<c>0</c> 表示没有挂起的请求。</param>
+    /// <param name="requestedMs">本次请求的防抖时长（毫秒）。</param>
+    /// <returns>应当采用的防抖时长（毫秒）。</returns>
+    public static int MergeDebounceMs(int pendingMs, int requestedMs) =>
+        pendingMs > 0 && requestedMs > pendingMs ? pendingMs : requestedMs;
 }

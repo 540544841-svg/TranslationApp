@@ -44,8 +44,8 @@ public sealed class BackupServiceTests : IDisposable
         // 必须在任何查询之前检查：查询会重新打开 SQLite 并合法地创建新的 -wal/-shm。
         Assert.False(File.Exists(_database.DatabasePath + "-wal"));
         Assert.False(File.Exists(_database.DatabasePath + "-shm"));
-        Assert.Single(history.Search(null));
-        Assert.Equal("old source", history.Search(null)[0].SourceText);
+        Assert.Single(history.Search(new HistoryQuery()));
+        Assert.Equal("old source", history.Search(new HistoryQuery())[0].SourceText);
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public sealed class BackupServiceTests : IDisposable
         Assert.True(restored.IsValid, restored.Message);
         Assert.False(File.Exists(_database.DatabasePath + "-wal"));
         Assert.False(File.Exists(_database.DatabasePath + "-shm"));
-        var rows = history.Search(null);
+        var rows = history.Search(new HistoryQuery());
         Assert.Single(rows);
         Assert.Equal("old source", rows[0].SourceText);
     }
@@ -154,3 +154,4 @@ public sealed class BackupServiceTests : IDisposable
         }
     }
 }
+

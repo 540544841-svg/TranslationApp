@@ -1,0 +1,187 @@
+<UserControl x:Class="TranslationApp.Controls.LaunchRevealView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             FontFamily="{StaticResource Font.App}"
+             TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
+             SnapsToDevicePixels="True" UseLayoutRounding="True">
+    <!--
+      首启「启印」——设计稿 inkseal-motion-v2.html 的迎宾落印（首屏主视觉）。
+      不是独立小窗，而是盖在主窗体上的一层：印面自高处带透视砸落 → 震荡波与飞沫 →
+      译印二字上移淡入 → INKSEAL 逐字打进、把「译印」顶到左边 → 下方信条与副题浮起 →
+      最后一刀割开纸，缝里漏下的扇光只照下方那行字 → 整层淡出。
+
+      Stage 是排版标尺，不是裁切框；按 1:1 上屏，不再放大。印面 + 落款 + 信条 + 副题
+      算一组，整组的视觉中心落在台面中心，而台面居中于窗口，所以整组最终居中于页面；
+      上面留出的空间就是印面飞入的那段路。
+    -->
+    <Grid x:Name="Root" Background="{DynamicResource Brush.Window}" Opacity="0">
+        <!-- 1:1 上屏（MaxWidth=520 把倍率封在 1.0）。台面只做排版，不裁切——裁切会在印面
+             飞入时把它切成两半。
+             台面高 600：印面 + 落款 + 信条 + 副题算一组，整组的视觉中心落在台面中心，而台面
+             居中于窗口，所以整组最终居中于页面；上面留出的 300 单位是印面飞入的路。
+             下面各元素的 Margin.Top 是按出图实测的占位定的（印面 240..365、落款 402..451、
+             信条 462..473、副题 491..500；整组 240..500，中心 370 = 台面中心 300 + 70）。
+             改其中一个就要连带改其余的，否则整组会歪。 -->
+        <Viewbox Margin="40" MaxWidth="520" MaxHeight="600" Stretch="Uniform">
+            <Grid x:Name="Stage" Width="520" Height="600">
+
+                <!-- 落印扇光：独立组件。光源是上方那道纸缝，光从缝里漏下、随距离变弱。
+                     z 序在文字之下，插值只走 Opacity 与 ScaleY（设计稿 bleed 关键帧）。 -->
+                <Path x:Name="Bleed" Width="440" Height="150" Opacity="0" Stretch="Fill"
+                      HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,378,0,0"
+                      RenderTransformOrigin=".5,0">
+                    <Path.RenderTransform>
+                        <ScaleTransform x:Name="BleedScale" ScaleY="0.92"/>
+                    </Path.RenderTransform>
+                    <Path.Data>
+                        <PathGeometry Figures="M140.8,0 L299.2,0 L440,150 L0,150 Z"/>
+                    </Path.Data>
+                    <Path.Effect>
+                        <BlurEffect Radius="9"/>
+                    </Path.Effect>
+                    <Path.OpacityMask>
+                        <RadialGradientBrush GradientOrigin="0.5,0" Center="0.5,0"
+                                             RadiusX="1.36" RadiusY="1.0">
+                            <GradientStop Color="#FF000000" Offset="0"/>
+                            <GradientStop Color="#D9000000" Offset="0.18"/>
+                            <GradientStop Color="#8A000000" Offset="0.46"/>
+                            <GradientStop Color="#3D000000" Offset="0.72"/>
+                            <GradientStop Color="#00000000" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Path.OpacityMask>
+                </Path>
+
+                <!-- 纸缝：一刀割开纸的口子。上面一道暖褐切痕，下面一道亮芯，再往下 18px 晕开。
+                     颜色随主题（纸底暖白 / 墨底冷灰）在 code-behind 里赋。 -->
+                <Grid x:Name="Cut" Width="190" Height="24" Opacity="0"
+                      HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,380,0,0"
+                      RenderTransformOrigin=".5,.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="CutScale" ScaleX="0.06"/>
+                    </Grid.RenderTransform>
+                    <Border x:Name="CutEdge" Height="2" VerticalAlignment="Top">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop x:Name="CutEdgeA" Color="#00000000" Offset="0"/>
+                                <GradientStop x:Name="CutEdgeB" Color="#387A4A3A" Offset="0.08"/>
+                                <GradientStop x:Name="CutEdgeC" Color="#387A4A3A" Offset="0.92"/>
+                                <GradientStop x:Name="CutEdgeD" Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border x:Name="CutCore" Height="2" Margin="19,2,19,0" CornerRadius="1"
+                            VerticalAlignment="Top">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                <GradientStop x:Name="CutCoreA" Color="#00000000" Offset="0"/>
+                                <GradientStop x:Name="CutCoreB" Color="#FFFFFDF8" Offset="0.08"/>
+                                <GradientStop x:Name="CutCoreC" Color="#FFFFFDF8" Offset="0.92"/>
+                                <GradientStop x:Name="CutCoreD" Color="#00000000" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <Border x:Name="CutGlow" Height="18" Margin="11,3,11,0" VerticalAlignment="Top">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop x:Name="CutGlowA" Color="#C7FFFDF8" Offset="0"/>
+                                <GradientStop x:Name="CutGlowB" Color="#00FFFDF8" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <Border.Effect>
+                            <BlurEffect Radius="6"/>
+                        </Border.Effect>
+                    </Border>
+                </Grid>
+
+                <!-- 印面：接触阴影 → 墨洇 → 印 → 震荡波 / 飞沫（后两者由 code-behind 生成） -->
+                <Grid x:Name="SealBox" Width="136" Height="136"
+                      HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,162,0,0">
+                    <Ellipse x:Name="SealShadow" Width="112" Height="16" Opacity="0"
+                             HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                             Margin="0,0,0,-2" RenderTransformOrigin=".5,.5">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="ShadowScale"/>
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Effect>
+                            <BlurEffect Radius="6"/>
+                        </Ellipse.Effect>
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop x:Name="ShadowA" Color="#4D18120E" Offset="0"/>
+                                <GradientStop x:Name="ShadowB" Color="#2118120E" Offset="0.46"/>
+                                <GradientStop x:Name="ShadowC" Color="#0018120E" Offset="0.74"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                    </Ellipse>
+
+                    <Ellipse x:Name="Mist" Width="150" Height="150" Opacity="0"
+                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                             RenderTransformOrigin=".5,.5">
+                        <Ellipse.RenderTransform>
+                            <ScaleTransform x:Name="MistScale" ScaleX="0.42" ScaleY="0.42"/>
+                        </Ellipse.RenderTransform>
+                        <Ellipse.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop x:Name="MistA" Color="#4DC0392B" Offset="0"/>
+                                <GradientStop x:Name="MistB" Color="#00C0392B" Offset="0.64"/>
+                            </RadialGradientBrush>
+                        </Ellipse.Fill>
+                    </Ellipse>
+
+                    <!-- translate(外层) → rotate(中层) → scale(内层)：与 CSS
+                         translate() rotate() scale() 的复合顺序一致，不靠 TransformGroup 的顺序推断。 -->
+                    <Grid x:Name="SealMove" Width="136" Height="136"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid.RenderTransform>
+                            <TranslateTransform x:Name="SealTranslate" Y="-96"/>
+                        </Grid.RenderTransform>
+                        <Grid x:Name="SealSpin" Width="136" Height="136"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              RenderTransformOrigin=".5,.5">
+                            <Grid.RenderTransform>
+                                <RotateTransform x:Name="SealRotate" Angle="-12"/>
+                            </Grid.RenderTransform>
+                            <!-- 印面尺寸照设计稿的“可见尺寸”：SVG 是 viewBox 0 0 64 64、方印只占 4..60，
+                                 而 Path 的 Stretch=Uniform 会把几何外框拉满盒子——所以盒子写 136 会画出
+                                 136 的方印，比设计稿的 119 大 37%。这里写 119，还原那块印的大小。 -->
+                            <Path x:Name="Seal" Style="{StaticResource BrandMark}"
+                                  Width="119" Height="119" Opacity="0"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  RenderTransformOrigin=".5,.5">
+                                <Path.RenderTransform>
+                                    <ScaleTransform x:Name="SealScale" ScaleX="2" ScaleY="2"/>
+                                </Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                    </Grid>
+                </Grid>
+
+                <!-- 落款：译印 + INKSEAL（逐字打进并把它顶到左边） -->
+                <StackPanel x:Name="Sign" Orientation="Horizontal"
+                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,322,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="CjkYi" Text="译" FontSize="44" Opacity="0"
+                                   FontWeight="{StaticResource Weight.Semibold}"
+                                   Foreground="{DynamicResource Brush.TextPrimary}"/>
+                        <TextBlock x:Name="CjkYin" Text="印" FontSize="44" Opacity="0"
+                                   FontWeight="{StaticResource Weight.Semibold}"
+                                   Foreground="{DynamicResource Brush.TextPrimary}"/>
+                    </StackPanel>
+                    <Border x:Name="EnBox" Width="0" ClipToBounds="True" VerticalAlignment="Bottom">
+                        <StackPanel x:Name="EnChars" Orientation="Horizontal" Margin="15,0,6,7"/>
+                    </Border>
+                </StackPanel>
+
+                <TextBlock x:Name="Creed" Text="印落，字才算数" FontSize="12" Opacity="0"
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,390,0,0"
+                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+
+                <TextBlock x:Name="Sub" Opacity="0" HorizontalAlignment="Center" VerticalAlignment="Top"
+                           Margin="0,420,0,0" FontSize="10.5"
+                           FontFamily="{StaticResource Font.Mono}"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Text="译文在落纸那一刻才生效 · Translated when it is sealed"/>
+            </Grid>
+        </Viewbox>
+    </Grid>
+</UserControl>

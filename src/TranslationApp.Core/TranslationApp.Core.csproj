@@ -9,7 +9,7 @@
     <RootNamespace>TranslationApp.Core</RootNamespace>
     <!-- PDB 内嵌，publish 产物保持单 EXE -->
     <DebugType>embedded</DebugType>
-    <Description>速译核心逻辑层：无 UI 依赖，可单元测试。</Description>
+    <Description>译印核心逻辑层：无 UI 依赖，可单元测试。</Description>
   </PropertyGroup>
 
   <ItemGroup>

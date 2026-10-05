@@ -207,6 +207,81 @@ public partial class QuickTranslateViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ToggleShadowCommand))]
     private bool _isBusy;
 
+    /// <summary>本次翻译耗时；TM 回填不显示，只反映网络引擎请求。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasElapsed), nameof(ElapsedDisplay))]
+    private long _lastElapsedMs;
+
+    /// <summary>
+    /// 这一次落印实际用的引擎名（降级成功即记为降级后的那个）。工作台印文行拿它拼「Bing · 118ms · 已落印」；
+    /// 没走过引擎（空态、或 TM 回填）时它是空的，印文行只剩下尾巴，所以整段由 HasImprintEngine 控制显隐。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasImprintEngine))]
+    private string _lastEngineName = "";
+
+    /// <summary>印文行里有没有引擎名可写。</summary>
+    public bool HasImprintEngine => LastEngineName.Length > 0;
+
+    /// <summary>是否显示本次耗时。</summary>
+    public bool HasElapsed => !IsBusy && LastElapsedMs > 0;
+
+    /// <summary>展示用耗时：短请求毫秒，长请求秒。</summary>
+    public string ElapsedDisplay => LastElapsedMs <= 0
+        ? ""
+        : LastElapsedMs < 1000 ? $"{LastElapsedMs} ms" : $"{LastElapsedMs / 1000.0:0.#} s";
+
+    // ============ 工作台「今日印记」条上按运行累计的三个数字（设计稿 .wb-strip）============
+    // 历史库只有文本与元数据，没有耗时列、也没有命中数列，所以这三个数只能在真发生的时候
+    // 顺手记在内存里：本次运行累计，进程退出即清零（条上的「今日落印」另走历史库，跨重启真实）。
+    // 宁可数字小一点，也不编一个看起来好看的。
+
+    /// <summary>本次运行命中印谱缓存（复用历史译文）的次数。</summary>
+    [ObservableProperty]
+    private int _sessionSealHits;
+
+    /// <summary>本次运行定制印（术语表）命中的词条次数。</summary>
+    [ObservableProperty]
+    private int _sessionGlossaryHits;
+
+    private int _sessionElapsedCount;
+    private long _sessionElapsedTotalMs;
+
+    /// <summary>本次运行的平均落印耗时；还没有样本时显示破折号，不显示 0。</summary>
+    public string SessionAverageElapsedDisplay => _sessionElapsedCount == 0
+        ? "—"
+        : $"{_sessionElapsedTotalMs / _sessionElapsedCount}ms";
+
+    /// <summary>记一次真实耗时（只记数字，不记内容）。</summary>
+    private void RecordSessionElapsed(long ms)
+    {
+        if (ms <= 0)
+        {
+            return;
+        }
+
+        _sessionElapsedCount++;
+        _sessionElapsedTotalMs += ms;
+        OnPropertyChanged(nameof(SessionAverageElapsedDisplay));
+    }
+
+    /// <summary>失败重试按钮文案；能识别替代引擎时明确告诉用户会换到哪个。</summary>
+    public string RetryButtonLabel => RetryEngineName.Length > 0
+        ? $"换引擎重试（{RetryEngineName}）"
+        : "换引擎重试";
+
+    /// <summary>失败时可用的替代引擎名；空 = 没有可换引擎。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RetryButtonLabel))]
+    private string _retryEngineName = "";
+
+    /// <summary>失败时的原文，供「换引擎重试」使用。</summary>
+    private string _retryText = "";
+
+    /// <summary>失败的原始引擎 Id，避免重试又换回同一个坏引擎。</summary>
+    private string _failedEngineId = "";
+
+
     [ObservableProperty]
     private bool _isPinned;
 
@@ -217,6 +292,18 @@ public partial class QuickTranslateViewModel : ObservableObject
 
     /// <summary>是否显示「术语 ×N」徽标。</summary>
     public bool HasGlossaryNote => GlossaryNote.Length > 0;
+
+    /// <summary>
+    /// 译文副行（设计稿 .wb-dst .dst-sub）：一句话交代这一句是怎么落印的 ——
+    /// 走了定制印几条、有没有走印谱缓存。空 = 本次不显示副行。
+    /// 与小窗的 GlossaryNote 徽标分开：那边是紧凑标签，这边是工作台印面里的说明行。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasResultSubText))]
+    private string _resultSubText = "";
+
+    /// <summary>是否显示译文副行。</summary>
+    public bool HasResultSubText => ResultSubText.Length > 0;
 
     /// <summary>命中明细（「源 → 目标 ×次数」逐行），供徽标 tooltip。</summary>
     [ObservableProperty]
@@ -380,6 +467,13 @@ public partial class QuickTranslateViewModel : ObservableObject
     [ObservableProperty]
     private string _targetLanguage;
 
+    /// <summary>
+    /// 印面条上的来源标签（设计稿 .qw-tag）：划词 / 手动 / 剪贴板 / 文档。
+    /// 值由呼出方在 <see cref="ResetForShow"/> 里给定，与设计稿小窗状态机一致。
+    /// </summary>
+    [ObservableProperty]
+    private string _originLabel = "手动";
+
     /// <summary>是否有译文（控制译文区与「复制译文」按钮的显隐）。</summary>
     public bool HasResult => !string.IsNullOrEmpty(ResultText);
 
@@ -402,9 +496,6 @@ public partial class QuickTranslateViewModel : ObservableObject
     public string SpeakToolTip => CanSpeak
         ? "朗读"
         : "系统未安装语音包，请在「设置 → 时间和语言 → 语音」中添加";
-
-    /// <summary>截图翻译按钮提示（带当前热键，FR-021）。</summary>
-    public string CaptureToolTip => $"截图翻译 ({_settings.HotkeyCaptureTranslate})";
 
     partial void OnInputTextChanged(string value)
     {
@@ -471,7 +562,8 @@ public partial class QuickTranslateViewModel : ObservableObject
     /// 每次呼出重置会话状态（notice 用于取词失败等提示，initialText 用于划词带入原文）。
     /// sourceLanguage 供 OCR 截图翻译按识别语言直接指定源语言（13.2.5 规则 2），为 null 时保持自动检测。
     /// </summary>
-    public void ResetForShow(string? notice, string targetLanguage, string? initialText = null, string? sourceLanguage = null)
+    public void ResetForShow(string? notice, string targetLanguage, string? initialText = null,
+        string? sourceLanguage = null, string originLabel = "手动")
     {
         CancelTranslation(); // 旧会话在途时必须先失效，否则迟到结果会写进本次呼出的界面
         InputText = initialText ?? "";
@@ -479,12 +571,18 @@ public partial class QuickTranslateViewModel : ObservableObject
         ErrorText = "";
         StatusText = notice ?? "";
         SourceLanguage = string.IsNullOrEmpty(sourceLanguage) ? TranslationLanguages.AutoCode : sourceLanguage;
+        OriginLabel = originLabel;
         TargetLanguage = targetLanguage;
         IsFavorited = false;
         _lastDetectedLanguage = null;
         _cleanedNote = false;
+        LastElapsedMs = 0;
+        RetryEngineName = "";
+        _manualRetryEngineId = null;
+        _retryText = "";
         GlossaryNote = "";
         GlossaryTooltip = "";
+        ResultSubText = "";
         _selectionSession = false; // 会话重置即清除，由 SetSelectionSession 在呼出时重新标记
         _tts.Stop(); // 呼出新会话时停止上一次朗读
 
@@ -573,6 +671,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         SupportsStyle = TranslatorCatalog.SupportsDirectives(translator);
         var run = BeginTranslationSession();
         var token = run.Token;
+        var startedAt = Environment.TickCount64;
 
         try
         {
@@ -602,8 +701,12 @@ public partial class QuickTranslateViewModel : ObservableObject
                 return;
             }
 
+            LastElapsedMs = Math.Max(0, Environment.TickCount64 - startedAt);
+            LastEngineName = translator.Name;
+            RecordSessionElapsed(LastElapsedMs);
+            RetryEngineName = "";
             ApplySuccess(translator, text, result, run);
-            StatusText = _cleanedNote ? "已清洗换行" : "";
+            StatusText = _cleanedNote ? "已整理换行" : "";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -622,6 +725,7 @@ public partial class QuickTranslateViewModel : ObservableObject
             }
             else
             {
+                PrepareManualRetry(text, translator, ex);
                 ReportFailure(translator, ex);
             }
         }
@@ -638,8 +742,42 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
         finally
         {
+            OnPropertyChanged(nameof(HasElapsed));
             CompleteTranslationSession(run);
         }
+    }
+
+    /// <summary>失败后准备一个可用替代引擎；找不到就不打扰用户。</summary>
+    private void PrepareManualRetry(string text, ITranslator failed, TranslationException error)
+    {
+        _retryText = text;
+        _failedEngineId = failed.Id;
+        var candidate = _catalog.All.FirstOrDefault(t =>
+            t.Id != failed.Id && t.Id != _settings.FallbackEngineId && t.IsConfigured);
+        RetryEngineName = candidate?.Name ?? "";
+        RetryOtherEngineCommand.NotifyCanExecuteChanged();
+        if (candidate is not null)
+        {
+            _manualRetryEngineId = candidate.Id;
+        }
+    }
+
+    private string? _manualRetryEngineId;
+
+    private bool CanRetryOtherEngine() => HasError && RetryEngineName.Length > 0 && !IsBusy;
+
+    /// <summary>失败提示旁的一键恢复：换到准备好的可用引擎重译同一句。</summary>
+    [RelayCommand(CanExecute = nameof(CanRetryOtherEngine))]
+    private async Task RetryOtherEngineAsync()
+    {
+        if (_manualRetryEngineId is not { } engineId || _retryText.Length == 0)
+        {
+            return;
+        }
+
+        _settings.Engine = engineId;
+        _store.Save(_settings);
+        await TranslateAsync();
     }
 
     /// <summary>成功翻译的统一收尾：回填译文/检测语言、入库（FR-014）、刷新收藏（FR-015）、划词自动朗读（FR-016）。</summary>
@@ -683,6 +821,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         // P0 批 1：术语表命中徽标（命中数与明细由 GlossaryTranslator 回填）
         // 批 3 / FR-041：反向保护跳过的冲突词条并入徽标与 tooltip
         var conflicts = result.GlossaryConflicts;
+        SessionGlossaryHits += result.GlossaryHits;
         GlossaryNote = result.GlossaryHits > 0
             ? conflicts is { Count: > 0 }
                 ? $"术语 ×{result.GlossaryHits} · 冲突跳过 ×{conflicts.Count}"
@@ -700,6 +839,8 @@ public partial class QuickTranslateViewModel : ObservableObject
             tooltipLines.AddRange(conflicts.Select(c => $"跳过 {c.Source} → {c.Target}（原文已含该译法）"));
         }
         GlossaryTooltip = string.Join("\n", tooltipLines);
+        // 工作台译文副行：一句人话交代这次落印的来路（设计稿 .dst-sub 的文案格式）
+        ResultSubText = $"定制印 {result.GlossaryHits} 条命中，未走印谱缓存。";
 
         // FR-043（P0 批 4）：≥3 段且段数对齐时提供「对照」视图（默认仍是整块译文）
         UpdateAlignment(text, result.TranslatedText);
@@ -807,7 +948,7 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
 
         Log.Information("进程内累计降级 {Count} 次，已用托盘气泡建议改默认引擎", _fallbackCounter.Count);
-        NotifyBalloon?.Invoke("速译", EngineFallback.SuggestionBalloon(primary.Name, fallback.Name));
+        NotifyBalloon?.Invoke("引擎自动降级", EngineFallback.SuggestionBalloon(primary.Name, fallback.Name));
     }
 
     /// <summary>FR-006：错误分类给出不同提示文案。</summary>
@@ -865,6 +1006,8 @@ public partial class QuickTranslateViewModel : ObservableObject
 
         ResultText = hit.Entry.Translated;
         IsTmHit = true;
+        ResultSubText = "印谱命中，未走引擎。";
+        SessionSealHits++;
         var age = DateTimeOffset.UtcNow - hit.Entry.CreatedAt;
         var ageText = age.TotalDays < 1 ? "今天的记录" : $"{age.TotalDays:0} 天前的记录";
         StatusText = $"TM 命中 {hit.Score:P0} · 来自 {ageText}";
@@ -1338,6 +1481,19 @@ public partial class QuickTranslateViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSpeakResult))]
     private void SpeakResult() => Speak(ResultText, TargetLanguage);
 
+    /// <summary>清空输入与结果（设置首页工作台的「清空」按钮）。</summary>
+    [RelayCommand]
+    private void Clear()
+    {
+        CancelTranslation();
+        InputText = "";
+        ResultText = "";
+        ErrorText = "";
+        StatusText = "";
+        IsFavorited = false;
+        LastElapsedMs = 0;
+    }
+
     private void Speak(string? text, string languageCode)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -1640,6 +1796,22 @@ public partial class QuickTranslateViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 「采用」：把该栏译文提成上方的正式译文。
+    /// 工作台比小窗多一步就在这里：小窗里对比完只能复制，工作台里点一下即可替换。
+    /// 只改显示，不重复写历史（本句早已入库，重复写会污染 TM 候选池）。
+    /// </summary>
+    internal void AdoptCompareText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        ResultText = text;
+        StatusText = "已采用该引擎译文";
+    }
+
     /// <summary>每栏的朗读（FR-016）。</summary>
     internal void SpeakCompareText(string text) => Speak(text, TargetLanguage);
 
@@ -1858,6 +2030,10 @@ public sealed partial class EngineResultViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(CanUseText))]
     private void SpeakText() => _owner.SpeakCompareText(Text);
+
+    /// <summary>把这一栏的译文提成上方正式译文（工作台对比面板的主要出口）。</summary>
+    [RelayCommand(CanExecute = nameof(CanUseText))]
+    private void Adopt() => _owner.AdoptCompareText(Text);
 
     [RelayCommand]
     private Task Retry() => _owner.RetryCompareItemAsync(this);

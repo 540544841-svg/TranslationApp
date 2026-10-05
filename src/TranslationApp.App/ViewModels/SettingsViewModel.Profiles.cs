@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using TranslationApp.Core.Settings;
+using TranslationApp.Core.Translation;
 
 namespace TranslationApp.ViewModels;
 
@@ -10,6 +11,9 @@ namespace TranslationApp.ViewModels;
 public sealed class ProfileRowViewModel
 {
     public required string Name { get; init; }
+
+    /// <summary>是不是当前生效的那一档（设计稿里当前档用朱砂实心标签，其余是描边标签）。</summary>
+    public bool IsActive { get; init; }
 
     /// <summary>隐式档案的按钮文案与其它档不同（不是「切到」而是「回到」）。</summary>
     public string Label => Name == ProfileService.StandardName ? $"回到「{Name}」" : $"切到「{Name}」";
@@ -155,16 +159,17 @@ public partial class SettingsViewModel
     {
         var builtins = _profiles.AllProfiles().Select(p => new ProfileRowViewModel { Name = p.Name }).ToList();
         builtins.Add(new ProfileRowViewModel { Name = ProfileService.StandardName });
-        BuiltinProfileRows = builtins;
+        // 当前档要用朱砂实心标签标出来（设计稿 .tag.vermilion），其余是描边标签
+        var active = _profiles.DisplayName;
+        BuiltinProfileRows = builtins.Select(r => new ProfileRowViewModel { Name = r.Name, IsActive = r.Name == active }).ToList();
         OnPropertyChanged(nameof(BuiltinProfileRows));
 
         ProfileRows.Clear();
         foreach (var profile in _profiles.CustomProfiles())
         {
-            ProfileRows.Add(new ProfileRowViewModel { Name = profile.Name });
+            ProfileRows.Add(new ProfileRowViewModel { Name = profile.Name, IsActive = profile.Name == active });
         }
 
-        ProfileStatusText = $"当前档案：{_profiles.DisplayName}"
-            + (_profiles.IsDeviation() ? "（当前设置已偏离）" : "");
+        // 当前档已在标签行用朱砂标出，不再用一行字复述；空闲时留空，整行自动收起
     }
 }
