@@ -3253,7 +3253,7 @@
                                     </StackPanel>
                                     <TextBox Grid.Column="1" Width="320" Height="32" Padding="10,0" VerticalContentAlignment="Center"
                                              Text="{Binding UpdateManifestUrl, UpdateSourceTrigger=PropertyChanged, Delay=400}"
-                                             ToolTip="例如 https://example.com/TranslationApp/latest.json"/>
+                                             ToolTip="默认 https://github.com/540544841-svg/TranslationApp/releases/latest/download/latest.json"/>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SheetRow}">

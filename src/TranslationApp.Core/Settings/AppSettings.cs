@@ -458,8 +458,12 @@ public sealed class AppSettings
 
     // ==================== 签名更新 / 备份 / 原位替换 ====================
 
+    /// <summary>程序内置的默认更新通道：本仓库 Release 上的签名清单直链（FR-013）。</summary>
+    public const string DefaultUpdateManifestUrl =
+        "https://github.com/540544841-svg/TranslationApp/releases/latest/download/latest.json";
+
     /// <summary>签名更新清单地址；空 = 未配置更新通道。</summary>
-    public string UpdateManifestUrl { get; set; } = "";
+    public string UpdateManifestUrl { get; set; } = DefaultUpdateManifestUrl;
 
     /// <summary>启动后自动检查更新（只检查，不自动下载或安装）。</summary>
     public bool UpdateAutoCheck { get; set; }

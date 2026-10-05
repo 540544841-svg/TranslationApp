@@ -17,7 +17,20 @@ param(
 
     [string]$Runtime = "win-x64",
 
-    [string]$OutputDir = ""
+    [string]$OutputDir = "",
+
+    # —— 以下用于 -PublishRelease：发版到 GitHub Release（清单重签 + 上传附件）——
+    # 细节见 build\publish-release.ps1；不带 -PublishRelease 时本脚本行为与以往完全一致。
+    [switch]$PublishRelease,
+
+    # 缺省取 csproj 的 <Version>
+    [string]$ReleaseVersion = "",
+
+    [string]$ReleaseNotes = "",
+
+    [switch]$Draft,
+
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,4 +89,28 @@ Write-Host ("发布成功：{0}（{1} MB）" -f $exe, $sizeMB) -ForegroundColor 
 if ($sizeMB -gt 200) {
     Write-Warning ("单 EXE 体积 {0} MB 超过 200MB 硬约束，请检查压缩/裁剪选项。" -f $sizeMB)
     exit 2
+}
+
+# ==================== 发版到 GitHub Release ====================
+# 一条命令发完：pwsh -File build\publish.ps1 -PublishRelease -ReleaseNotes "本次说明"
+# 它会接着调 build\publish-release.ps1：重签 latest.json → 建/复用 tag 与 Release →
+# 上传 TranslationApp.exe、latest.json、安装包（若有）。凭据走 -Token / GITHUB_TOKEN /
+# git credential fill，私钥默认 build\secrets\translationapp-release-private.pem。
+if ($PublishRelease) {
+    $version = $ReleaseVersion
+    if (-not $version) {
+        $match = [regex]::Match((Get-Content -LiteralPath $project -Raw), '<Version>([^<]+)</Version>')
+        if (-not $match.Success) { throw "无法从 $project 读到 <Version>，请显式传 -ReleaseVersion" }
+        $version = $match.Groups[1].Value.Trim()
+    }
+
+    $releaseArgs = @{ Version = $version; PublishDir = $OutputDir }
+    if ($ReleaseNotes) { $releaseArgs["Notes"] = $ReleaseNotes }
+    if ($Draft) { $releaseArgs["Draft"] = $true }
+    if ($Force) { $releaseArgs["Force"] = $true }
+
+    Write-Host ""
+    Write-Host ("== 发版：v{0} ==" -f $version) -ForegroundColor Cyan
+    & (Join-Path $PSScriptRoot "publish-release.ps1") @releaseArgs
+    if ($LASTEXITCODE -ne 0) { throw "发版失败（退出码 $LASTEXITCODE）" }
 }
