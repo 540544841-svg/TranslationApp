@@ -42,6 +42,21 @@ public sealed class PinWindowManager
     public bool HasPins => _windows.Count > 0;
 
     /// <summary>
+    /// 把键盘交给最近创建的那张钉图（v1.3）：截图翻译落印后调用，让 Esc / 空格 / Ctrl+C 立即可用。
+    /// 一张钉图都没有（张数/像素上限把这次落印拒了）时返回 false，调用方保持原行为即可。
+    /// </summary>
+    public bool ActivateLatest()
+    {
+        if (_windows.Count == 0)
+        {
+            return false;
+        }
+
+        _windows[^1].ActivateForKeyboard();
+        return true;
+    }
+
+    /// <summary>
     /// 把裁剪缓冲钉在屏幕上原选区的位置（<paramref name="monitorRect"/> 为选区所在显示器的物理矩形，
     /// <paramref name="imageRect"/> 为选区在其中的图像像素矩形）。返回是否成功；
     /// 失败原因（张数/像素总量超限）与降采样提示都以托盘气泡明确告知，**不静默失败**。

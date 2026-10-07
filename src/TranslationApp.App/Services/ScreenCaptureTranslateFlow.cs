@@ -243,7 +243,8 @@ public sealed class ScreenCaptureTranslateFlow
         }
 
         // FR-027（14.3.8 新链路，默认）：把选区图片钉在屏幕上原位置，并**原位显示译文**。
-        // 钉图**不激活、不抢焦点**，故把焦点还给呼出前的应用
+        // 钉图默认**不激活、不抢焦点**；只有刚落印的这张会接管键盘（见下方 ActivateLatest），
+        // 否则 Esc / 空格 / Ctrl+C 无人接收（v1.3 修复）
         if (OcrOutputMode.PinsImage(mode))
         {
             var pinned = await BuildPinAsync(
@@ -254,7 +255,13 @@ public sealed class ScreenCaptureTranslateFlow
 
             if (!OcrOutputMode.UsesQuickWindow(mode))
             {
-                RestoreForeground(previousForeground);
+                // v1.3 修复「截图翻译后按 Esc 无法退出」：落印后把键盘交给这张钉图，Esc 立刻能收起结果
+                // （此前把焦点还给呼出前的应用，钉图非激活 → Esc / 空格 / Ctrl+C 全部无人接收）。
+                // 钉图被上限拒绝（ActivateLatest 返回 false）时退回原行为：焦点还给呼出前的应用。
+                if (!_pins.ActivateLatest())
+                {
+                    RestoreForeground(previousForeground);
+                }
             }
 
             _sounds.PlaySuccess();

@@ -334,6 +334,33 @@ public partial class PinWindow : Window
         UpdateToolbarPlacement();
     }
 
+    /// <summary>
+    /// 让这张钉图接管键盘（v1.3）：截图翻译落印后调用，使 Esc 收起 / 空格切原文译文 / Ctrl+C 复制
+    /// **立即可用**，不必先单击图片。此前钉图刻意不激活（不抢焦点），代价就是这几个键无人接收；
+    /// 落印后把键盘交给结果窗口是截图类工具的通行做法。只影响这一张钉图：
+    /// 用户点到别处即失焦，其余钉图仍保持非激活。
+    /// </summary>
+    public void ActivateForKeyboard()
+    {
+        try
+        {
+            Activate();
+            Keyboard.Focus(this);
+
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero && !IsActive)
+            {
+                NativeMethods.SetForegroundWindow(hwnd);
+            }
+
+            Log.Debug("钉图接管键盘：IsActive={Active}", IsActive);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "钉图接管键盘失败");
+        }
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);

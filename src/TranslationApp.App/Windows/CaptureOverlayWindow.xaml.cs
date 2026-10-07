@@ -35,6 +35,12 @@ public partial class CaptureOverlayWindow : Window
     private const double HudMargin = 16;       // 顶部 HUD 距屏幕顶 16（.cap-hud top:16px）
     private const double HintMargin = 16;      // 底部提示距屏幕底 16（.cap-hint bottom:16px）
 
+    // 窗口消息层兜底（v1.3）：Esc / 回车 的兜底通道，见 OnWndProc
+    private const int WmKeyDown = 0x0100;
+    private const int WmSysKeyDown = 0x0104;
+    private const int VkEscape = 0x1B;
+    private const int VkReturn = 0x0D;
+
     private readonly int _maxImageDimension;
     private readonly NativeMethods.RECT _monitor;
     private readonly Rectangle[] _loupeCells = new Rectangle[LoupeCells * LoupeCells];
@@ -48,6 +54,12 @@ public partial class CaptureOverlayWindow : Window
     private bool _hasSelection;
     private bool _confirmed;
     private bool _dpiHopPending;
+
+    /// <summary>
+    /// 已写过一次 <c>DialogResult</c>（v1.3）：Esc 长按会连发 WM_KEYDOWN，
+    /// 二次写 DialogResult 会抛 InvalidOperationException，故 Confirm / Cancel 必须幂等。
+    /// </summary>
+    private bool _resultSet;
 
     internal CaptureOverlayWindow(
         BitmapSource screenshot,
@@ -89,6 +101,13 @@ public partial class CaptureOverlayWindow : Window
     {
         base.OnSourceInitialized(e);
         ApplyPhysicalBounds();
+
+        // 键盘兜底（v1.3）：窗口消息层先于 WPF 输入路由，只要本窗口是前台窗口就一定收到 Esc，
+        // 不再依赖 WPF 的焦点路由（见 OnWndProc）
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+        {
+            source.AddHook(OnWndProc);
+        }
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
@@ -171,9 +190,9 @@ public partial class CaptureOverlayWindow : Window
         UpdateScrimGeometry();
         UpdateHintChip();
         UpdateCapHint();
-        Keyboard.Focus(this);
-        Log.Debug("遮罩窗口就绪：ActualSize={Width}x{Height}，Scale=({ScaleX},{ScaleY})",
-            ActualWidth, ActualHeight, ScaleX, ScaleY);
+        EnsureForeground();
+        Log.Debug("遮罩窗口就绪：ActualSize={Width}x{Height}，Scale=({ScaleX},{ScaleY})，前台={Active}",
+            ActualWidth, ActualHeight, ScaleX, ScaleY, IsActive);
     }
 
     private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
@@ -288,6 +307,66 @@ public partial class CaptureOverlayWindow : Window
         Cancel();
     }
 
+    /// <summary>
+    /// 窗口消息层兜底（v1.3）：Esc 取消 / 回车确认。
+    /// <see cref="OnPreviewKeyDown"/> 依赖 WPF 输入路由，一旦本窗口不是前台窗口就完全收不到按键
+    /// （遮罩用 SetWindowPos(SWP_NOACTIVATE) 摆放，存在「已经显示但键盘还在别的窗口手里」的窗口期），
+    /// 表现为「按 Esc 没反应」。这里在消息层再拦一道；两条路径共用 Cancel / Confirm，
+    /// 由 <c>_resultSet</c> 保证幂等。
+    /// </summary>
+    private IntPtr OnWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg is not (WmKeyDown or WmSysKeyDown))
+        {
+            return IntPtr.Zero;
+        }
+
+        switch (wParam.ToInt32())
+        {
+            case VkEscape:
+                handled = true;
+                Cancel();
+                break;
+            case VkReturn when _hasSelection:
+                handled = true;
+                Confirm();
+                break;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// 保证遮罩拿到前台焦点（v1.3）：Esc / 回车 只有本窗口是前台窗口时才会送进来。
+    /// 摆放用的是 SetWindowPos(SWP_NOACTIVATE)（物理像素定位必需），因此这里显式激活一次，
+    /// 失败再退回 SetForegroundWindow；两条都失败时留 Warning 日志便于定位。
+    /// </summary>
+    private void EnsureForeground()
+    {
+        try
+        {
+            Activate();
+            Keyboard.Focus(this);
+
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero && !IsActive)
+            {
+                NativeMethods.SetForegroundWindow(hwnd);
+            }
+
+            if (!IsActive)
+            {
+                Log.Warning(
+                    "遮罩窗口未取得前台焦点（当前前台 {Foreground}）：Esc / 回车可能不生效",
+                    NativeMethods.GetForegroundWindow());
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "遮罩窗口激活失败");
+        }
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
@@ -308,6 +387,12 @@ public partial class CaptureOverlayWindow : Window
 
     private void Confirm()
     {
+        if (_resultSet)
+        {
+            return;
+        }
+
+        _resultSet = true;
         ConfirmedSelection = new DipRect(_selection.X, _selection.Y, _selection.Width, _selection.Height);
         _confirmed = true;
         DialogResult = true;
@@ -315,6 +400,12 @@ public partial class CaptureOverlayWindow : Window
 
     private void Cancel()
     {
+        if (_resultSet)
+        {
+            return;
+        }
+
+        _resultSet = true;
         ConfirmedSelection = null;
         DialogResult = false;
     }
