@@ -21,3 +21,20 @@
 - 发布完成后把实例起回来（或明确告诉用户去启动），别让用户面对一个凭空消失的托盘图标。
 - 若确实需要在实例运行期间出临时包做比对，输出到临时目录（如 `out\publish-staging`），
   不要覆盖 `publish\`。
+
+## 2. 安装包不能只靠手跑
+
+`publish\TranslationApp.exe`（主程序）与 `publish\setup\译印-Setup-<版本>.exe`（安装包）是**两条**产物：
+
+- 主程序：`build\publish.ps1`；
+- 安装包：`build\make-setup.ps1`（它内部会先跑一遍 `publish.ps1`，再把主程序当载荷嵌进安装器）。
+
+踩过的坑：只跑了 `publish.ps1` 就发版，`publish\setup\` 里还是上一版的安装包；而发版脚本对安装包是
+「有就用、没有就跳过」，于是整版发出去毫无提示，用户装到的还是旧版本。
+
+做法：
+
+- 发版一律走 `build\publish-release.ps1`，它**默认先重建安装包**（`-SkipSetup` 才跳过），
+  并在版本对不上时直接报错停下；
+- 只更新主程序交付（不进安装包）时，跑完 `build\publish.ps1` 要明确告诉用户
+  「安装包没有重出」，或者顺手跑 `build\make-setup.ps1`。

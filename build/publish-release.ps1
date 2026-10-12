@@ -20,6 +20,10 @@
 .PARAMETER Assets
     只传指定附件（相对仓库根或绝对路径）。缺省 = 主程序 exe + latest.json（+ 已存在的安装包）。
 
+.PARAMETER SkipSetup
+    跳过安装包重建，直接用 publish\setup\ 里现有的产物（只补传附件时用）。缺省不跳——
+    安装包与主程序同源重出，避免「附件里挂着上一版的安装包」这种静默事故。
+
 .PARAMETER DryRun
     只打印将要执行的步骤与 API 调用，不联网、不重签、不改动仓库。
 
@@ -45,6 +49,8 @@ param(
     [string]$PublishDir = "",
 
     [string[]]$Assets = @(),
+
+    [switch]$SkipSetup,
 
     [switch]$SkipManifest,
 
@@ -85,6 +91,39 @@ function Get-RemoteAssetName([string]$Path, [string]$ReleaseVersion) {
     if ($n -match '^[A-Za-z0-9._-]+$') { return $n }
     if ($n -like '*Setup*') { return "INKSEAL-Setup-$ReleaseVersion.exe" }
     throw "附件名含非 ASCII 且无法自动改名：$n"
+}
+
+# ---------- 0) 安装包（必须先于清单：它内部会重出主程序，清单要签在最终产物上） ----------
+if ($DryRun) {
+    if (Test-Path -LiteralPath $setupExe) {
+        Write-Host ("安装包现状：{0}（FileVersion {1}）" -f (Split-Path -Leaf $setupExe), (Get-Item -LiteralPath $setupExe).VersionInfo.FileVersion) -ForegroundColor DarkGray
+    }
+    else {
+        Write-Warning ("安装包不存在：{0}（DryRun 不重建；正式发版会先跑 build\make-setup.ps1）" -f $setupExe)
+    }
+}
+elseif ($SkipSetup) {
+    Write-Host "跳过安装包重建（-SkipSetup），使用 publish\setup\ 现有产物。" -ForegroundColor Yellow
+}
+else {
+    $setupScript = Join-Path $PSScriptRoot "make-setup.ps1"
+    Write-Host "== 出安装包（内含本版主程序）==" -ForegroundColor Cyan
+    & powershell -ExecutionPolicy Bypass -File $setupScript -Runtime win-x64
+    if ($LASTEXITCODE -ne 0) { throw "build\make-setup.ps1 失败（退出码 $LASTEXITCODE）" }
+}
+
+# 默认附件里必有安装包：版本对不上宁可停，绝不把「旧包装新名」发出去
+if (-not $DryRun -and -not $Assets) {
+    if (-not (Test-Path -LiteralPath $setupExe)) {
+        throw "安装包未生成：$setupExe"
+    }
+
+    $setupFileVersion = (Get-Item -LiteralPath $setupExe).VersionInfo.FileVersion
+    if ($setupFileVersion -notlike "$Version*") {
+        throw ("安装包版本与本次发版不一致：{0} 的 FileVersion={1}，期望 {2}。去掉 -SkipSetup 重跑即可。" -f (Split-Path -Leaf $setupExe), $setupFileVersion, $Version)
+    }
+
+    Write-Host ("安装包就位：{0}（FileVersion {1}）" -f (Split-Path -Leaf $setupExe), $setupFileVersion) -ForegroundColor Green
 }
 
 # ---------- 附件清单 ----------
