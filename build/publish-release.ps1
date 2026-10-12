@@ -362,7 +362,12 @@ foreach ($a in $assetPlan) {
 
 # ---------- 6) 汇总 ----------
 if ($script:hdrFile -and [IO.File]::Exists($script:hdrFile)) { [IO.File]::Delete($script:hdrFile) }
-git -C $repoRoot fetch origin --tags 2>$null | Out-Null
+# git 把进度写 stderr，而本脚本是 ErrorActionPreference=Stop：直接调用会被当成错误终止，
+# 于是「附件已经传完的 release」看起来像失败（踩过：v0.3.2 上传全绿却退 1）。这里临时放宽。
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+git -C $repoRoot fetch origin --tags *>&1 | Out-Null
+$ErrorActionPreference = $prevEap
 Write-Host ""
 Write-Host ("发布完成：{0}（{1}）" -f $Tag, $rel.html_url) -ForegroundColor Green
 Write-Host ("  客户端更新清单地址：{0}" -f $manifestUrl)
